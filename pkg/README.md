@@ -1,1 +1,1 @@
-# Sharable package for Urth service
+# Sharable packages for Urth service
