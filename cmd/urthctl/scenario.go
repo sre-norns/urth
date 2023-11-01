@@ -1,12 +1,12 @@
 package main
 
-// func fetchScenario(id urth.ResourceID, apiServerAddress string) (urth.Scenario, error) {
+// func fetchScenario(cmdCtx context.Context, id urth.ResourceID, apiServerAddress string) (urth.Scenario, error) {
 // 	apiClient, err := urth.NewRestApiClient(apiServerAddress)
 // 	if err != nil {
 // 		return urth.Scenario{}, fmt.Errorf("failed to initialize API Client: %w", err)
 // 	}
 
-// 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+// 	ctx, cancel := context.WithTimeout(cmdCtx, 30*time.Second)
 // 	defer cancel()
 
 // 	resource, ok, err := apiClient.GetScenarioAPI().Get(ctx, id)
@@ -17,13 +17,13 @@ package main
 // 	return resource, err
 // }
 
-// func fetchResults(scenarioId, id urth.ResourceID, apiServerAddress string) (urth.ScenarioRunResults, error) {
+// func fetchResults(cmdCtx context.Context, scenarioId, id urth.ResourceID, apiServerAddress string) (urth.ScenarioRunResults, error) {
 // 	apiClient, err := urth.NewRestApiClient(apiServerAddress)
 // 	if err != nil {
 // 		return urth.ScenarioRunResults{}, fmt.Errorf("failed to initialize API Client: %w", err)
 // 	}
 
-// 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+// 	ctx, cancel := context.WithTimeout(cmdCtx, 30*time.Second)
 // 	defer cancel()
 
 // 	resource, ok, err := apiClient.GetResultsAPI(scenarioId).Get(ctx, id)

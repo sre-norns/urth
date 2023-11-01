@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/sre-norns/urth/pkg/runner"
@@ -14,24 +15,26 @@ import (
 )
 
 type RunCmd struct {
+	Files []string `arg:"" optional:"" name:"file" help:"A script file to execute" type:"existingfile" xor:"scenario"`
+	Kind  string   `help:"The type of the scenario to run. Will try to guess if not specified"`
+
 	ScenarioId urth.ResourceID `help:"Id of the scenario" name:"scenario" xor:"file"`
-	File       string          `help:"A script file to execute" short:"f" type:"existingfile" xor:"scenario"`
-	Kind       string          `help:"The type of the scenario to run. Will try to guess if not specified"`
-	RunTimeout time.Duration   `help:"Timeout duration alloted for scenario to run" default:"3m"`
-	KeepTemp   bool            `help:"If true, temporary work directory is kept after run is complete"`
-	Headless   bool            `help:"If true, puppeteer scripts are run in a headless mode"`
+	RunTimeout time.Duration   `help:"Timeout duration alloted for a single scenario to run" default:"1m"`
+
+	KeepTemp bool `help:"If true, temporary work directory is kept after run is complete"`
+	SaveHAR  bool `help:"If true, save HAR recording of HTTP scripts if applicable"`
+	Headless bool `help:"If true, puppeteer scripts are run in a headless mode"`
 }
 
-// TODO: Pass app context!
-func (c *RunCmd) runScenario(script urth.ScenarioScript, workingDir string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), c.RunTimeout)
+func (c *RunCmd) runScenario(cmdCtx context.Context, sourceName string, script urth.ScenarioScript, workingDir string) error {
+	ctx, cancel := context.WithTimeout(cmdCtx, c.RunTimeout)
 	defer cancel()
 
 	runResult, err := runner.Play(ctx, script, runner.RunOptions{
 		Puppeteer: runner.PuppeteerOptions{
 			Headless:         c.Headless,
 			WorkingDirectory: workingDir,
-			TempDirPrefix:    fmt.Sprintf("run-%v-%v-", "local", 0),
+			TempDirPrefix:    fmt.Sprintf("run-%v-%v-", sourceName, 0),
 			KeepTempDir:      c.KeepTemp,
 		},
 	})
@@ -39,17 +42,22 @@ func (c *RunCmd) runScenario(script urth.ScenarioScript, workingDir string) erro
 		return err
 	}
 
+	if runResult.Result == urth.RunFinishedSuccess {
+		log.Println("artifacts produced:", len(runResult.Artifacts))
+	}
 	log.Printf("script finished: %q", runResult.Result)
-	for _, artifact := range runResult.Artifacts {
-		log.Println("artifact: ", artifact.Rel)
 
-		if artifact.Rel == "har" {
-			filename := fmt.Sprintf("job-%v.har", "local")
+	for _, artifact := range runResult.Artifacts {
+		log.Println("artifact:", artifact.Rel)
+
+		if artifact.Rel == "har" && c.SaveHAR {
+			filename := fmt.Sprintf("run-%v.har", sourceName)
 			if err := ioutil.WriteFile(filename, artifact.Content, 0644); err != nil {
 				return fmt.Errorf("failed to write HAR artifact: %w", err)
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -115,28 +123,33 @@ func jobFromFile(filename string, kindHint string) (urth.ScenarioScript, error) 
 	}, nil
 }
 
-// func scenarioFromServer(scenarioId urth.ResourceID, apiServerAddress string) (urth.RunScenarioJob, error) {
-// 	resource, err := (scenarioId, apiServerAddress)
-// 	return urth.ScenarioToRunnable(resource), err
-// }
-
 func (c *RunCmd) Run(cfg *commandContext) error {
-	var err error
-	var script urth.ScenarioScript
-	if c.File != "" {
-		script, err = jobFromFile(c.File, c.Kind)
+	// Check that either scenarioID or files is specified but not both
+	if len(c.Files) == 0 && c.ScenarioId == 0 {
+		return fmt.Errorf("file or scenario ID must be provided")
+	}
+	if len(c.Files) != 0 && c.ScenarioId != 0 {
+		return fmt.Errorf("only file or scenario ID must be provided, but not both")
+	}
+
+	for _, filename := range c.Files {
+		script, err := jobFromFile(filename, c.Kind)
 		if err != nil {
 			return err
 		}
-		// } else if c.ScenarioId != 0 {
-		// 	scenario, err = fetchScenario(c.ScenarioId, cfg.ApiServerAddress)
-		// 	if err != nil {
-		// 		return err
-		// 	}
-		//  script = scenario.Script
-	} else {
-		return fmt.Errorf("file or resource ID must be provided")
+
+		if err := c.runScenario(cfg.context, strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename)), script, cfg.WorkingDirectory); err != nil {
+			return err
+		}
 	}
 
-	return c.runScenario(script, cfg.WorkingDirectory)
+	// if c.ScenarioId != 0 {
+	// 	scenario, err = fetchScenario(c.ScenarioId, cfg.ApiServerAddress)
+	// 	if err != nil {
+	// 		return err
+	// 	}
+	// return c.runScenario(cfg.context, scenario.Script, cfg.WorkingDirectory)
+	// }
+
+	return nil
 }

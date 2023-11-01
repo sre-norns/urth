@@ -9,26 +9,33 @@ import (
 )
 
 type ConvertHar struct {
-	// File string `help:"A HAR file to convert" short:"f" type:"existingfile"`
 	Files []string `arg:"" optional:"" name:"path" help:"HAR file(s) to convert" type:"existingfile"`
-	Out   string   `help:"Output file name to write to" short:"o" type:"file"`
+	Out   string   `help:"Name of the output file to write to. Default output is STDOUT" short:"o" type:"file"`
 }
 
 func (c *ConvertHar) Run(cfg *commandContext) error {
-	for _, file := range c.Files {
-		file, err := os.Open(file)
-		if err != nil {
-			return fmt.Errorf("failed to open input HAR file: %w", err)
-		}
-		defer file.Close()
+	var err error
 
-		output := os.Stdout
-		if c.Out != "" && c.Out != "-" {
-			output, err = os.OpenFile(c.Out, os.O_CREATE|os.O_WRONLY, 0766)
+	output := os.Stdout
+	if c.Out != "" && c.Out != "-" {
+		output, err = os.OpenFile(c.Out, os.O_CREATE|os.O_WRONLY, 0766)
+		if err != nil {
+			return fmt.Errorf("failed to open output file: %w", err)
+		}
+		defer output.Close()
+	}
+
+	for _, filename := range c.Files {
+		var file *os.File
+
+		if filename == "-" {
+			file = os.Stdin
+		} else {
+			file, err := os.Open(filename)
 			if err != nil {
-				return fmt.Errorf("failed to open output file: %w", err)
+				return fmt.Errorf("failed to open input HAR %q file: %w", filename, err)
 			}
-			defer output.Close()
+			defer file.Close()
 		}
 
 		harLog, err := runner.UnmarshalHAR(file)

@@ -32,6 +32,8 @@ type (
 		Script   Script   `cmd:"" help:"Get a script data for a given scenario"`
 		Results  Results  `cmd:"" help:"Get a run result"`
 		Runner   Runner   `cmd:"" help:"Get a runner object from the server"`
+
+		// TODO: Add explicit timeout
 	}
 )
 
@@ -55,14 +57,13 @@ func jsonFormatter(resource any) error {
 	if err != nil {
 		return err
 	}
-	// fmt.Print(string(data))
 
 	return nil
 }
 
 func getFormatter(formatName string) (formatter, error) {
 	switch formatName {
-	case "yaml":
+	case "yaml", "yml":
 		return yamlFormatter, nil
 	case "json":
 		return jsonFormatter, nil
