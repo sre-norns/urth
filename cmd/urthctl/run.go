@@ -37,6 +37,11 @@ func (c *RunCmd) runScenario(cmdCtx context.Context, sourceName string, script u
 			TempDirPrefix:    fmt.Sprintf("run-%v-%v-", sourceName, 0),
 			KeepTempDir:      c.KeepTemp,
 		},
+		Http: runner.HttpOptions{
+			CaptureResponseBody: false,
+			CaptureRequestBody:  false,
+			IgnoreRedirects:     false,
+		},
 	})
 	if err != nil {
 		return err
@@ -47,6 +52,7 @@ func (c *RunCmd) runScenario(cmdCtx context.Context, sourceName string, script u
 	}
 	log.Printf("script finished: %q", runResult.Result)
 
+	// Process artifacts produced by the local run
 	for _, artifact := range runResult.Artifacts {
 		log.Println("artifact:", artifact.Rel)
 
