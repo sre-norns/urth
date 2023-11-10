@@ -34,7 +34,7 @@ type Selector struct {
 
 // LabelSelector is a part of model that holds label-based requirements for on other resources
 type LabelSelector struct {
-	MatchLabels Labels `json:",omitempty" yaml:",omitempty" `
+	MatchLabels Labels `json:"matchLabels,omitempty" yaml:"matchLabels,omitempty" `
 
 	MatchSelector []Selector `json:",omitempty" yaml:",omitempty" `
 }
