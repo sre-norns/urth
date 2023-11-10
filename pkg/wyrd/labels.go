@@ -34,16 +34,16 @@ type Selector struct {
 
 // LabelSelector is a part of model that holds label-based requirements for on other resources
 type LabelSelector struct {
-	MatchLabels Labels
+	MatchLabels Labels `json:",omitempty" yaml:",omitempty" `
 
-	MatchSelector []Selector
+	MatchSelector []Selector `json:",omitempty" yaml:",omitempty" `
 }
 
-func (ls LabelSelector) Match(labels Labels) bool {
-	// selector, err := labels.Parse(ls.MatchLabels)
-	// if err != nil {
-	// 	return nil, err
-	// }
+// func (ls LabelSelector) Match(labels Labels) bool {
+// 	// selector, err := labels.Parse(ls.MatchLabels)
+// 	// if err != nil {
+// 	// 	return nil, err
+// 	// }
 
-	return true
-}
+// 	return true
+// }

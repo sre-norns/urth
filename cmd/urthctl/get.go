@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/sre-norns/urth/pkg/urth"
 	"gopkg.in/yaml.v3"
@@ -24,7 +26,11 @@ type (
 	}
 
 	Runner struct {
-		ScenarioId urth.ResourceID `help:"Id of the scenario" arg:"" name:"scenario" `
+		Id urth.ResourceID `help:"Id of the runner" arg:"" name:"scenario" `
+	}
+
+	Labels struct {
+		Selector string `help:"Keys to match" optional:"" name:"selector" short:"l"`
 	}
 
 	GetCmd struct {
@@ -32,6 +38,7 @@ type (
 		Script   Script   `cmd:"" help:"Get a script data for a given scenario"`
 		Results  Results  `cmd:"" help:"Get a run result"`
 		Runner   Runner   `cmd:"" help:"Get a runner object from the server"`
+		Labels   Labels   `cmd:"" help:"Get labels"`
 
 		// TODO: Add explicit timeout
 	}
@@ -72,30 +79,74 @@ func getFormatter(formatName string) (formatter, error) {
 	return nil, fmt.Errorf("unexpected output format %q", formatName)
 }
 
-// func (c *Scenario) Run(cfg *commandContext) error {
-// 	format, err := getFormatter(cfg.Format)
-// 	if err != nil {
-// 		return err
-// 	}
+func (c *Scenario) Run(cfg *commandContext) error {
+	format, err := getFormatter(cfg.Format)
+	if err != nil {
+		return err
+	}
 
-// 	resource, err := fetchScenario(c.ScenarioId, cfg.ApiServerAddress)
-// 	if err != nil {
-// 		return err
-// 	}
+	ctx, cancel := context.WithTimeout(cfg.Context, 30*time.Second)
+	defer cancel()
 
-// 	return format(&resource)
-// }
+	resource, err := fetchScenario(ctx, c.ScenarioId, cfg.ApiServerAddress)
+	if err != nil {
+		return err
+	}
 
-// func (c *Results) Run(cfg *commandContext) error {
-// 	format, err := getFormatter(cfg.Format)
-// 	if err != nil {
-// 		return err
-// 	}
+	return format(&resource)
+}
 
-// 	resource, err := fetchResults(c.ScenarioId, c.RunId, cfg.ApiServerAddress)
-// 	if err != nil {
-// 		return err
-// 	}
+func (c *Runner) Run(cfg *commandContext) error {
+	format, err := getFormatter(cfg.Format)
+	if err != nil {
+		return err
+	}
 
-// 	return format(&resource)
-// }
+	ctx, cancel := context.WithTimeout(cfg.Context, 30*time.Second)
+	defer cancel()
+
+	resource, err := fetchRunner(ctx, c.Id, cfg.ApiServerAddress)
+	if err != nil {
+		return err
+	}
+
+	return format(&resource)
+}
+
+func (c *Results) Run(cfg *commandContext) error {
+	format, err := getFormatter(cfg.Format)
+	if err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(cfg.Context, 30*time.Second)
+	defer cancel()
+
+	resource, err := fetchResults(ctx, c.ScenarioId, c.RunId, cfg.ApiServerAddress)
+	if err != nil {
+		return err
+	}
+
+	return format(&resource)
+}
+
+func (c *Labels) Run(cfg *commandContext) error {
+	apiClient, err := urth.NewRestApiClient(cfg.ApiServerAddress)
+	if err != nil {
+		return fmt.Errorf("failed to initialize API Client: %w", err)
+	}
+
+	var query urth.SearchQuery
+	query.Labels = c.Selector
+
+	labels, err := apiClient.GetLabels().List(cfg.Context, query)
+	if err != nil {
+		return err
+	}
+
+	for _, kv := range labels {
+		fmt.Printf("%v=%v\n", kv.Key, kv.Value)
+	}
+
+	return nil
+}

@@ -15,11 +15,6 @@ type ResourceID uint
 // Type to represent cron-like schedule
 type CronSchedule string
 
-// TypeMeta describe individual objects returned by API
-type TypeMeta struct {
-	Kind string `form:"kind" json:"kind" xml:"kind" binding:"required"`
-}
-
 type VersionedResourceId struct {
 	ID      ResourceID `form:"id" json:"id" yaml:"id" xml:"id"`
 	Version uint32     `form:"version" json:"version" yaml:"version" xml:"version"`

@@ -12,7 +12,7 @@ type commandContext struct {
 	runner.RunnerConfig
 
 	Format  string `help:"Output format json/yaml" default:"json"`
-	context context.Context
+	Context context.Context
 }
 
 var appCli struct {
@@ -23,6 +23,7 @@ var appCli struct {
 	Run     RunCmd     `cmd:"" help:"Run a scenario or a script locally"`
 	Get     GetCmd     `cmd:""`
 	Convert ConvertHar `cmd:"" help:"Convert HAR file into a .http file format"`
+	Apply   ApplyCmd   `cmd:"" help:"Apply resource changes to the API server"`
 }
 
 func main() {
@@ -33,7 +34,7 @@ func main() {
 	)
 
 	appCtx.FatalIfErrorf(appCtx.Run(&commandContext{
-		context:      mainContext,
+		Context:      mainContext,
 		Format:       appCli.Format,
 		RunnerConfig: appCli.RunnerConfig,
 	}))

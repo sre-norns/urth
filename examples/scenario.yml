@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: scenario
+metadata:
+ name: simple-web-prober
+ labels:
+  app: web-prob
+  function: front-end
+spec:
+ active: true
+ schedule: "* * * * *"
+ script:
+   kind: application/javascript
+

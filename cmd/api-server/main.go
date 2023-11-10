@@ -88,7 +88,7 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 	router := gin.Default()
 
 	// Simple group: v1
-	v1 := router.Group("/v1")
+	v1 := router.Group("api/v1")
 	{
 		v1.GET("/version", func(ctx *gin.Context) {
 			bi, ok := debug.ReadBuildInfo()

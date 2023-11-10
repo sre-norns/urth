@@ -19,7 +19,7 @@ type RunnerConfig struct {
 	Labels       wyrd.Labels        `help:"Extra labels to identify this instance of the runner"`
 	Requirements wyrd.LabelSelector `kong:"-"`
 
-	// ApiServerAddress string             `help:"URL address of the API server" default:"http://localhost:8080/v1/" `
+	ApiServerAddress string `help:"URL address of the API server" default:"http://localhost:8080/" `
 	WorkingDirectory string `help:"Worker directory where test are executed" default:"." type:"existingdir"`
 }
 
@@ -54,13 +54,12 @@ func GetRuntimeLabels() wyrd.Labels {
 	}
 }
 
-func NewDefaultConfig(apiUrl string) RunnerConfig {
+func NewDefaultConfig() RunnerConfig {
 	labels := GetRuntimeLabels()
 	labels = wyrd.MergeLabels(labels, GetNodeRuntimeLabels())
 	labels = wyrd.MergeLabels(labels, GetPythonRuntimeLabels())
 
 	return RunnerConfig{
-		// ApiServerAddress: apiUrl,
 		Labels: labels,
 	}
 }

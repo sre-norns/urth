@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/sre-norns/urth/pkg/runner"
 	"github.com/sre-norns/urth/pkg/urth"
+	"gopkg.in/yaml.v3"
 )
 
 type RunCmd struct {
@@ -87,36 +89,39 @@ func jobFromFile(filename string, kindHint string) (urth.ScenarioScript, error) 
 		return urth.ScenarioScript{}, fmt.Errorf("failed to read content: %w", err)
 	}
 
-	// if kindHint == "" {
-	// 	if ext == ".yaml" || ext == ".yml" {
-	// 		var scenario urth.Scenario
-	// 		err := yaml.Unmarshal(content, &scenario)
+	if kindHint == "" {
+		switch ext {
+		case ".yaml", ".yml":
+			var scenario urth.Scenario
+			err := yaml.Unmarshal(content, &scenario)
+			return scenario.Script, err
+		case ".json":
+			var scenario urth.Scenario
+			err := json.Unmarshal(content, &scenario)
 
-	// 		return urth.ScenarioToRunnable(scenario), err
-	// 	}
-	// 	if ext == ".json" {
-	// 		var scenario urth.Scenario
-	// 		err := json.Unmarshal(content, &scenario)
+			return scenario.Script, err
+		}
 
-	// 		return urth.ScenarioToRunnable(scenario), err
-	// 	}
-	// 	// Fallthrough: Not a recognized format for scenario file
-	// }
+		// Fallthrough: Not a recognized format for scenario file
+	}
 
 	var kind urth.ScenarioKind
 	// Kind guessing
 	if kindHint != "" {
 		kind = urth.ScenarioKind(kindHint)
-	} else if ext == ".js" || ext == ".mjs" {
-		kind = urth.PuppeteerKind
-	} else if ext == ".py" {
-		kind = urth.PyPuppeteerKind
-	} else if ext == ".tcp" {
-		kind = urth.TcpPortCheckKind
-	} else if ext == ".http" {
-		kind = urth.HttpGetKind
-	} else if ext == ".har" {
-		kind = urth.HarKind
+	} else {
+		switch ext {
+		case ".js", ".mjs":
+			kind = urth.PuppeteerKind
+		case ".py":
+			kind = urth.PyPuppeteerKind
+		case ".tcp":
+			kind = urth.TcpPortCheckKind
+		case ".http", ".rest":
+			kind = urth.HttpGetKind
+		case ".har":
+			kind = urth.HarKind
+		}
 	}
 
 	if string(kind) == "" {
@@ -138,24 +143,24 @@ func (c *RunCmd) Run(cfg *commandContext) error {
 		return fmt.Errorf("only file or scenario ID must be provided, but not both")
 	}
 
+	if c.ScenarioId != 0 {
+		scenario, err := fetchScenario(cfg.Context, c.ScenarioId, cfg.ApiServerAddress)
+		if err != nil {
+			return err
+		}
+		return c.runScenario(cfg.Context, scenario.Name, scenario.Script, cfg.WorkingDirectory)
+	}
+
 	for _, filename := range c.Files {
 		script, err := jobFromFile(filename, c.Kind)
 		if err != nil {
 			return err
 		}
 
-		if err := c.runScenario(cfg.context, strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename)), script, cfg.WorkingDirectory); err != nil {
+		if err := c.runScenario(cfg.Context, strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename)), script, cfg.WorkingDirectory); err != nil {
 			return err
 		}
 	}
-
-	// if c.ScenarioId != 0 {
-	// 	scenario, err = fetchScenario(c.ScenarioId, cfg.ApiServerAddress)
-	// 	if err != nil {
-	// 		return err
-	// 	}
-	// return c.runScenario(cfg.context, scenario.Script, cfg.WorkingDirectory)
-	// }
 
 	return nil
 }
