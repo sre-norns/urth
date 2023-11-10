@@ -19,3 +19,7 @@ serve-site: # Start Web UI
 .PHONY: run-redis-podman
 run-redis-podman: # Start redis using podman container
 	@podman run -p 6379:6379 redis
+
+.PHONY: test
+test:
+	@go test ./...
