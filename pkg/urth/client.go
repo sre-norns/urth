@@ -358,8 +358,8 @@ func (c *scenariosApiClient) Delete(ctx context.Context, id ResourceID) (bool, e
 }
 
 // Update a single resource identified by a unique ID
-func (c *scenariosApiClient) Update(ctx context.Context, id ResourceID, scenario CreateScenario) (VersionedResourceId, error) {
-	return VersionedResourceId{}, nil
+func (c *scenariosApiClient) Update(ctx context.Context, id ResourceID, scenario CreateScenario) (CreatedResponse, error) {
+	return CreatedResponse{}, nil
 }
 
 // ClientAPI?

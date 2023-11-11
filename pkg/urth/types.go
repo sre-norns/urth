@@ -12,9 +12,6 @@ import (
 // Type to represent an ID of a resource
 type ResourceID uint
 
-// Type to represent cron-like schedule
-type CronSchedule string
-
 type VersionedResourceId struct {
 	ID      ResourceID `form:"id" json:"id" yaml:"id" xml:"id"`
 	Version uint32     `form:"version" json:"version" yaml:"version" xml:"version"`
@@ -76,6 +73,8 @@ type PartialObjectMetadata struct {
 
 	// Standard recourse's metadata.
 	ResourceMeta `json:"metadata,omitempty" yaml:"metadata,omitempty"`
+
+	Spec interface{} `json:"spec,omitempty" yaml:"spec,omitempty"`
 }
 
 // RunnerDefinition holds information about a runner as supplied by the administrator to register one
@@ -105,16 +104,19 @@ type Runner struct {
 	RunnerRegistration `json:",inline" yaml:",inline"`
 }
 
+// Type to represent cron-like schedule
+type CronSchedule string
+
 type ScenarioScript struct {
 	// Kind identifies the type of content this scenario implementing
-	Kind ScenarioKind `form:"kind" json:"kind" yaml:"kind" xml:"kind"  binding:"required"`
+	Kind ScenarioKind `form:"kind" json:"kind,omitempty" yaml:"kind,omitempty" xml:"kind"  binding:"required"`
 
 	// Actual script, of a 'kind' type
-	Content []byte `form:"content" json:"content" yaml:"content" xml:"content"  binding:"required"`
+	Content []byte `form:"content" json:"content,omitempty" yaml:"content,omitempty" xml:"content"  binding:"required"`
 }
 
 type CreateScenario struct {
-	// Description is a human readable text to describe intent behind this scenario
+	// Description is a human readable text to describe the scenario
 	Description string `form:"description" json:"description,omitempty" yaml:"description,omitempty" xml:"description"`
 
 	// Requirements are optional to select sub-set of runners that are qualified to perform the script.
@@ -127,7 +129,7 @@ type CreateScenario struct {
 	IsActive bool `form:"active" json:"active" yaml:"active" xml:"active"`
 
 	// Script is the actual test scenario that a qualified runner executes
-	Script ScenarioScript `form:"script" json:"script" yaml:"script" xml:"script" gorm:"embedded;embeddedPrefix:script_"`
+	Script *ScenarioScript `form:"script" json:"script,omitempty" yaml:"script,omitempty" xml:"script" gorm:"embedded;embeddedPrefix:script_"`
 }
 
 type Scenario struct {

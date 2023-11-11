@@ -20,7 +20,7 @@ type RunScenarioJob struct {
 	ScenarioID VersionedResourceId `form:"play_id" json:"play_id" yaml:"play_id" xml:"play_id"  binding:"required" `
 
 	// Script of a job to be performed by a runner
-	Script ScenarioScript `form:"script" json:"script" yaml:"script" xml:"script" `
+	Script *ScenarioScript `form:"script" json:"script" yaml:"script" xml:"script" `
 
 	// True if you want the worker to keep temp working directory with run artifacts
 	IsKeepDirectory bool `form:"keepDir" json:"keepDir" yaml:"keepDir" xml:"keepDir" `

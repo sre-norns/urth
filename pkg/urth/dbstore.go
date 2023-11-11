@@ -63,9 +63,9 @@ func (s *DbStore) Delete(ctx context.Context, value any, id ResourceID) (bool, e
 	return tx.RowsAffected == 1, tx.Error
 }
 
-func (s *DbStore) GuessKind(value any) (TypeMeta, error) {
+func (s *DbStore) GuessKind(value reflect.Value) (TypeMeta, error) {
 	stmt := &gorm.Statement{DB: s.db}
-	if err := stmt.Parse(value); err != nil {
+	if err := stmt.Parse(value.Interface()); err != nil {
 		return TypeMeta{}, err
 	}
 
@@ -94,8 +94,8 @@ func (s *DbStore) FindResources(ctx context.Context, resources any, searchQuery 
 		return resultType, rtx.Error
 	}
 
-	t := reflect.ValueOf(resources) // TypeOf(resources)
-	if t.Kind() == reflect.Slice && t.Len() > 0 {
+	t := reflect.ValueOf(resources).Elem()
+	if (t.Kind() == reflect.Slice || t.Kind() == reflect.Array) && t.Len() > 0 {
 		resultType, err = s.GuessKind(t.Index(0))
 		if err != nil {
 			return resultType, err

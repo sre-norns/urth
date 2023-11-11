@@ -1,11 +1,10 @@
 {
     "active": true,
-    "name": "Urht is up",
     "description": "My first scenario",
     "requirements": {},
     "schedule": "0 0 * * TUE",
     "script": {
-        "content": "Y29uc3QgcHVwcGV0ZWVyID0gcmVxdWlyZSgncHVwcGV0ZWVyJyk7CgooYXN5bmMgKCkgPT4gewogIC8vIExhdW5jaCB0aGUgYnJvd3NlciBhbmQgb3BlbiBhIG5ldyBibGFuayBwYWdlCiAgY29uc3QgYnJvd3NlciA9IGF3YWl0IHB1cHBldGVlci5sYXVuY2goe2hlYWRsZXNzOiAibmV3In0pOwogIGNvbnN0IHBhZ2UgPSBhd2FpdCBicm93c2VyLm5ld1BhZ2UoKTsKCiAgLy8gTmF2aWdhdGUgdGhlIHBhZ2UgdG8gYSBVUkwKICBhd2FpdCBwYWdlLmdvdG8oJ2h0dHBzOi8vZGV2ZWxvcGVyLmNocm9tZS5jb20vJyk7CgogIC8vIFNldCBzY3JlZW4gc2l6ZQogIGF3YWl0IHBhZ2Uuc2V0Vmlld3BvcnQoe3dpZHRoOiAxMDgwLCBoZWlnaHQ6IDEwMjR9KTsKCiAgLy8gVHlwZSBpbnRvIHNlYXJjaCBib3gKICBhd2FpdCBwYWdlLnR5cGUoJy5zZWFyY2gtYm94X19pbnB1dCcsICdhdXRvbWF0ZSBiZXlvbmQgcmVjb3JkZXInKTsKCiAgLy8gV2FpdCBhbmQgY2xpY2sgb24gZmlyc3QgcmVzdWx0CiAgY29uc3Qgc2VhcmNoUmVzdWx0U2VsZWN0b3IgPSAnLnNlYXJjaC1ib3hfX2xpbmsnOwogIGF3YWl0IHBhZ2Uud2FpdEZvclNlbGVjdG9yKHNlYXJjaFJlc3VsdFNlbGVjdG9yKTsKICBhd2FpdCBwYWdlLmNsaWNrKHNlYXJjaFJlc3VsdFNlbGVjdG9yKTsKCiAgLy8gTG9jYXRlIHRoZSBmdWxsIHRpdGxlIHdpdGggYSB1bmlxdWUgc3RyaW5nCiAgY29uc3QgdGV4dFNlbGVjdG9yID0gYXdhaXQgcGFnZS53YWl0Rm9yU2VsZWN0b3IoCiAgICAndGV4dC9DdXN0b21pemUgYW5kIGF1dG9tYXRlJwogICk7CiAgY29uc3QgZnVsbFRpdGxlID0gYXdhaXQgdGV4dFNlbGVjdG9yPy5ldmFsdWF0ZShlbCA9PiBlbC50ZXh0Q29udGVudCk7CgogIC8vIFByaW50IHRoZSBmdWxsIHRpdGxlCiAgY29uc29sZS5sb2coJ1RoZSB0aXRsZSBvZiB0aGlzIGJsb2cgcG9zdCBpcyAiJXMiLicsIGZ1bGxUaXRsZSk7CgogIGF3YWl0IGJyb3dzZXIuY2xvc2UoKTsKfSkoKTsK",
-        "kind": "application/json"
+        "content": "Y29uc29sZS5sb2coImhlbGxvIik=",
+        "kind": "application/javascript"
     }
 }

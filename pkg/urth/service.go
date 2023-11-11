@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"reflect"
 )
 
 type ReadableRecourseApi[T interface{}] interface {
@@ -25,7 +26,7 @@ type ScenarioApi interface {
 	Delete(ctx context.Context, id ResourceID) (bool, error)
 
 	// Update a single resource identified by a unique ID
-	Update(ctx context.Context, id ResourceID, scenario CreateScenario) (VersionedResourceId, error)
+	Update(ctx context.Context, id ResourceID, scenario CreateScenario) (CreatedResponse, error)
 
 	UpdateScript(ctx context.Context, id ResourceID, script ScenarioScript) (VersionedResourceId, bool, error)
 
@@ -166,9 +167,12 @@ func (m *scenarioApiImpl) List(ctx context.Context, query SearchQuery) ([]Partia
 
 	results := make([]PartialObjectMetadata, 0, len(resources))
 	for _, sc := range resources {
+		// TODO: Script should be moved into a separate table, that way we wont have to filter it out
+		sc.Script = nil
 		results = append(results, PartialObjectMetadata{
 			TypeMeta:     kind,
 			ResourceMeta: sc.ResourceMeta,
+			Spec:         sc.CreateScenario,
 		})
 	}
 
@@ -177,7 +181,7 @@ func (m *scenarioApiImpl) List(ctx context.Context, query SearchQuery) ([]Partia
 
 func (m *scenarioApiImpl) Create(ctx context.Context, newEntry CreateScenario) (CreatedResponse, error) {
 	entry := Scenario{CreateScenario: newEntry}
-	kind, err := m.store.GuessKind(&entry)
+	kind, err := m.store.GuessKind(reflect.ValueOf(&entry))
 	if err != nil {
 		return CreatedResponse{}, err
 	}
@@ -208,7 +212,7 @@ func (m *scenarioApiImpl) UpdateScript(ctx context.Context, id ResourceID, scrip
 		return result.GetVersionedID(), ok, err
 	}
 
-	result.Script = script
+	result.Script = &script
 	result.Version += 1
 	_, err = m.store.Update(ctx, &result, id)
 
@@ -217,12 +221,16 @@ func (m *scenarioApiImpl) UpdateScript(ctx context.Context, id ResourceID, scrip
 
 // FIXME: Must take versionedID?
 // TODO: Return kind!
-func (m *scenarioApiImpl) Update(ctx context.Context, id ResourceID, scenarioUpdate CreateScenario) (VersionedResourceId, error) {
+func (m *scenarioApiImpl) Update(ctx context.Context, id ResourceID, scenarioUpdate CreateScenario) (CreatedResponse, error) {
 	var result Scenario
-	_, err := m.store.Get(ctx, &result, id)
-
+	kind, err := m.store.GuessKind(reflect.ValueOf(&result))
 	if err != nil {
-		return result.GetVersionedID(), err
+		return CreatedResponse{}, err
+	}
+
+	_, err = m.store.Get(ctx, &result, id)
+	if err != nil {
+		return CreatedResponse{}, err
 	}
 
 	// // TODO: Update other fields!
@@ -241,12 +249,15 @@ func (m *scenarioApiImpl) Update(ctx context.Context, id ResourceID, scenarioUpd
 		result.Script = scenarioUpdate.Script
 	}
 
-	// result.IsActive = scenarioUpdate.IsActive
+	result.IsActive = scenarioUpdate.IsActive
 
 	result.Version += 1
 	_, err = m.store.Update(ctx, &result, id)
 
-	return result.GetVersionedID(), err
+	return CreatedResponse{
+		TypeMeta:            kind,
+		VersionedResourceId: result.GetVersionedID(),
+	}, err
 }
 
 //------------------------------
@@ -279,7 +290,7 @@ func (m *resultsApiImpl) Create(ctx context.Context, newEntry CreateScenarioRunR
 		CreateScenarioRunResults: newEntry,
 		UpdateToken:              "super-secret", // FIXME: Generate JWT
 	}
-	kind, err := m.store.GuessKind(&entry)
+	kind, err := m.store.GuessKind(reflect.ValueOf(&entry))
 	if err != nil {
 		return CreatedRunResponse{}, err
 	}
@@ -298,7 +309,7 @@ func (m *resultsApiImpl) Create(ctx context.Context, newEntry CreateScenarioRunR
 func (m *resultsApiImpl) Update(ctx context.Context, id VersionedResourceId, token ApiToken, runResults FinalRunResults) (CreatedResponse, error) {
 	var entry ScenarioRunResults
 
-	kind, err := m.store.GuessKind(&entry)
+	kind, err := m.store.GuessKind(reflect.ValueOf(&entry))
 	if err != nil {
 		return CreatedResponse{}, err
 	}

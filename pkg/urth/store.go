@@ -1,6 +1,9 @@
 package urth
 
-import "context"
+import (
+	"context"
+	"reflect"
+)
 
 type Store interface {
 	Create(ctx context.Context, value any) error
@@ -13,5 +16,5 @@ type Store interface {
 	FindResources(ctx context.Context, dest any, searchQuery SearchQuery) (TypeMeta, error)
 	FindInto(ctx context.Context, model, into any, pagination Pagination) error
 
-	GuessKind(value any) (TypeMeta, error)
+	GuessKind(value reflect.Value) (TypeMeta, error)
 }

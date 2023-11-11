@@ -230,16 +230,13 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 				return
 			}
 
-			id, err := srv.GetScenarioAPI().Update(ctx.Request.Context(), resourceRequest.ResourceID(), newValue)
+			updateResponse, err := srv.GetScenarioAPI().Update(ctx.Request.Context(), resourceRequest.ResourceID(), newValue)
 			if err != nil {
 				ctx.AbortWithStatusJSON(http.StatusBadRequest, urth.NewErrorRepose(http.StatusText(http.StatusBadRequest), err))
 				return
 			}
 
-			marshalResponse(ctx, http.StatusCreated, urth.CreatedResponse{
-				TypeMeta:            urth.TypeMeta{Kind: "scenario"},
-				VersionedResourceId: id,
-			})
+			marshalResponse(ctx, http.StatusCreated, updateResponse)
 		})
 
 		v1.GET("/scenarios/:id/script", func(ctx *gin.Context) {

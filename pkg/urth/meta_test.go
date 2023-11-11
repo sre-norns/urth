@@ -90,7 +90,7 @@ spec:
 					IsActive:    true,
 					RunSchedule: "* * * * *",
 					// Description: "Awesome",
-					Script: ScenarioScript{
+					Script: &ScenarioScript{
 						Kind: "application/javascript",
 					},
 					// Requirements: wyrd.LabelSelector{

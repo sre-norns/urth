@@ -43,7 +43,11 @@ var kindRunnerMap = map[urth.ScenarioKind]ScriptRunner{
 }
 
 // Execute a single scenario run
-func Play(ctx context.Context, script urth.ScenarioScript, options RunOptions) (urth.FinalRunResults, error) {
+func Play(ctx context.Context, script *urth.ScenarioScript, options RunOptions) (urth.FinalRunResults, error) {
+	if script == nil {
+		return urth.NewRunResults(urth.RunFinishedError), fmt.Errorf("no script to run")
+	}
+
 	if len(script.Kind) == 0 {
 		return urth.NewRunResults(urth.RunFinishedError), fmt.Errorf("no script Kind specified")
 	}

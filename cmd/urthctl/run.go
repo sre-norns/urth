@@ -28,7 +28,7 @@ type RunCmd struct {
 	Headless bool `help:"If true, puppeteer scripts are run in a headless mode"`
 }
 
-func (c *RunCmd) runScenario(cmdCtx context.Context, sourceName string, script urth.ScenarioScript, workingDir string) error {
+func (c *RunCmd) runScenario(cmdCtx context.Context, sourceName string, script *urth.ScenarioScript, workingDir string) error {
 	ctx, cancel := context.WithTimeout(cmdCtx, c.RunTimeout)
 	defer cancel()
 
@@ -83,10 +83,10 @@ func readContent(filename string) ([]byte, string, error) {
 	return content, filepath.Ext(filename), err
 }
 
-func jobFromFile(filename string, kindHint string) (urth.ScenarioScript, error) {
+func jobFromFile(filename string, kindHint string) (*urth.ScenarioScript, error) {
 	content, ext, err := readContent(filename)
 	if err != nil {
-		return urth.ScenarioScript{}, fmt.Errorf("failed to read content: %w", err)
+		return nil, fmt.Errorf("failed to read content: %w", err)
 	}
 
 	if kindHint == "" {
@@ -125,10 +125,10 @@ func jobFromFile(filename string, kindHint string) (urth.ScenarioScript, error) 
 	}
 
 	if string(kind) == "" {
-		return urth.ScenarioScript{}, fmt.Errorf("no script kind for content file (ext: %q)", ext)
+		return nil, fmt.Errorf("no script kind for content file (ext: %q)", ext)
 	}
 
-	return urth.ScenarioScript{
+	return &urth.ScenarioScript{
 		Kind:    kind,
 		Content: content,
 	}, nil
