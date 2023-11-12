@@ -2,6 +2,7 @@ package redqueue
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"sync/atomic"
 
@@ -49,9 +50,9 @@ func (s *asynqScheduler) Close() error {
 }
 
 func (s *asynqScheduler) Schedule(ctx context.Context, job urth.RunScenarioJob) (urth.RunId, error) {
-	// if !scenario.IsActive {
-	// 	return urth.InvalidRunId, nil
-	// }
+	if job.Script == nil {
+		return urth.InvalidRunId, fmt.Errorf("cannot schedule a job %v with no script", job.ScenarioID)
+	}
 
 	task, err := MarshalJob(job)
 	if err != nil {
@@ -65,7 +66,10 @@ func (s *asynqScheduler) Schedule(ctx context.Context, job urth.RunScenarioJob) 
 	if err != nil {
 		log.Printf("Failed to publish: %v", err)
 		atomic.AddUint64(&s.totalErrors, 1)
+
+		return urth.InvalidRunId, err
 	}
+
 	log.Printf("published task: %v", info.ID)
 	return urth.RunId(info.ID), err
 }

@@ -30,8 +30,24 @@ curl 'http://localhost:8080/api/v1/scenarios'
 curl -X DELETE 'http://localhost:8080/api/v1/scenarios/1'
 ```
 
+## Trigger a scenario Run manually (outside of normal schedule)
+```bash
+curl -X PUT 'http://localhost:8080/api/v1/scenarios/1/results'  \
+-H "Content-Type: application/json" \
+--data-binary "@examples/run.scenario.json"
+```
+
+
+## Post that a job has been picked up by a worker:
+```bash
+curl -X POST 'http://localhost:8080/api/v1/scenarios/4/results'  \
+-H "Content-Type: application/json" \
+--data-binary "@examples/scenario.run.started.json"
+```
+
 
 ## Using `urhctl` (WIP)
 ```bash
 go run ./cmd/urthctl apply ./examples/scenario.yml
 ```
+

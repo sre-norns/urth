@@ -135,15 +135,17 @@ func (s *serviceImpl) ScheduleScenarioRun(ctx context.Context, id ResourceID, re
 		return ManualRunRequestResponse{}, true, err
 	}
 
+	// TODO: Check if scenario is enabled!
+	// if !scenario.IsActive {
+	// 	return urth.InvalidRunId, nil
+	// }
+
 	log.Printf("Scheduling manually: %v (active=%t)", scenario.GetVersionedID(), scenario.IsActive)
 	runId, err := s.scheduler.Schedule(ctx, ScenarioToRunnable(scenario))
-	if err != nil {
-		return ManualRunRequestResponse{}, ok, err
-	}
 
 	return ManualRunRequestResponse{
 		RunId: runId,
-	}, true, err
+	}, ok, err
 }
 
 //------------------------------
