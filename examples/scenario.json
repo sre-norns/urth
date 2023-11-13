@@ -1,4 +1,8 @@
 {
+    "name": "scenario-example-1",
+    "labels": {
+        "os": "linux"
+    },
     "active": true,
     "description": "My first scenario",
     "requirements": {},

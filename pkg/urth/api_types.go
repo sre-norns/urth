@@ -1,5 +1,7 @@
 package urth
 
+import "github.com/sre-norns/urth/pkg/wyrd"
+
 type (
 
 	// TODO: Replace with GORM pagination middleware
@@ -32,6 +34,20 @@ type (
 	ErrorRepose struct {
 		Code    string
 		Message string
+	}
+
+	CreateResourceMeta struct {
+		// Name is a human readable name of the resource used for display in UI
+		Name string `form:"name" json:"name" yaml:"name" xml:"name"  binding:"required"`
+
+		// Labels is map of string keys and values that can be used to organize and categorize
+		// (scope and select) resources.
+		Labels wyrd.Labels `form:"labels,omitempty" json:"labels,omitempty" yaml:"labels,omitempty" xml:"labels,omitempty"`
+	}
+
+	CreateScenarioRequest struct {
+		CreateResourceMeta `uri:",inline" form:",inline" json:",inline" yaml:",inline" `
+		CreateScenario     `uri:",inline" form:",inline" json:",inline" yaml:",inline" `
 	}
 
 	CreatedResponse struct {

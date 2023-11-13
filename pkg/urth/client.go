@@ -327,7 +327,7 @@ func (c *scenariosApiClient) Get(ctx context.Context, id ResourceID) (Scenario, 
 	return result, true, err
 }
 
-func (c *scenariosApiClient) Create(ctx context.Context, scenario CreateScenario) (CreatedResponse, error) {
+func (c *scenariosApiClient) Create(ctx context.Context, scenario CreateScenarioRequest) (CreatedResponse, error) {
 	var result CreatedResponse
 	data, err := json.Marshal(scenario)
 	if err != nil {
