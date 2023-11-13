@@ -20,7 +20,7 @@ type ReadableRecourseApi[T interface{}] interface {
 type ScenarioApi interface {
 	ReadableRecourseApi[Scenario]
 
-	Create(ctx context.Context, scenario CreateScenario) (CreatedResponse, error)
+	Create(ctx context.Context, scenario CreateScenarioRequest) (CreatedResponse, error)
 
 	// Delete a single resource identified by a unique ID
 	Delete(ctx context.Context, id ResourceID) (bool, error)
@@ -135,15 +135,17 @@ func (s *serviceImpl) ScheduleScenarioRun(ctx context.Context, id ResourceID, re
 		return ManualRunRequestResponse{}, true, err
 	}
 
+	// TODO: Check if scenario is enabled!
+	// if !scenario.IsActive {
+	// 	return urth.InvalidRunId, nil
+	// }
+
 	log.Printf("Scheduling manually: %v (active=%t)", scenario.GetVersionedID(), scenario.IsActive)
 	runId, err := s.scheduler.Schedule(ctx, ScenarioToRunnable(scenario))
-	if err != nil {
-		return ManualRunRequestResponse{}, ok, err
-	}
 
 	return ManualRunRequestResponse{
 		RunId: runId,
-	}, true, err
+	}, ok, err
 }
 
 //------------------------------
@@ -179,8 +181,15 @@ func (m *scenarioApiImpl) List(ctx context.Context, query SearchQuery) ([]Partia
 	return results, nil
 }
 
-func (m *scenarioApiImpl) Create(ctx context.Context, newEntry CreateScenario) (CreatedResponse, error) {
-	entry := Scenario{CreateScenario: newEntry}
+func (m *scenarioApiImpl) Create(ctx context.Context, newEntry CreateScenarioRequest) (CreatedResponse, error) {
+	entry := Scenario{
+		ResourceMeta: ResourceMeta{
+			Name:   newEntry.Name,
+			Labels: newEntry.Labels,
+		},
+		CreateScenario: newEntry.CreateScenario,
+	}
+
 	kind, err := m.store.GuessKind(reflect.ValueOf(&entry))
 	if err != nil {
 		return CreatedResponse{}, err

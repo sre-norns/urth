@@ -167,7 +167,7 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 		})
 
 		v1.POST("/scenarios", contentTypeApi(), func(ctx *gin.Context) {
-			var newValue urth.CreateScenario
+			var newValue urth.CreateScenarioRequest
 			if err := ctx.Bind(&newValue); err != nil {
 				return
 			}

@@ -6,7 +6,7 @@ run-api-server: # Start API server
 
 .PHONY: run-asynq-worker
 run-asynq-worker: # Start Redis based worker
-	@go run ./cmd/asynq-worker
+	@go run ./cmd/asynq-runner
 
 .PHONY: run-scheduler
 run-scheduler: # Start scheduler server

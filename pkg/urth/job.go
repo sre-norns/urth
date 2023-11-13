@@ -7,6 +7,9 @@ import (
 
 // RunScenarioJob represents a job enqueued for to be picked by a qualified worker
 type RunScenarioJob struct {
+	// Name of the scenario that produced this job
+	Name string `form:"name,omitempty" json:"name,omitempty" yaml:"name,omitempty" xml:"name,omitempty" `
+
 	// Labels of the scenario
 	Labels wyrd.Labels `form:"labels,omitempty" json:"labels,omitempty" yaml:"labels,omitempty" xml:"labels,omitempty" `
 
@@ -28,6 +31,7 @@ type RunScenarioJob struct {
 
 func ScenarioToRunnable(scenario Scenario) RunScenarioJob {
 	return RunScenarioJob{
+		Name:         scenario.Name,
 		Labels:       scenario.Labels,
 		Requirements: scenario.Requirements,
 		RunSchedule:  scenario.RunSchedule,
