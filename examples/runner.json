@@ -1,0 +1,11 @@
+{
+    "name": "example-runner",
+    "labels": {
+        "cloud": "gcp"
+    },
+    "active": true,
+    "description": "My first Cloud runner",
+    "requirements": {
+        "cloud": true
+    }
+}

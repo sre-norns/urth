@@ -50,6 +50,11 @@ type (
 		CreateScenario     `uri:",inline" form:",inline" json:",inline" yaml:",inline" `
 	}
 
+	CreateRunnerRequest struct {
+		CreateResourceMeta `uri:",inline" form:",inline" json:",inline" yaml:",inline" `
+		RunnerDefinition   `uri:",inline" form:",inline" json:",inline" yaml:",inline" `
+	}
+
 	CreatedResponse struct {
 		// Gives us kind info
 		TypeMeta `json:",inline" yaml:",inline"`

@@ -8,7 +8,7 @@
     "requirements": {},
     "schedule": "0 0 * * TUE",
     "script": {
-        "content": "Y29uc29sZS5sb2coImhlbGxvIik=",
-        "kind": "application/javascript"
+        "kind": "puppeteer/javascript",
+        "content": "Y29uc29sZS5sb2coImhlbGxvIik="
     }
 }

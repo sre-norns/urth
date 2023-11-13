@@ -206,6 +206,25 @@ func (c *RunnersApiClient) Get(ctx context.Context, id ResourceID) (resource Run
 	return result, true, nil
 }
 
+func (m *RunnersApiClient) Create(ctx context.Context, newEntry CreateRunnerRequest) (CreatedResponse, error) {
+	var result CreatedResponse
+	data, err := json.Marshal(newEntry)
+	if err != nil {
+		return result, err
+	}
+
+	targetApi := urlForPath(m.baseUrl, "v1/runners", nil)
+	resp, err := m.post(targetApi, bytes.NewReader(data))
+	if err != nil {
+		return result, err
+	}
+
+	defer resp.Body.Close()
+
+	err = json.NewDecoder(resp.Body).Decode(&result)
+	return result, err
+}
+
 type RunResultApiRestClient struct {
 	RestApiClient
 

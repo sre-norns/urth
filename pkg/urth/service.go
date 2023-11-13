@@ -20,30 +20,33 @@ type ReadableRecourseApi[T interface{}] interface {
 type ScenarioApi interface {
 	ReadableRecourseApi[Scenario]
 
-	Create(ctx context.Context, scenario CreateScenarioRequest) (CreatedResponse, error)
+	Create(ctx context.Context, entry CreateScenarioRequest) (CreatedResponse, error)
 
 	// Delete a single resource identified by a unique ID
 	Delete(ctx context.Context, id ResourceID) (bool, error)
 
 	// Update a single resource identified by a unique ID
-	Update(ctx context.Context, id ResourceID, scenario CreateScenario) (CreatedResponse, error)
+	Update(ctx context.Context, id ResourceID, entry CreateScenario) (CreatedResponse, error)
 
-	UpdateScript(ctx context.Context, id ResourceID, script ScenarioScript) (VersionedResourceId, bool, error)
+	UpdateScript(ctx context.Context, id ResourceID, entry ScenarioScript) (VersionedResourceId, bool, error)
 
-	// ClientAPI?
+	// ClientAPI: Can it be done using filters?
 	ListRunnable(ctx context.Context, query SearchQuery) ([]Scenario, error)
 }
 
 type RunResultApi interface {
 	ReadableRecourseApi[ScenarioRunResults]
 
-	Create(ctx context.Context, runResults CreateScenarioRunResults) (CreatedRunResponse, error)
+	Create(ctx context.Context, entry CreateScenarioRunResults) (CreatedRunResponse, error)
 
-	Update(ctx context.Context, id VersionedResourceId, token ApiToken, runResults FinalRunResults) (CreatedResponse, error)
+	Update(ctx context.Context, id VersionedResourceId, token ApiToken, entry FinalRunResults) (CreatedResponse, error)
 }
 
 type RunnersApi interface {
 	ReadableRecourseApi[Runner]
+
+	// Client request to create a new 'slot' for a runner
+	Create(ctx context.Context, entry CreateRunnerRequest) (CreatedResponse, error)
 
 	// UserControl() error
 	// PostUpdate() error
@@ -295,9 +298,15 @@ func (m *resultsApiImpl) Create(ctx context.Context, newEntry CreateScenarioRunR
 		return CreatedRunResponse{}, fmt.Errorf("invalid scenario ID for given results entry")
 	}
 
+	// TODO: Validate that Create results request is from an authentic worker that is allowed to take jobs!
+
 	entry := ScenarioRunResults{
+		ResourceMeta: ResourceMeta{
+			// Name: ???,
+			// Labels: ???,
+		},
 		CreateScenarioRunResults: newEntry,
-		UpdateToken:              "super-secret", // FIXME: Generate JWT
+		UpdateToken:              "super-secret", // FIXME: Generate JWT with valid-until clause, to give worker a time to post
 	}
 	kind, err := m.store.GuessKind(reflect.ValueOf(&entry))
 	if err != nil {
@@ -328,7 +337,7 @@ func (m *resultsApiImpl) Update(ctx context.Context, id VersionedResourceId, tok
 		return CreatedResponse{}, fmt.Errorf("requested resource not found") // FIXME: 404!
 	}
 
-	// Validate API Token
+	//FIXME: Validate API Token
 	if entry.UpdateToken != token {
 		return CreatedResponse{}, fmt.Errorf("invalid token") // FIXME: 404!
 	}
@@ -341,7 +350,7 @@ func (m *resultsApiImpl) Update(ctx context.Context, id VersionedResourceId, tok
 
 	return CreatedResponse{
 		TypeMeta:            kind,
-		VersionedResourceId: NewVersionedId(entry.ID, entry.Version),
+		VersionedResourceId: entry.GetVersionedID(),
 	}, err
 }
 
@@ -378,6 +387,28 @@ func (m *runnersApiImpl) Get(ctx context.Context, id ResourceID) (Runner, bool, 
 	_, err := m.store.Get(ctx, &result, id)
 
 	return result, result.ID == uint(id) && !result.DeletedAt.Valid, err
+}
+
+func (m *runnersApiImpl) Create(ctx context.Context, newEntry CreateRunnerRequest) (CreatedResponse, error) {
+	entry := Runner{
+		ResourceMeta: ResourceMeta{
+			Name:   newEntry.Name,
+			Labels: newEntry.Labels,
+		},
+		RunnerDefinition: newEntry.RunnerDefinition,
+	}
+
+	kind, err := m.store.GuessKind(reflect.ValueOf(&entry))
+	if err != nil {
+		return CreatedResponse{}, err
+	}
+
+	err = m.store.Create(ctx, &entry)
+
+	return CreatedResponse{
+		TypeMeta:            kind,
+		VersionedResourceId: NewVersionedId(entry.ID, entry.Version),
+	}, err
 }
 
 //------------------------------

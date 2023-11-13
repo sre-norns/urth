@@ -176,25 +176,18 @@ func (s *DbStore) selectorAsQuery(tx *gorm.DB, selector labels.Selector) (*gorm.
 }
 
 func (meta *ResourceMeta) AfterFind(tx *gorm.DB) (err error) {
-	if len(meta.Labels) != len(meta.LabelsModel) {
-		meta.Labels = make(wyrd.Labels, len(meta.LabelsModel))
-		for _, label := range meta.LabelsModel {
-			meta.Labels[label.Key] = label.Value
-		}
+	meta.Labels = make(wyrd.Labels, len(meta.LabelsModel))
+	for _, label := range meta.LabelsModel {
+		meta.Labels[label.Key] = label.Value
 	}
 
 	return
 }
 
 func (meta *ResourceMeta) BeforeSave(tx *gorm.DB) (err error) {
-	// kind, err := guessDbTable(tx, meta)
-
 	meta.LabelsModel = make([]ResourceLabelModel, 0, len(meta.Labels))
 	for key, value := range meta.Labels {
 		meta.LabelsModel = append(meta.LabelsModel, ResourceLabelModel{
-			OwnerID:   int(meta.ID),
-			OwnerType: "scenarios",
-
 			ResourceLabel: ResourceLabel{
 				Key:   key,
 				Value: value,
@@ -202,5 +195,5 @@ func (meta *ResourceMeta) BeforeSave(tx *gorm.DB) (err error) {
 		})
 	}
 
-	return nil
+	return
 }

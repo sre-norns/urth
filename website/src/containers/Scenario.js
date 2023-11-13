@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState, useCallback } from 'react';
 import PropTypes from 'prop-types'
 import styled from '@emotion/styled'
 import OddContainer from '../components/OddContainer.js'
@@ -8,6 +8,8 @@ import TextSpan, {TextDiv} from '../components/TextSpan.js'
 import {cyrb53} from '../utils/hash.js'
 import Button from '../components/Button.js'
 import Link from '../components/Link.js'
+import {apiPut} from '../utils/api.js'
+
 
 const TopContainer = styled.div`
   display: flex;
@@ -64,16 +66,37 @@ const statusToColor = (status) => {
 }
 
 const Scenario = ({data, odd}) => {
-  const {name} = data.metadata
+  const {ID, name, labels} = data.metadata
   const {active, description, schedule} = data.spec
-
-  const labels = {}
 
   const lastRunStatus = 'unknown'
   const statusColor = statusToColor(lastRunStatus)
 
-  const playDisabled = !!active
+  const playDisabled = !active
   const stopDisabled = !active
+
+  const [isSending, setIsSending] = useState(false)
+
+  const requestRun = useCallback(async () => {
+    // don't send again while we are sending
+    if (isSending) return
+
+    // update state
+    setIsSending(true)
+
+    // send the actual request
+    try {
+      const runRequest = await apiPut(`/api/v1/scenarios/${ID}/results`, {
+          token: "fsd"
+      })
+      
+    } catch (error) {
+      console.log("Failed to post: ", error);
+    }
+
+    setIsSending(false)
+  }, [isSending]) // update the callback if the state changes
+
 
   return (
     <OddContainer odd={odd}>
@@ -95,12 +118,12 @@ const Scenario = ({data, odd}) => {
           </TextDiv>
         </BodyContainer>
         <ActionsContainer>
-          <PlayButton color="contrast" disabled={playDisabled}><i className="fi fi-play"></i></PlayButton>
+          <PlayButton color="contrast" disabled={playDisabled || isSending} onClick={requestRun}><i className="fi fi-play"></i></PlayButton>
           <StopButton color={stopDisabled ? 'contrast' : 'error'} disabled={stopDisabled}><i className="fi fi-stop"></i></StopButton>
         </ActionsContainer>
       </TopContainer>
       <CapsulesContainer>
-        { Object.entries(labels).map(([name, value], i) =>
+        { Object.entries(labels || {}).map(([name, value], i) =>
           <Capsule
             key={name}
             name={name}

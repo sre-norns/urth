@@ -45,6 +45,14 @@ curl -X POST 'http://localhost:8080/api/v1/scenarios/4/results'  \
 --data-binary "@examples/scenario.run.started.json"
 ```
 
+## Create a slot for a worker
+```bash
+curl -X POST 'http://localhost:8080/api/v1/runners'  \
+-H "Content-Type: application/json" \
+--data-binary "@examples/runner.json"
+```
+
+
 
 ## Using `urhctl` (WIP)
 ```bash

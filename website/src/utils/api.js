@@ -43,12 +43,11 @@ const readJson = async (response) => {
 
 const raiseError = (response, data) => {
   if (response.status >= 200 && response.status < 300) {
-    if (data === undefined && response.status !== 204)
+    if (!data && response.status !== 204) {
       throw new ApiError('Unexpected response format', response, data)
+    }
   } else {
-    const message =
-      data && data.message ? String(data.message) : `Server returned error status ${response.status}`
-
+    const message = String(data?.Message || `Server returned error status ${response.status}`)
     throw new ApiError(message, response, data)
   }
 }

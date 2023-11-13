@@ -9,5 +9,5 @@ spec:
  active: true
  schedule: "* * * * *"
  script:
-   kind: application/javascript
+   kind: puppeteer/javascript
 
