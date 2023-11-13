@@ -19,6 +19,15 @@ var (
 	ErrNoRequirementsValueProvided = fmt.Errorf("no value for a requirement is provided")
 )
 
+func guessDbTable(db *gorm.DB, value any) (string, error) {
+	stmt := &gorm.Statement{DB: db}
+	if err := stmt.Parse(value); err != nil {
+		return "", err
+	}
+
+	return stmt.Schema.Table, nil
+}
+
 type DbStore struct {
 	db *gorm.DB
 }
@@ -64,12 +73,13 @@ func (s *DbStore) Delete(ctx context.Context, value any, id ResourceID) (bool, e
 }
 
 func (s *DbStore) GuessKind(value reflect.Value) (TypeMeta, error) {
-	stmt := &gorm.Statement{DB: s.db}
-	if err := stmt.Parse(value.Interface()); err != nil {
-		return TypeMeta{}, err
-	}
+	kind, err := guessDbTable(s.db, value.Interface())
+	// stmt := &gorm.Statement{DB: s.db}
+	// if err := stmt.Parse(value.Interface()); err != nil {
+	// 	return TypeMeta{}, err
+	// }
 
-	return TypeMeta{Kind: stmt.Schema.Table}, nil
+	return TypeMeta{Kind: kind}, err
 }
 
 func (s *DbStore) startPaginatedTx(ctx context.Context, pagination Pagination) *gorm.DB {
@@ -174,4 +184,23 @@ func (meta *ResourceMeta) AfterFind(tx *gorm.DB) (err error) {
 	}
 
 	return
+}
+
+func (meta *ResourceMeta) BeforeSave(tx *gorm.DB) (err error) {
+	// kind, err := guessDbTable(tx, meta)
+
+	meta.LabelsModel = make([]ResourceLabelModel, 0, len(meta.Labels))
+	for key, value := range meta.Labels {
+		meta.LabelsModel = append(meta.LabelsModel, ResourceLabelModel{
+			OwnerID:   int(meta.ID),
+			OwnerType: "scenarios",
+
+			ResourceLabel: ResourceLabel{
+				Key:   key,
+				Value: value,
+			},
+		})
+	}
+
+	return nil
 }
