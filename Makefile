@@ -14,7 +14,7 @@ run-scheduler: # Start scheduler server
 
 .PHONY: serve-site
 serve-site: # Start Web UI
-	@cd website && npm run 
+	@cd website && npm start 
 
 .PHONY: run-redis-podman
 run-redis-podman: # Start redis using podman container
