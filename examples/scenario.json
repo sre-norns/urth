@@ -4,7 +4,7 @@
         "os": "linux"
     },
     "active": true,
-    "description": "My first scenario",
+    "description": "My other scenario",
     "requirements": {},
     "schedule": "0 0 * * TUE",
     "script": {

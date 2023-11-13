@@ -12,8 +12,11 @@ run-asynq-worker: # Start Redis based worker
 run-scheduler: # Start scheduler server
 	@echo Not implemented yet....
 
+website/node_modules: 
+	@cd website && npm i 
+
 .PHONY: serve-site
-serve-site: # Start Web UI
+serve-site: website/node_modules  # Start Web UI
 	@cd website && npm start 
 
 .PHONY: run-redis-podman
