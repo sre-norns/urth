@@ -20,7 +20,10 @@ type WorkerConfig struct {
 
 	RedisAddress string `help:"Redis server address:port to connect to" default:"localhost:6379"`
 
+	// isDone    bool
 	apiClient *urth.RestApiClient
+
+	identity urth.Runner
 }
 
 // HandleWelcomeEmailTask handler for welcome email task.
@@ -44,7 +47,7 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 	// FIXME: Worker must use its credentials jwt
 	runCreated, err := resultsApiClient.Create(ctx, urth.CreateScenarioRunResults{
 		ScenarioID:  job.ScenarioID,
-		RunnerID:    urth.VersionedResourceId{}, // TODO: Runner must have ID from the config!
+		RunnerID:    w.identity.GetVersionedID(),
 		TimeStarted: time.Now(),
 	})
 	if err != nil {
@@ -53,7 +56,15 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 		return err // Note: job can be re-tried
 	}
 
-	runResult, err := runner.Play(ctx, job.Script, runner.RunOptions{
+	timeout := w.Timeout
+	if (job.Script != nil && job.Script.Timeout != 0) && timeout > job.Script.Timeout {
+		timeout = job.Script.Timeout
+	}
+	workCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	log.Println("job ", runID, "timeout: ", timeout)
+
+	runResult, err := runner.Play(workCtx, job.Script, runner.RunOptions{
 		Http: runner.HttpOptions{
 			CaptureResponseBody: false,
 			CaptureRequestBody:  false,
@@ -106,11 +117,6 @@ func main() {
 	// TODO: Check that working directory exists and writable!
 	grace.ExitOrLog(runner.SetupRunEnv(defaultConfig.WorkingDirectory))
 
-	// Create and configuring Redis connection.
-	redisConnection := asynq.RedisClientOpt{
-		Addr: defaultConfig.RedisAddress, // Redis server address
-	}
-
 	// Create a new task's mux instance.
 	mux := asynq.NewServeMux()
 	mux.HandleFunc(
@@ -118,10 +124,30 @@ func main() {
 		defaultConfig.handleRunScenarioTask, // handler function
 	)
 
+	// for !defaultConfig.isDone {
+	rego := urth.RunnerRegistration{
+		IsOnline:       true,
+		InstanceLabels: defaultConfig.Labels,
+	}
+	identity, err := apiClient.GetRunnerAPI().Auth(context.Background(), urth.ApiToken(defaultConfig.ApiToken), rego)
+	if err != nil {
+		// TODO: Should be back-off
+		appCtx.FatalIfErrorf(err)
+		return
+	}
+	defaultConfig.identity = identity
+	log.Print("Registered with API server as: ", identity.Name, "id: ", identity.GetVersionedID())
+
+	// Create and configuring Redis connection.
+	redisConnection := asynq.RedisClientOpt{
+		Addr: defaultConfig.RedisAddress, // Redis server address
+	}
+
 	// Create and Run Asynq worker server.
 	workerServer := asynq.NewServer(redisConnection, asynq.Config{
 		// BaseContext: func() context.Context { return mainContext },
 	})
 
 	appCtx.FatalIfErrorf(workerServer.Run(mux))
+	// }
 }

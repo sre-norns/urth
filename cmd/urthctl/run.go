@@ -21,15 +21,14 @@ type RunCmd struct {
 	Kind  string   `help:"The type of the scenario to run. Will try to guess if not specified"`
 
 	ScenarioId urth.ResourceID `help:"Id of the scenario" name:"scenario" xor:"file"`
-	RunTimeout time.Duration   `help:"Timeout duration alloted for a single scenario to run" default:"1m"`
 
 	KeepTemp bool `help:"If true, temporary work directory is kept after run is complete"`
 	SaveHAR  bool `help:"If true, save HAR recording of HTTP scripts if applicable"`
 	Headless bool `help:"If true, puppeteer scripts are run in a headless mode"`
 }
 
-func (c *RunCmd) runScenario(cmdCtx context.Context, sourceName string, script *urth.ScenarioScript, workingDir string) error {
-	ctx, cancel := context.WithTimeout(cmdCtx, c.RunTimeout)
+func (c *RunCmd) runScenario(cmdCtx context.Context, sourceName string, script *urth.ScenarioScript, workingDir string, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(cmdCtx, timeout)
 	defer cancel()
 
 	runResult, err := runner.Play(ctx, script, runner.RunOptions{
@@ -148,7 +147,7 @@ func (c *RunCmd) Run(cfg *commandContext) error {
 		if err != nil {
 			return err
 		}
-		return c.runScenario(cfg.Context, scenario.Name, scenario.Script, cfg.WorkingDirectory)
+		return c.runScenario(cfg.Context, scenario.Name, scenario.Script, cfg.WorkingDirectory, cfg.Timeout)
 	}
 
 	for _, filename := range c.Files {
@@ -157,7 +156,7 @@ func (c *RunCmd) Run(cfg *commandContext) error {
 			return err
 		}
 
-		if err := c.runScenario(cfg.Context, strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename)), script, cfg.WorkingDirectory); err != nil {
+		if err := c.runScenario(cfg.Context, strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename)), script, cfg.WorkingDirectory, cfg.Timeout); err != nil {
 			return err
 		}
 	}

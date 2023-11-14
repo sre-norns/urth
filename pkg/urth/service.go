@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math/rand"
 	"reflect"
 )
 
@@ -48,6 +49,8 @@ type RunnersApi interface {
 	// Client request to create a new 'slot' for a runner
 	Create(ctx context.Context, entry CreateRunnerRequest) (CreatedResponse, error)
 
+	// Register Job runner and receive Identity from the server
+	Auth(ctx context.Context, token ApiToken, entry RunnerRegistration) (Runner, error)
 	// UserControl() error
 	// PostUpdate() error
 }
@@ -272,6 +275,17 @@ func (m *scenarioApiImpl) Update(ctx context.Context, id ResourceID, scenarioUpd
 	}, err
 }
 
+// FIXME: Use better token generation!
+const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+func RandStringBytesRmndr(n int) ApiToken {
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = letterBytes[rand.Int63()%int64(len(letterBytes))]
+	}
+	return ApiToken(b)
+}
+
 //------------------------------
 /// Scenarios run results
 //------------------------------
@@ -287,6 +301,7 @@ func (m *resultsApiImpl) List(ctx context.Context, searchQuery SearchQuery) ([]P
 		results = append(results, PartialObjectMetadata{
 			TypeMeta:     kind,
 			ResourceMeta: sc.ResourceMeta,
+			Spec:         sc.ScenarioRunResultSpec,
 		})
 	}
 
@@ -301,12 +316,10 @@ func (m *resultsApiImpl) Create(ctx context.Context, newEntry CreateScenarioRunR
 	// TODO: Validate that Create results request is from an authentic worker that is allowed to take jobs!
 
 	entry := ScenarioRunResults{
-		ResourceMeta: ResourceMeta{
-			// Name: ???,
-			// Labels: ???,
+		ScenarioRunResultSpec: ScenarioRunResultSpec{
+			CreateScenarioRunResults: newEntry,
 		},
-		CreateScenarioRunResults: newEntry,
-		UpdateToken:              "super-secret", // FIXME: Generate JWT with valid-until clause, to give worker a time to post
+		UpdateToken: RandStringBytesRmndr(21), // FIXME: Generate JWT with valid-until clause, to give worker a time to post
 	}
 	kind, err := m.store.GuessKind(reflect.ValueOf(&entry))
 	if err != nil {
@@ -373,9 +386,13 @@ func (m *runnersApiImpl) List(ctx context.Context, searchQuery SearchQuery) ([]P
 
 	results := make([]PartialObjectMetadata, 0, len(resources))
 	for _, sc := range resources {
+		// TODO: Token should be hidden?
+		sc.IdToken = ""
+		// sc.
 		results = append(results, PartialObjectMetadata{
 			TypeMeta:     kind,
 			ResourceMeta: sc.ResourceMeta,
+			Spec:         sc.RunnerSpec,
 		})
 	}
 
@@ -395,7 +412,10 @@ func (m *runnersApiImpl) Create(ctx context.Context, newEntry CreateRunnerReques
 			Name:   newEntry.Name,
 			Labels: newEntry.Labels,
 		},
-		RunnerDefinition: newEntry.RunnerDefinition,
+		RunnerSpec: RunnerSpec{
+			RunnerDefinition: newEntry.RunnerDefinition,
+		},
+		IdToken: RandStringBytesRmndr(12),
 	}
 
 	kind, err := m.store.GuessKind(reflect.ValueOf(&entry))
@@ -409,6 +429,16 @@ func (m *runnersApiImpl) Create(ctx context.Context, newEntry CreateRunnerReques
 		TypeMeta:            kind,
 		VersionedResourceId: NewVersionedId(entry.ID, entry.Version),
 	}, err
+}
+
+func (m *runnersApiImpl) Auth(ctx context.Context, token ApiToken, entry RunnerRegistration) (Runner, error) {
+	var result Runner
+	ok, err := m.store.GetByToken(ctx, &result, token)
+	if err == nil && !ok {
+		return result, fmt.Errorf("no unique toke found")
+	}
+
+	return result, err
 }
 
 //------------------------------

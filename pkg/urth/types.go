@@ -12,6 +12,9 @@ import (
 // Type to represent an ID of a resource
 type ResourceID uint
 
+// ApiToken is opaque datum used for auth purposes
+type ApiToken string
+
 type VersionedResourceId struct {
 	ID      ResourceID `form:"id" json:"id" yaml:"id" xml:"id"`
 	Version uint32     `form:"version" json:"version" yaml:"version" xml:"version"`
@@ -80,7 +83,7 @@ type PartialObjectMetadata struct {
 // RunnerDefinition holds information about a runner as supplied by the administrator to register one
 type RunnerDefinition struct {
 	// Description is a human readable text to describe intent behind this runner
-	Description string `form:"description" json:"description,omitempty" yaml:"description,omitempty" xml:"description"`
+	Description string `form:"description" json:"description,omitempty" yaml:"description,omitempty" xml:"description,omitempty"`
 
 	// Requirements are optional to select sub-set of jobs this worker capable of taking
 	Requirements wyrd.LabelSelector `form:"requirements" json:"requirements,omitempty" yaml:"requirements,omitempty" xml:"requirements" gorm:"-"`
@@ -93,6 +96,13 @@ type RunnerDefinition struct {
 type RunnerRegistration struct {
 	// IsOnline is this runner is online and accepts jobs or is currently processing one
 	IsOnline bool `form:"online" json:"online" yaml:"online" xml:"online"`
+
+	InstanceLabels wyrd.Labels `form:"runner_labels,omitempty" json:"runner_labels,omitempty" yaml:"runner_labels,omitempty" xml:"runner_labels,omitempty" gorm:"-"`
+}
+
+type RunnerSpec struct {
+	RunnerDefinition   `json:",inline" yaml:",inline"`
+	RunnerRegistration `json:",inline" yaml:",inline"`
 }
 
 // Runner is a recourse manager by Urth service that represents
@@ -100,8 +110,9 @@ type RunnerRegistration struct {
 type Runner struct {
 	ResourceMeta `json:",inline" yaml:",inline"`
 
-	RunnerDefinition   `json:",inline" yaml:",inline"`
-	RunnerRegistration `json:",inline" yaml:",inline"`
+	RunnerSpec `json:",inline" yaml:",inline"`
+
+	IdToken ApiToken `form:"token" json:"token,omitempty" yaml:"token,omitempty" xml:"token,omitempty"`
 }
 
 // Type to represent cron-like schedule
@@ -109,10 +120,13 @@ type CronSchedule string
 
 type ScenarioScript struct {
 	// Kind identifies the type of content this scenario implementing
-	Kind ScenarioKind `form:"kind" json:"kind,omitempty" yaml:"kind,omitempty" xml:"kind"  binding:"required"`
+	Kind ScenarioKind `form:"kind" json:"kind,omitempty" yaml:"kind,omitempty" xml:"kind"`
+
+	// Timeout
+	Timeout time.Duration `form:"timeout" json:"timeout,omitempty" yaml:"timeout,omitempty" xml:"timeout,omitempty"`
 
 	// Actual script, of a 'kind' type
-	Content []byte `form:"content" json:"content,omitempty" yaml:"content,omitempty" xml:"content"  binding:"required"`
+	Content []byte `form:"content" json:"content,omitempty" yaml:"content,omitempty" xml:"content"`
 }
 
 type CreateScenario struct {
@@ -212,8 +226,6 @@ func NewRunResults(runResult RunStatus, options ...RunResultOption) FinalRunResu
 	return result
 }
 
-type ApiToken string
-
 // CreateScenarioRunResults is info that runner reports about a running job
 type CreateScenarioRunResults struct {
 	// ID and version of the scenario that this results were produced for
@@ -224,13 +236,16 @@ type CreateScenarioRunResults struct {
 	TimeStarted time.Time `form:"start_time" json:"start_time" yaml:"start_time" xml:"start_time" binding:"required"`
 }
 
+type ScenarioRunResultSpec struct {
+	CreateScenarioRunResults `json:",inline" yaml:",inline"`
+	FinalRunResults          `json:",inline" yaml:",inline"`
+}
+
 // ScenarioRunResults results of a single execution of a given scenario
 type ScenarioRunResults struct {
 	ResourceMeta `json:",inline" yaml:",inline"`
 
-	CreateScenarioRunResults `json:",inline" yaml:",inline"`
+	ScenarioRunResultSpec `json:",inline" yaml:",inline"`
 
 	UpdateToken ApiToken `uri:"-" form:"-" json:"-" yaml:"-" xml:"-"`
-
-	FinalRunResults `json:",inline" yaml:",inline"`
 }

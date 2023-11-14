@@ -3,6 +3,7 @@ package runner
 import (
 	"os/exec"
 	"runtime"
+	"time"
 
 	// TODO: move to github.com/sre-norns/wyrd
 	"github.com/sre-norns/urth/pkg/wyrd"
@@ -19,8 +20,10 @@ type RunnerConfig struct {
 	Labels       wyrd.Labels        `help:"Extra labels to identify this instance of the runner"`
 	Requirements wyrd.LabelSelector `kong:"-"`
 
-	ApiServerAddress string `help:"URL address of the API server" default:"http://localhost:8080/" `
-	WorkingDirectory string `help:"Worker directory where test are executed" default:"." type:"existingdir"`
+	ApiToken         string        `help:"API token to register this runner instance"`
+	ApiServerAddress string        `help:"URL address of the API server" default:"http://localhost:8080/" `
+	WorkingDirectory string        `help:"Worker directory where test are executed" default:"./worker" type:"existingdir"`
+	Timeout          time.Duration `help:"Maximum duration alloted for each script run" default:"1m"`
 }
 
 func GetNodeRuntimeLabels() wyrd.Labels {

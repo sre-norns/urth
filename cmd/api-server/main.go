@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"runtime/debug"
+	"strings"
 
 	"github.com/sre-norns/urth/pkg/grace"
 	"github.com/sre-norns/urth/pkg/redqueue"
@@ -82,6 +83,22 @@ func searchableApi() gin.HandlerFunc {
 	}
 }
 
+func authBearer(ctx *gin.Context) (urth.ApiToken, error) {
+	// Get the "Authorization" header
+	authorization := ctx.Request.Header.Get("Authorization")
+	if authorization == "" {
+		return "", fmt.Errorf("Invalid Authorization header")
+	}
+
+	// Split it into two parts - "Bearer" and token
+	parts := strings.SplitN(authorization, " ", 2)
+	if parts[0] != "Bearer" {
+		return "", fmt.Errorf("Invalid Authorization header")
+	}
+
+	return urth.ApiToken(parts[1]), nil
+}
+
 // TODO: JWT Auth middleware for runners!
 
 func apiRoutes(srv urth.Service) *gin.Engine {
@@ -144,6 +161,28 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 			}
 
 			result, err := srv.GetRunnerAPI().Create(ctx.Request.Context(), newEntry)
+			if err != nil {
+				ctx.AbortWithStatusJSON(http.StatusBadRequest, urth.NewErrorRepose(http.StatusText(http.StatusBadRequest), err))
+				return
+			}
+
+			marshalResponse(ctx, http.StatusCreated, result)
+		})
+		// Auth runner
+		v1.PUT("/runners", contentTypeApi(), func(ctx *gin.Context) {
+			var newEntry urth.RunnerRegistration
+			if err := ctx.ShouldBind(&newEntry); err != nil {
+				ctx.AbortWithStatusJSON(http.StatusBadRequest, urth.NewErrorRepose(http.StatusText(http.StatusBadRequest), err))
+				return
+			}
+
+			token, err := authBearer(ctx)
+			if err != nil {
+				ctx.AbortWithStatusJSON(http.StatusUnauthorized, urth.NewErrorRepose(http.StatusText(http.StatusUnauthorized), err))
+				return
+			}
+
+			result, err := srv.GetRunnerAPI().Auth(ctx.Request.Context(), token, newEntry)
 			if err != nil {
 				ctx.AbortWithStatusJSON(http.StatusBadRequest, urth.NewErrorRepose(http.StatusText(http.StatusBadRequest), err))
 				return
@@ -414,13 +453,17 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 
 		v1.PUT("/scenarios/:id/results/:runId", contentTypeApi(), func(ctx *gin.Context) {
 			var resourceRequest urth.ScenarioRunResultsRequest
-			if err := ctx.BindUri(&resourceRequest); err != nil {
-				ctx.AbortWithStatusJSON(http.StatusBadRequest, urth.NewErrorRepose(http.StatusText(http.StatusBadRequest), err))
+			if err := ctx.ShouldBindUri(&resourceRequest); err != nil {
+				ctx.AbortWithStatusJSON(http.StatusNotFound, urth.NewErrorRepose(http.StatusText(http.StatusNotFound), err))
 				return
 			}
 
-			var version uint32 = 1                  //ctx.Query("version")
-			token := ctx.GetHeader("Authorization") // FIXME: Use JWT middleware!
+			var version uint32 = 1        //ctx.Query("version")
+			token, err := authBearer(ctx) // FIXME: Use JWT middleware!
+			if err != nil {
+				ctx.AbortWithStatusJSON(http.StatusUnauthorized, urth.NewErrorRepose(http.StatusText(http.StatusUnauthorized), err))
+				return
+			}
 			// FIXME: Get version from the tokens claims!
 
 			var newEntry urth.FinalRunResults

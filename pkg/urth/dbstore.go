@@ -59,6 +59,15 @@ func (s *DbStore) GetWithVersion(ctx context.Context, dest any, id VersionedReso
 	return tx.RowsAffected == 1, tx.Error
 }
 
+func (s *DbStore) GetByToken(ctx context.Context, dest any, token ApiToken) (bool, error) {
+	tx := s.db.WithContext(ctx).Where("id_token = ?", token).First(dest)
+	log.Print("Fond for token ", token, "n: ", tx.RowsAffected)
+	if errors.Is(tx.Error, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	return tx.RowsAffected == 1, tx.Error
+}
+
 func (s *DbStore) Update(ctx context.Context, value any, id ResourceID) (bool, error) {
 	tx := s.db.WithContext(ctx).Save(value)
 	if errors.Is(tx.Error, gorm.ErrRecordNotFound) {

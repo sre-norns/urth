@@ -91,15 +91,47 @@ func (c *RestApiClient) get(apiUrl *url.URL) (*http.Response, error) {
 	return c.httpClient.Do(request)
 }
 
-func (c *RestApiClient) post(apiUrl *url.URL, body io.Reader) (*http.Response, error) {
+func (c *RestApiClient) postWithAuth(apiUrl *url.URL, token string, body io.Reader) (*http.Response, error) {
 	request, err := http.NewRequest("POST", apiUrl.String(), body)
 	if err != nil {
 		return nil, err
 	}
 	request.Header.Add("Accept", "application/json")
 	request.Header.Add("Content-Type", "application/json")
+	if token != "" {
+		request.Header.Add("Authorization", fmt.Sprintf("Bearer %v", token))
+
+	}
 
 	return c.httpClient.Do(request)
+}
+
+func (c *RestApiClient) post(apiUrl *url.URL, body io.Reader) (*http.Response, error) {
+	return c.postWithAuth(apiUrl, "", body)
+}
+
+func (c *RestApiClient) putWithAuth(apiUrl *url.URL, token string, extraHeaders http.Header, body io.Reader) (*http.Response, error) {
+	request, err := http.NewRequest("PUT", apiUrl.String(), body)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Add("Accept", "application/json")
+	request.Header.Add("Content-Type", "application/json")
+	if token != "" {
+		request.Header.Add("Authorization", fmt.Sprintf("Bearer %v", token))
+
+	}
+	for k, values := range extraHeaders {
+		for _, v := range values {
+			request.Header.Add(k, v)
+		}
+	}
+
+	return c.httpClient.Do(request)
+}
+
+func (c *RestApiClient) put(apiUrl *url.URL, extraHeaders http.Header, body io.Reader) (*http.Response, error) {
+	return c.putWithAuth(apiUrl, "", extraHeaders, body)
 }
 
 func (c *RestApiClient) delete(apiUrl *url.URL) (*http.Response, error) {
@@ -108,22 +140,6 @@ func (c *RestApiClient) delete(apiUrl *url.URL) (*http.Response, error) {
 		return nil, err
 	}
 	request.Header.Add("Accept", "application/json")
-
-	return c.httpClient.Do(request)
-}
-
-func (c *RestApiClient) put(apiUrl *url.URL, extraHeaders http.Header, body io.Reader) (*http.Response, error) {
-	request, err := http.NewRequest("PUT", apiUrl.String(), body)
-	if err != nil {
-		return nil, err
-	}
-	request.Header.Add("Accept", "application/json")
-	request.Header.Add("Content-Type", "application/json")
-	for k, values := range extraHeaders {
-		for _, v := range values {
-			request.Header.Add(k, v)
-		}
-	}
 
 	return c.httpClient.Do(request)
 }
@@ -219,6 +235,24 @@ func (m *RunnersApiClient) Create(ctx context.Context, newEntry CreateRunnerRequ
 		return result, err
 	}
 
+	defer resp.Body.Close()
+
+	err = json.NewDecoder(resp.Body).Decode(&result)
+	return result, err
+}
+
+func (m *RunnersApiClient) Auth(ctx context.Context, token ApiToken, newEntry RunnerRegistration) (Runner, error) {
+	var result Runner
+	data, err := json.Marshal(newEntry)
+	if err != nil {
+		return result, err
+	}
+
+	targetApi := urlForPath(m.baseUrl, "v1/runners", nil)
+	resp, err := m.putWithAuth(targetApi, string(token), nil, bytes.NewReader(data))
+	if err != nil {
+		return result, err
+	}
 	defer resp.Body.Close()
 
 	err = json.NewDecoder(resp.Body).Decode(&result)

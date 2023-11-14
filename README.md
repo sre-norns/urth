@@ -65,3 +65,13 @@ Most repeatable operations to run local deployment are automated using simple [M
 # Start Web UI
 > make serve-site
 ```
+
+
+# Runner
+Runners responsibility is to wait for a task to execute a test. Details of the test depend on the job that were picked.
+Not all tasks can be picked up by any runner. Runner have _capabilities_ expressed as `labels`. Each job has requirements.
+When requirements match runner's _capabilities_ than it can take a job.
+
+## Lifecycle
+A new runner must be registered with `API server` first to create a `slot`. This includes generation of an API token that can be used by a `runner` to 
+identify itself and talk to the `API server`.
