@@ -3,7 +3,7 @@ import ActionType from '../actions/ActionType.js'
 const initialState = {
   fetching: false,
   scenarios: '',
-  error: '',
+  error: null,
 }
 
 export default (state = initialState, action) => {

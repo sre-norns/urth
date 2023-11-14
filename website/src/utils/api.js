@@ -66,4 +66,6 @@ export const apiPost = (url, data) => performFetch(url, createRequestInit('POST'
 
 export const apiPut = (url, data) => performFetch(url, createRequestInit('PUT', data))
 
+export const apiPatch = (url, data) => performFetch(url, createRequestInit('PATCH', data))
+
 export const apiDelete = (url) => performFetch(url, createRequestInit('DELETE'))

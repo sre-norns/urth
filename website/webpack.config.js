@@ -38,6 +38,7 @@ export default {
     new HtmlWebpackPlugin({ template: './src/index.html' }),
   ],
   stats: 'minimal',
+  devtool : 'inline-source-map',
   devServer: {
     // static: {
     //   directory: path.join(__dirname, 'public'),

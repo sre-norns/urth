@@ -4,6 +4,8 @@ import {fetchScenarios} from '../actions/scenarios.js'
 import styled from '@emotion/styled'
 import SpinnerInlay from '../components/SpinnerInlay.js'
 import Scenario from '../containers/Scenario.js'
+import EmptyInlay from '../components/EmptyInlay.js'
+import ErrorInlay from '../components/ErrorInlay.js'
 
 
 const ScenariosContainer = styled.div`
@@ -11,17 +13,24 @@ const ScenariosContainer = styled.div`
 `
 
 const Scenarios = () => {
-  const {fetching, scenarios, error} = useSelector(s => s.scenarios)
-
   const dispatch = useDispatch()
+  const {fetching, scenarios, error} = useSelector(s => s.scenarios)
 
   React.useEffect(() => {
     dispatch(fetchScenarios())
   }, [])
 
+  if (error) {
+    return (<ErrorInlay message={"Error fetching scenarios"} details={error.message || ""} />)
+  }
+
+  if (fetching) {
+    return (<SpinnerInlay />)
+  }
+
   return (
-    (fetching || !scenarios || !Array.isArray(scenarios.data)) ? (
-      <SpinnerInlay/>
+    (!scenarios || !Array.isArray(scenarios.data)) ? (
+      <EmptyInlay/>
     ) : (
       <ScenariosContainer>
         {/*Loaded scenarios: {scenarios.count}*/}
