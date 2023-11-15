@@ -186,7 +186,8 @@ type FinalRunResults struct {
 	Result RunStatus `form:"result" json:"result" yaml:"result" xml:"result"  binding:"required"`
 
 	// TODO:
-	Artifacts []Artifact `gorm:"polymorphic:Owner;"`
+	// Artifacts []Artifact `json:"-" yaml:"-" gorm:"polymorphic:Owner;"`
+	Artifacts []Artifact `json:"artifacts,omitempty" yaml:"artifacts,omitempty" gorm:"polymorphic:Owner;"`
 }
 
 type RunResultOption func(value *FinalRunResults)

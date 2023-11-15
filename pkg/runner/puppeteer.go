@@ -3,7 +3,6 @@ package runner
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"path"
@@ -42,11 +41,14 @@ func SetupRunEnv(workDir string) error {
 }
 
 func runPuppeteerScript(ctx context.Context, scriptContent []byte, options RunOptions) (urth.FinalRunResults, error) {
-	log.Println("running puppeteer...")
+	texLogger := RunLog{}
+	texLogger.Log("Running puppeteer script")
 
 	workDir, err := os.MkdirTemp(options.Puppeteer.WorkingDirectory, options.Puppeteer.TempDirPrefix)
 	if err != nil {
-		return urth.NewRunResults(urth.RunFinishedError), fmt.Errorf("failed create work directory: %w", err)
+		err = fmt.Errorf("failed create work directory: %w", err)
+		texLogger.Log(err)
+		return NewRunResultsWithLog(urth.RunFinishedError, &texLogger), err
 	}
 
 	defer func(dir string, keep bool) {
@@ -54,10 +56,12 @@ func runPuppeteerScript(ctx context.Context, scriptContent []byte, options RunOp
 			os.RemoveAll(dir)
 		}
 	}(workDir, options.Puppeteer.KeepTempDir)
-	log.Printf("working directory: %q (will be kept: %t)", workDir, options.Puppeteer.KeepTempDir)
+	texLogger.Logf("working directory: %q (will be kept: %t)", workDir, options.Puppeteer.KeepTempDir)
 
 	if err := SetupRunEnv(options.Puppeteer.WorkingDirectory); err != nil {
-		return urth.NewRunResults(urth.RunFinishedError), err
+		err = fmt.Errorf("failed setup run-time environment: %w", err)
+		texLogger.Log(err)
+		return NewRunResultsWithLog(urth.RunFinishedError, &texLogger), err
 	}
 
 	cmd := exec.Command("node", "-")
@@ -67,7 +71,9 @@ func runPuppeteerScript(ctx context.Context, scriptContent []byte, options RunOp
 
 	inPipe, err := cmd.StdinPipe()
 	if err != nil {
-		return urth.NewRunResults(urth.RunFinishedError), fmt.Errorf("failed to open input pipe: %w", err)
+		err := fmt.Errorf("failed to open input pipe: %w", err)
+		texLogger.Log(err)
+		return NewRunResultsWithLog(urth.RunFinishedError, &texLogger), err
 	}
 
 	// TODO: Write common prolog for all scrips
@@ -75,20 +81,20 @@ func runPuppeteerScript(ctx context.Context, scriptContent []byte, options RunOp
 		defer inPipe.Close()
 		n, err := inPipe.Write(scriptContent)
 		if err != nil {
-			fmt.Printf("failed to write script into input pipe: %v\n", err)
+			texLogger.Log("failed to write script into the nodejs input pipe: ", err)
 		}
-		log.Printf("script loaded: %d bytes...\n", n)
+		texLogger.Logf("script loaded: %d bytes", n)
 	}()
 
 	out, err := cmd.CombinedOutput()
-	// TODO: Store logs as a build artifact and ship url to the server
 	// TODO: Capture and store HAR file
-	fmt.Println(string(out))
+	texLogger.Log(string(out))
 
 	runResult := urth.RunFinishedSuccess
 	if err != nil {
+		texLogger.Log(err)
 		runResult = urth.RunFinishedError
 	}
 
-	return urth.NewRunResults(runResult), err
+	return NewRunResultsWithLog(runResult, &texLogger), err
 }

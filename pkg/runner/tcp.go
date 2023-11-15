@@ -3,7 +3,6 @@ package runner
 import (
 	"context"
 	"fmt"
-	"log"
 	"net"
 	"strings"
 
@@ -11,27 +10,28 @@ import (
 )
 
 func runTcpPortScript(ctx context.Context, scriptContent []byte, options RunOptions) (urth.FinalRunResults, error) {
-	log.Println("fondling TCP port: ")
+	var runLog RunLog
+	runLog.Log("fondling TCP port")
 	host, port, err := net.SplitHostPort(strings.TrimSpace(string(scriptContent)))
+
 	if err != nil {
-		log.Println("...failed to parse address: ", err)
-		return urth.NewRunResults(urth.RunFinishedError), nil
+		runLog.Log("failed to parse address: ", err)
+		return NewRunResultsWithLog(urth.RunFinishedError, &runLog), nil
 	}
-	log.Printf("...host=%q port%q", host, port)
+	runLog.Logf("...host=%q port=%q", host, port)
 
 	addr, err := net.ResolveTCPAddr("tcp", fmt.Sprintf("%s:%s", host, port))
 	if err != nil {
-		log.Println("\tfailed to resolve address: ", err)
-		return urth.NewRunResults(urth.RunFinishedError), nil
+		runLog.Log("failed to resolve address: ", err)
+		return NewRunResultsWithLog(urth.RunFinishedError, &runLog), nil
 	}
 
-	// con, err := net.Dial("tcp4", string(script.Content))
 	con, err := net.DialTCP("tcp", nil, addr)
 	if err != nil {
-		log.Println("...failed: ", err)
-		return urth.NewRunResults(urth.RunFinishedFailed), nil
+		runLog.Log("failed to connect: ", err)
+		return NewRunResultsWithLog(urth.RunFinishedFailed, &runLog), nil
 	}
 	defer con.Close()
 
-	return urth.NewRunResults(urth.RunFinishedSuccess), nil
+	return NewRunResultsWithLog(urth.RunFinishedSuccess, &runLog), nil
 }

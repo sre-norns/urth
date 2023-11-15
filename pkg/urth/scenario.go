@@ -5,7 +5,7 @@ import "net/http"
 type ScenarioKind string
 
 const (
-	TcpPortCheckKind ScenarioKind = "tcp/port"
+	TcpPortCheckKind ScenarioKind = "tcp"
 	HttpGetKind      ScenarioKind = "http/get"
 	HarKind          ScenarioKind = "http/har"
 	PuppeteerKind    ScenarioKind = "puppeteer/javascript"

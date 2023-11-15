@@ -9,7 +9,6 @@ import (
 
 	"github.com/sre-norns/urth/pkg/wyrd"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/selection"
 )
@@ -33,8 +32,12 @@ type DbStore struct {
 }
 
 func NewDbStore(db *gorm.DB) Store {
+
+	// TODO: Add InstanceLabelsModel
+	dbWithPreloads := db.Preload("LabelsModel")
+
 	return &DbStore{
-		db: db,
+		db: dbWithPreloads,
 	}
 }
 
@@ -103,7 +106,8 @@ func (s *DbStore) FindResources(ctx context.Context, resources any, searchQuery 
 		return resultType, err
 	}
 
-	tx, err := s.selectorAsQuery(s.startPaginatedTx(ctx, searchQuery.Pagination).Preload(clause.Associations), selector)
+	tx, err := s.selectorAsQuery(s.startPaginatedTx(ctx, searchQuery.Pagination), selector)
+	// tx, err := s.selectorAsQuery(s.startPaginatedTx(ctx, searchQuery.Pagination).Preload(clause.Associations), selector)
 	if err != nil {
 		return resultType, err
 	}

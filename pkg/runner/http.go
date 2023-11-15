@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"net/http/httptrace"
 	"net/textproto"
@@ -38,57 +37,57 @@ type httpRequestTracer struct {
 	timeResponseReceived time.Time
 }
 
-func NewHttpRequestTracer() *httpRequestTracer {
+func NewHttpRequestTracer(texLogger *RunLog) *httpRequestTracer {
 	result := &httpRequestTracer{}
 
 	tracer := &httptrace.ClientTrace{
 		DNSStart: func(info httptrace.DNSStartInfo) {
-			log.Printf("DNS resolving: %+v", info.Host)
+			texLogger.Log("DNS resolving: ", info.Host)
 			result.dnsResolutionStarted = time.Now()
 		},
 		DNSDone: func(info httptrace.DNSDoneInfo) {
-			log.Printf("DNS resolved: %+v", info.Addrs)
+			texLogger.Log("DNS resolved: ", info.Addrs)
 			result.dnsResolutionFinished = time.Now()
 		},
 
 		TLSHandshakeStart: func() {
-			log.Printf("TLS handshake started")
+			texLogger.Log("TLS handshake started")
 			result.tlsStarted = time.Now()
 		},
 
 		TLSHandshakeDone: func(tlsState tls.ConnectionState, err error) {
-			log.Printf("TLS handshake done: err=%v: %v", err, tlsState)
+			texLogger.Logf("TLS handshake done: err=%v: %v", err, tlsState)
 			result.tlsFinished = time.Now()
 		},
 
 		ConnectStart: func(network, addr string) {
-			log.Printf("net=%q connecting to: addr=%q", network, addr)
+			texLogger.Logf("net=%q connecting to: addr=%q", network, addr)
 			result.connectionStarted = time.Now()
 		},
 		ConnectDone: func(network, addr string, err error) {
-			log.Printf("net=%q connected to: addr=%q, err=%v", network, addr, err)
+			texLogger.Logf("net=%q connected to: addr=%q, err=%v", network, addr, err)
 			result.connectionFinished = time.Now()
 		},
 
 		WroteHeaders: func() {
-			log.Printf("done writing request headers")
+			texLogger.Log("done writing request headers")
 			result.timeHeaderWritten = time.Now()
 		},
 		WroteRequest: func(info httptrace.WroteRequestInfo) {
-			log.Printf("done writing request: err=%v", info.Err)
+			texLogger.Log("done writing request: err=", info.Err)
 			result.timeRequestWritten = time.Now()
 		},
 		GotConn: func(connInfo httptrace.GotConnInfo) {
-			log.Printf("established connection: %+v", connInfo)
+			texLogger.Log("established connection: ", connInfo)
 		},
 
 		Got1xxResponse: func(code int, header textproto.MIMEHeader) error {
-			log.Printf("got response %d: %+v", code, header)
+			texLogger.Logf("got response %d: %+v", code, header)
 			return nil
 		},
 
 		GotFirstResponseByte: func() {
-			log.Println("response data received")
+			texLogger.Log("response data received")
 			result.timeResponseReceived = time.Now()
 		},
 	}
@@ -124,39 +123,39 @@ func formatResponse(resp *http.Response) string {
 	return result.String()
 }
 
-func runHttpRequests(ctx context.Context, requests []httpparser.TestRequest, options RunOptions) (urth.FinalRunResults, error) {
+func runHttpRequests(ctx context.Context, texLogger *RunLog, requests []httpparser.TestRequest, options RunOptions) (urth.FinalRunResults, error) {
 	harLogger := har.NewLogger()
 	harLogger.SetOption(har.BodyLogging(options.Http.CaptureResponseBody))
 	harLogger.SetOption(har.PostDataLogging(options.Http.CaptureRequestBody))
 
 	outcome := urth.RunFinishedSuccess
 	client := http.Client{}
-	tracer := NewHttpRequestTracer()
+	tracer := NewHttpRequestTracer(texLogger)
 
 	for i, req := range requests {
 		id := fmt.Sprintf("%d", i)
-		log.Printf("HTTP Request %d / %d\n%v\n", i+1, len(requests), formatRequest(req.Request))
+		texLogger.Logf("HTTP Request %d / %d\n%v\n", i+1, len(requests), formatRequest(req.Request))
 
 		if err := harLogger.RecordRequest(id, req.Request); err != nil {
-			log.Println("...failed to record request: ", err)
-			return urth.NewRunResults(urth.RunFinishedError), err
+			texLogger.Log("...failed to record request: ", err)
+			return NewRunResultsWithLog(urth.RunFinishedError, texLogger), err
 		}
 
 		res, err := client.Do(tracer.TraceRequest(req.Request))
 		if err != nil {
-			log.Println("...failed: ", err)
-			return urth.NewRunResults(urth.RunFinishedError), err
+			texLogger.Log("...failed: ", err)
+			return NewRunResultsWithLog(urth.RunFinishedError, texLogger), err
 		}
 
 		if err := harLogger.RecordResponse(id, res); err != nil {
-			log.Println("...failed to record response: ", err)
-			return urth.NewRunResults(urth.RunFinishedError), err
+			texLogger.Log("...failed to record response: ", err)
+			return NewRunResultsWithLog(urth.RunFinishedError, texLogger), err
 		}
 
-		log.Printf("Response:\n%v\n", formatResponse(res))
+		texLogger.Logf("Response:\n%v\n", formatResponse(res))
 
 		if _, err := io.Copy(ioutil.Discard, res.Body); err != nil {
-			log.Println("...failed while reading response body: ", err)
+			texLogger.Log("...failed while reading response body: ", err)
 		}
 		res.Body.Close()
 
@@ -172,11 +171,11 @@ func runHttpRequests(ctx context.Context, requests []httpparser.TestRequest, opt
 	har := harLogger.ExportAndReset()
 	harData, err := json.Marshal(har)
 	if err != nil {
-		log.Println("...error: failed to serialize HAR file", err)
-		return urth.NewRunResults(urth.RunFinishedError), err
+		texLogger.Log("...error: failed to serialize HAR file", err)
+		return NewRunResultsWithLog(urth.RunFinishedError, texLogger), err
 	}
 
-	return urth.NewRunResults(outcome, urth.WithArtifacts(urth.ArtifactValue{
+	return NewRunResultsWithLog(outcome, texLogger, urth.WithArtifacts(urth.ArtifactValue{
 		Rel:      "har",
 		MimeType: "application/json",
 		Content:  harData,
@@ -184,12 +183,14 @@ func runHttpRequests(ctx context.Context, requests []httpparser.TestRequest, opt
 }
 
 func runHttpRequestScript(ctx context.Context, scriptContent []byte, options RunOptions) (urth.FinalRunResults, error) {
-	log.Println("fondling HTTP")
+	texLogger := RunLog{}
+
+	texLogger.Log("fondling HTTP")
 	requests, err := httpparser.Parse(bytes.NewReader(scriptContent))
 	if err != nil {
-		log.Println("...failed: ", err)
-		return urth.NewRunResults(urth.RunFinishedError), err
+		texLogger.Log("failed: ", err)
+		return NewRunResultsWithLog(urth.RunFinishedError, &texLogger), err
 	}
 
-	return runHttpRequests(ctx, requests, options)
+	return runHttpRequests(ctx, &texLogger, requests, options)
 }
