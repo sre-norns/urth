@@ -1,5 +1,5 @@
 {
-    "name": "scenario-example-1",
+    "name": "scenario-tcp-example-1",
     "labels": {
         "os": "linux"
     },
@@ -8,7 +8,7 @@
     "requirements": {},
     "schedule": "0 0 * * TUE",
     "script": {
-        "kind": "puppeteer/javascript",
-        "content": "Y29uc29sZS5sb2coImhlbGxvIik="
+        "content": "bG9jYWxob3N0OjgwODAK",
+        "kind": "tcp"
     }
 }
