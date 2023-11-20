@@ -123,7 +123,7 @@ func formatResponse(resp *http.Response) string {
 	return result.String()
 }
 
-func runHttpRequests(ctx context.Context, texLogger *RunLog, requests []httpparser.TestRequest, options RunOptions) (urth.FinalRunResults, error) {
+func runHttpRequests(ctx context.Context, texLogger *RunLog, requests []httpparser.TestRequest, options RunOptions) (urth.FinalRunResults, []urth.ArtifactValue, error) {
 	harLogger := har.NewLogger()
 	harLogger.SetOption(har.BodyLogging(options.Http.CaptureResponseBody))
 	harLogger.SetOption(har.PostDataLogging(options.Http.CaptureRequestBody))
@@ -138,18 +138,18 @@ func runHttpRequests(ctx context.Context, texLogger *RunLog, requests []httppars
 
 		if err := harLogger.RecordRequest(id, req.Request); err != nil {
 			texLogger.Log("...failed to record request: ", err)
-			return NewRunResultsWithLog(urth.RunFinishedError, texLogger), err
+			return urth.NewRunResults(urth.RunFinishedError), []urth.ArtifactValue{texLogger.ToArtifact()}, nil
 		}
 
 		res, err := client.Do(tracer.TraceRequest(req.Request))
 		if err != nil {
 			texLogger.Log("...failed: ", err)
-			return NewRunResultsWithLog(urth.RunFinishedError, texLogger), err
+			return urth.NewRunResults(urth.RunFinishedError), []urth.ArtifactValue{texLogger.ToArtifact()}, nil
 		}
 
 		if err := harLogger.RecordResponse(id, res); err != nil {
 			texLogger.Log("...failed to record response: ", err)
-			return NewRunResultsWithLog(urth.RunFinishedError, texLogger), err
+			return urth.NewRunResults(urth.RunFinishedError), []urth.ArtifactValue{texLogger.ToArtifact()}, nil
 		}
 
 		texLogger.Logf("Response:\n%v\n", formatResponse(res))
@@ -172,24 +172,28 @@ func runHttpRequests(ctx context.Context, texLogger *RunLog, requests []httppars
 	harData, err := json.Marshal(har)
 	if err != nil {
 		texLogger.Log("...error: failed to serialize HAR file", err)
-		return NewRunResultsWithLog(urth.RunFinishedError, texLogger), err
+		return urth.NewRunResults(urth.RunFinishedError), []urth.ArtifactValue{texLogger.ToArtifact()}, nil
 	}
 
-	return NewRunResultsWithLog(outcome, texLogger, urth.WithArtifacts(urth.ArtifactValue{
-		Rel:      "har",
-		MimeType: "application/json",
-		Content:  harData,
-	})), nil
+	return urth.NewRunResults(outcome),
+		[]urth.ArtifactValue{
+			texLogger.ToArtifact(),
+			urth.ArtifactValue{
+				Rel:      "har",
+				MimeType: "application/json",
+				Content:  harData,
+			},
+		}, nil
 }
 
-func runHttpRequestScript(ctx context.Context, scriptContent []byte, options RunOptions) (urth.FinalRunResults, error) {
+func runHttpRequestScript(ctx context.Context, scriptContent []byte, options RunOptions) (urth.FinalRunResults, []urth.ArtifactValue, error) {
 	texLogger := RunLog{}
 
 	texLogger.Log("fondling HTTP")
 	requests, err := httpparser.Parse(bytes.NewReader(scriptContent))
 	if err != nil {
 		texLogger.Log("failed: ", err)
-		return NewRunResultsWithLog(urth.RunFinishedError, &texLogger), err
+		return urth.NewRunResults(urth.RunFinishedError), []urth.ArtifactValue{texLogger.ToArtifact()}, nil
 	}
 
 	return runHttpRequests(ctx, &texLogger, requests, options)

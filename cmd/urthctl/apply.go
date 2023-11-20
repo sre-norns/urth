@@ -23,15 +23,16 @@ func (c *ApplyCmd) Run(cfg *commandContext) error {
 		return err
 	}
 
-	apiClient, err := urth.NewRestApiClient(cfg.ApiServerAddress)
+	_, err = urth.NewRestApiClient(cfg.ApiServerAddress)
 	if err != nil {
 		return fmt.Errorf("failed to initialize API Client: %w", err)
 	}
 
-	_, err = apiClient.ApplyObjectDefinition(cfg.Context, resourceSpec)
-	if err != nil {
-		return err
-	}
+	// WIP
+	// _, err = apiClient.ApplyObjectDefinition(cfg.Context, resourceSpec)
+	// if err != nil {
+	// 	return err
+	// }
 
 	return nil
 }

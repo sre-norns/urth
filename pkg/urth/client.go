@@ -17,7 +17,7 @@ type RestApiClient struct {
 	httpClient *http.Client
 }
 
-func NewRestApiClient(baseUrl string) (*RestApiClient, error) {
+func NewRestApiClient(baseUrl string) (Service, error) {
 	url, err := url.Parse(baseUrl)
 
 	return &RestApiClient{
@@ -53,6 +53,12 @@ func (c *RestApiClient) GetLabels() LabelsApi {
 
 func (c *RestApiClient) GetScheduler() Scheduler {
 	return nil
+}
+
+func (c *RestApiClient) GetArtifactsApi() ArtifactApi {
+	return &artifactApiClient{
+		RestApiClient: *c,
+	}
 }
 
 func (c *RestApiClient) ApplyObjectDefinition(ctx context.Context, spec ResourceManifest) (CreatedResponse, error) {
@@ -144,6 +150,89 @@ func (c *RestApiClient) delete(apiUrl *url.URL) (*http.Response, error) {
 	return c.httpClient.Do(request)
 }
 
+func readApiError(resp *http.Response) error {
+	if resp.StatusCode < 500 {
+		var errorResponse ErrorResponse
+		err := json.NewDecoder(resp.Body).Decode(&errorResponse)
+		if err != nil {
+			return err
+		}
+
+		return fmt.Errorf(errorResponse.Message)
+	}
+
+	return fmt.Errorf(resp.Status)
+}
+
+func (c *RestApiClient) deleteResource(uri string) (bool, error) {
+	targetApi := urlForPath(c.baseUrl, uri, nil)
+	resp, err := c.delete(targetApi)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+
+	return resp.StatusCode == http.StatusNoContent || resp.StatusCode == http.StatusOK, err
+}
+
+func (c *RestApiClient) listResources(uri string, searchQuery SearchQuery) ([]PartialObjectMetadata, error) {
+	targetApi := urlForPath(c.baseUrl, uri, searchToQuery(searchQuery))
+	resp, err := c.get(targetApi)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, readApiError(resp)
+	}
+
+	var responseObject PaginatedResponse[PartialObjectMetadata]
+	err = json.NewDecoder(resp.Body).Decode(&responseObject)
+	if err != nil {
+		return nil, err
+	}
+
+	return responseObject.Data, err
+}
+
+func (c *RestApiClient) getResource(uri string, dest any) (bool, error) {
+	targetApi := urlForPath(c.baseUrl, uri, nil)
+	resp, err := c.get(targetApi)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return false, readApiError(resp)
+	}
+
+	return true, json.NewDecoder(resp.Body).Decode(dest)
+}
+
+func (c *RestApiClient) createResource(uri string, entry any) (CreatedResponse, error) {
+	var result CreatedResponse
+	data, err := json.Marshal(entry)
+	if err != nil {
+		return result, err
+	}
+
+	targetApi := urlForPath(c.baseUrl, uri, nil)
+	resp, err := c.post(targetApi, bytes.NewReader(data))
+	if err != nil {
+		return result, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusCreated {
+		return result, readApiError(resp)
+	}
+
+	err = json.NewDecoder(resp.Body).Decode(&result)
+	return result, err
+}
+
 func apiUrlForPath(baseUrl *url.URL, typeInfo TypeMeta, element string, query url.Values) *url.URL {
 	return urlForPath(baseUrl, path.Join(typeInfo.APIVersion, typeInfo.Kind, element), query)
 }
@@ -180,26 +269,17 @@ func searchToQuery(searchQuery SearchQuery) url.Values {
 	return queryParams
 }
 
+// --------
+// Runners API
+// --------
+
 type RunnersApiClient struct {
 	RestApiClient
 }
 
 // List all resources matching given search query
 func (c *RunnersApiClient) List(ctx context.Context, searchQuery SearchQuery) ([]PartialObjectMetadata, error) {
-	targetApi := urlForPath(c.baseUrl, "v1/runners", searchToQuery(searchQuery))
-	resp, err := c.get(targetApi)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var responseObject PaginatedResponse[PartialObjectMetadata]
-	err = json.NewDecoder(resp.Body).Decode(&responseObject)
-	if err != nil {
-		return nil, err
-	}
-
-	return responseObject.Data, err
+	return c.listResources("v1/runners", searchQuery)
 }
 
 // Get a single resource given its unique ID,
@@ -207,38 +287,12 @@ func (c *RunnersApiClient) List(ctx context.Context, searchQuery SearchQuery) ([
 // error if there was communication error with the storage
 func (c *RunnersApiClient) Get(ctx context.Context, id ResourceID) (resource Runner, exists bool, commError error) {
 	var result Runner
-	targetApi := urlForPath(c.baseUrl, fmt.Sprintf("v1/runners/%v", id), nil)
-	resp, err := c.get(targetApi)
-	if err != nil {
-		return result, false, err
-	}
-	defer resp.Body.Close()
-
-	err = json.NewDecoder(resp.Body).Decode(&result)
-	if err != nil {
-		return result, true, err
-	}
-
-	return result, true, nil
+	exists, err := c.getResource(fmt.Sprintf("v1/runners/%v", id), &result)
+	return result, exists, err
 }
 
-func (m *RunnersApiClient) Create(ctx context.Context, newEntry CreateRunnerRequest) (CreatedResponse, error) {
-	var result CreatedResponse
-	data, err := json.Marshal(newEntry)
-	if err != nil {
-		return result, err
-	}
-
-	targetApi := urlForPath(m.baseUrl, "v1/runners", nil)
-	resp, err := m.post(targetApi, bytes.NewReader(data))
-	if err != nil {
-		return result, err
-	}
-
-	defer resp.Body.Close()
-
-	err = json.NewDecoder(resp.Body).Decode(&result)
-	return result, err
+func (c *RunnersApiClient) Create(ctx context.Context, newEntry CreateRunnerRequest) (CreatedResponse, error) {
+	return c.createResource("v1/runners", &newEntry)
 }
 
 func (m *RunnersApiClient) Auth(ctx context.Context, token ApiToken, newEntry RunnerRegistration) (Runner, error) {
@@ -254,10 +308,17 @@ func (m *RunnersApiClient) Auth(ctx context.Context, token ApiToken, newEntry Ru
 		return result, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
+		return result, readApiError(resp)
+	}
 
 	err = json.NewDecoder(resp.Body).Decode(&result)
 	return result, err
 }
+
+// --------
+// Run Results API
+// --------
 
 type RunResultApiRestClient struct {
 	RestApiClient
@@ -267,20 +328,7 @@ type RunResultApiRestClient struct {
 
 // List all resources matching given search query
 func (c *RunResultApiRestClient) List(ctx context.Context, searchQuery SearchQuery) ([]PartialObjectMetadata, error) {
-	targetApi := urlForPath(c.baseUrl, fmt.Sprintf("v1/scenarios/%v/results", c.ScenarioId), searchToQuery(searchQuery))
-	resp, err := c.get(targetApi)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var responseObject PaginatedResponse[PartialObjectMetadata]
-	err = json.NewDecoder(resp.Body).Decode(&responseObject)
-	if err != nil {
-		return nil, err
-	}
-
-	return responseObject.Data, err
+	return c.listResources(fmt.Sprintf("v1/scenarios/%v/results", c.ScenarioId), searchQuery)
 }
 
 // Get a single resource given its unique ID,
@@ -288,15 +336,8 @@ func (c *RunResultApiRestClient) List(ctx context.Context, searchQuery SearchQue
 // error if there was communication error with the storage
 func (c *RunResultApiRestClient) Get(ctx context.Context, id ResourceID) (ScenarioRunResults, bool, error) {
 	var result ScenarioRunResults
-	targetApi := urlForPath(c.baseUrl, fmt.Sprintf("v1/scenarios/%v/results/%v", c.ScenarioId, id), nil)
-	resp, err := c.get(targetApi)
-	if err != nil {
-		return result, false, err
-	}
-	defer resp.Body.Close()
-
-	err = json.NewDecoder(resp.Body).Decode(&result)
-	return result, true, err
+	exists, err := c.getResource(fmt.Sprintf("v1/scenarios/%v/results/%v", c.ScenarioId, id), &result)
+	return result, exists, err
 }
 
 func (c *RunResultApiRestClient) Create(ctx context.Context, runResults CreateScenarioRunResults) (CreatedRunResponse, error) {
@@ -313,6 +354,9 @@ func (c *RunResultApiRestClient) Create(ctx context.Context, runResults CreateSc
 	}
 
 	defer resp.Body.Close()
+	if (resp.StatusCode != http.StatusCreated) && (resp.StatusCode != http.StatusAccepted) && resp.StatusCode != http.StatusOK {
+		return result, readApiError(resp)
+	}
 
 	err = json.NewDecoder(resp.Body).Decode(&result)
 	return result, err
@@ -341,73 +385,65 @@ func (c *RunResultApiRestClient) Update(ctx context.Context, id VersionedResourc
 	}
 
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
+		return result, readApiError(resp)
+	}
 
 	err = json.NewDecoder(resp.Body).Decode(&result)
 	return result, err
 }
+
+// --------
+// Artifacts API
+// --------
+
+type artifactApiClient struct {
+	RestApiClient
+}
+
+func (c *artifactApiClient) List(ctx context.Context, searchQuery SearchQuery) ([]PartialObjectMetadata, error) {
+	return c.listResources("v1/artifacts", searchQuery)
+}
+
+func (c *artifactApiClient) Create(ctx context.Context, entry CreateArtifactRequest) (CreatedResponse, error) {
+	return c.createResource("v1/artifacts", &entry)
+}
+
+func (c *artifactApiClient) Get(ctx context.Context, id ResourceID) (Artifact, bool, error) {
+	var result Artifact
+	exists, err := c.getResource(fmt.Sprintf("v1/artifacts/%v", id), &result)
+	return result, exists, err
+}
+
+func (c *artifactApiClient) Delete(ctx context.Context, id ResourceID) (bool, error) {
+	return c.deleteResource(fmt.Sprintf("v1/artifacts/%v", id))
+}
+
+// --------
+// Scenarios API
+// --------
 
 type scenariosApiClient struct {
 	RestApiClient
 }
 
 func (c *scenariosApiClient) List(ctx context.Context, searchQuery SearchQuery) ([]PartialObjectMetadata, error) {
-	targetApi := urlForPath(c.baseUrl, "v1/scenarios", searchToQuery(searchQuery))
-	resp, err := c.get(targetApi)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var responseObject PaginatedResponse[PartialObjectMetadata]
-	err = json.NewDecoder(resp.Body).Decode(&responseObject)
-	if err != nil {
-		return nil, err
-	}
-
-	return responseObject.Data, err
+	return c.listResources("v1/scenarios", searchQuery)
 }
 
 func (c *scenariosApiClient) Get(ctx context.Context, id ResourceID) (Scenario, bool, error) {
 	var result Scenario
-	targetApi := urlForPath(c.baseUrl, fmt.Sprintf("v1/scenarios/%v", id), nil)
-	resp, err := c.get(targetApi)
-	if err != nil {
-		return result, false, err
-	}
-	defer resp.Body.Close()
-
-	err = json.NewDecoder(resp.Body).Decode(&result)
-	return result, true, err
+	exists, err := c.getResource(fmt.Sprintf("v1/scenarios/%v", id), &result)
+	return result, exists, err
 }
 
 func (c *scenariosApiClient) Create(ctx context.Context, scenario CreateScenarioRequest) (CreatedResponse, error) {
-	var result CreatedResponse
-	data, err := json.Marshal(scenario)
-	if err != nil {
-		return result, err
-	}
-
-	targetApi := urlForPath(c.baseUrl, "v1/scenarios", nil)
-	resp, err := c.post(targetApi, bytes.NewReader(data))
-	if err != nil {
-		return result, err
-	}
-	defer resp.Body.Close()
-
-	err = json.NewDecoder(resp.Body).Decode(&result)
-	return result, err
+	return c.createResource("v1/scenarios", &scenario)
 }
 
 // Delete a single resource identified by a unique ID
 func (c *scenariosApiClient) Delete(ctx context.Context, id ResourceID) (bool, error) {
-	targetApi := urlForPath(c.baseUrl, fmt.Sprintf("v1/scenarios/%v", id), nil)
-	resp, err := c.delete(targetApi)
-	if err != nil {
-		return false, err
-	}
-	defer resp.Body.Close()
-
-	return resp.StatusCode == http.StatusNoContent || resp.StatusCode == http.StatusOK, err
+	return c.deleteResource(fmt.Sprintf("v1/scenarios/%v", id))
 }
 
 // Update a single resource identified by a unique ID
@@ -424,6 +460,10 @@ func (c *scenariosApiClient) UpdateScript(ctx context.Context, id ResourceID, sc
 	return VersionedResourceId{}, false, nil
 }
 
+// --------
+// Labels API
+// --------
+
 type LabelsApiClient struct {
 	RestApiClient
 }
@@ -436,6 +476,10 @@ func (c *LabelsApiClient) List(ctx context.Context, searchQuery SearchQuery) ([]
 		return nil, err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, readApiError(resp)
+	}
 
 	var responseObject PaginatedResponse[ResourceLabel]
 	err = json.NewDecoder(resp.Body).Decode(&responseObject)

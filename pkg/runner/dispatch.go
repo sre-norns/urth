@@ -32,7 +32,7 @@ type RunOptions struct {
 	Har       HarOptions
 }
 
-type ScriptRunner func(context.Context, []byte, RunOptions) (urth.FinalRunResults, error)
+type ScriptRunner func(context.Context, []byte, RunOptions) (urth.FinalRunResults, []urth.ArtifactValue, error)
 
 var kindRunnerMap = map[urth.ScenarioKind]ScriptRunner{
 	urth.TcpPortCheckKind: runTcpPortScript,
@@ -42,19 +42,30 @@ var kindRunnerMap = map[urth.ScenarioKind]ScriptRunner{
 	urth.PyPuppeteerKind:  runPyPuppeteerScript,
 }
 
+func RegisterRunnerKind(kind urth.ScenarioKind, runner ScriptRunner) error {
+	kindRunnerMap[kind] = runner
+	return nil
+}
+
+func UnregisterRunnerKind(kind urth.ScenarioKind) error {
+	delete(kindRunnerMap, kind)
+
+	return nil
+}
+
 // Execute a single scenario run
-func Play(ctx context.Context, script *urth.ScenarioScript, options RunOptions) (urth.FinalRunResults, error) {
+func Play(ctx context.Context, script *urth.ScenarioScript, options RunOptions) (urth.FinalRunResults, []urth.ArtifactValue, error) {
 	if script == nil {
-		return urth.NewRunResults(urth.RunFinishedError), fmt.Errorf("no script to run")
+		return urth.NewRunResults(urth.RunFinishedError), nil, fmt.Errorf("no script to run")
 	}
 
 	if len(script.Kind) == 0 {
-		return urth.NewRunResults(urth.RunFinishedError), fmt.Errorf("no script Kind specified")
+		return urth.NewRunResults(urth.RunFinishedError), nil, fmt.Errorf("no script Kind specified")
 	}
 
 	runner, ok := kindRunnerMap[script.Kind]
 	if !ok {
-		return urth.NewRunResults(urth.RunFinishedError), fmt.Errorf("unsupported script kind: %v", script.Kind)
+		return urth.NewRunResults(urth.RunFinishedError), nil, fmt.Errorf("unsupported script kind: %v", script.Kind)
 	}
 
 	return runner(ctx, script.Content, options)

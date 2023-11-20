@@ -8,6 +8,7 @@ import (
 
 	"github.com/alecthomas/kong"
 	"github.com/hibiken/asynq"
+	"gorm.io/gorm"
 
 	"github.com/sre-norns/urth/pkg/grace"
 	"github.com/sre-norns/urth/pkg/redqueue"
@@ -21,7 +22,7 @@ type WorkerConfig struct {
 	RedisAddress string `help:"Redis server address:port to connect to" default:"localhost:6379"`
 
 	// isDone    bool
-	apiClient *urth.RestApiClient
+	apiClient urth.Service
 
 	identity urth.Runner
 }
@@ -37,8 +38,10 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 		return err // Note: job can be re-tried
 	}
 
-	runID := fmt.Sprintf("%v-%v", job.Name, job.ScenarioID)
-	log.Println("jobID: ", runID)
+	timeStarted := time.Now()
+	scenarioName := fmt.Sprintf("%v-%v", job.Name, job.ScenarioID)
+	runID := fmt.Sprintf("%v-%v", scenarioName, timeStarted.UnixMicro())
+	log.Println("jobID:", runID)
 
 	// TODO: Check requirements!
 
@@ -46,9 +49,15 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 	// Notify API-server that a job has been accepted by this worker
 	// FIXME: Worker must use its credentials jwt
 	runCreated, err := resultsApiClient.Create(ctx, urth.CreateScenarioRunResults{
-		ScenarioID:  job.ScenarioID,
-		RunnerID:    w.identity.GetVersionedID(),
-		TimeStarted: time.Now(),
+		CreateResourceMeta: urth.CreateResourceMeta{
+			Name:   runID, // Note: not unique!
+			Labels: w.Labels,
+		},
+		InitialScenarioRunResults: urth.InitialScenarioRunResults{
+			ScenarioID:  job.ScenarioID,
+			RunnerID:    w.identity.GetVersionedID(),
+			TimeStarted: timeStarted,
+		},
 	})
 	if err != nil {
 		log.Printf("failed to register new run %q: %v", runID, err)
@@ -62,9 +71,9 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 	}
 	workCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	log.Println("job ", runID, "timeout: ", timeout)
+	log.Println("jobID: ", runID, ", starting timeout:", timeout)
 
-	runResult, err := runner.Play(workCtx, job.Script, runner.RunOptions{
+	runResult, artifacts, err := runner.Play(workCtx, job.Script, runner.RunOptions{
 		Http: runner.HttpOptions{
 			CaptureResponseBody: false,
 			CaptureRequestBody:  false,
@@ -73,7 +82,7 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 		Puppeteer: runner.PuppeteerOptions{
 			Headless:         true,
 			WorkingDirectory: w.WorkingDirectory,
-			TempDirPrefix:    fmt.Sprintf("run-%v", runID),
+			TempDirPrefix:    fmt.Sprintf("run-%v", scenarioName),
 			KeepTempDir:      job.IsKeepDirectory,
 		},
 	})
@@ -81,14 +90,37 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 		log.Printf("failed to run the job %q: %v", runID, err)
 	}
 
+	// Push artifacts if any:
+	artifactsApiClient := w.apiClient.GetArtifactsApi()
+	for _, artifact := range artifacts {
+		created, err := artifactsApiClient.Create(ctx, urth.CreateArtifactRequest{
+			CreateResourceMeta: urth.CreateResourceMeta{
+				Name:   fmt.Sprintf("%v-%v", runID, artifact.Rel),
+				Labels: w.Labels,
+			},
+			ScenarioRunResultsID: job.ScenarioID.ID,
+			ArtifactValue:        artifact,
+		})
+
+		if err != nil {
+			log.Printf("failed to post artifact %q for %q: %v", artifact.Rel, runID, err)
+			return err // TODO: retry or not? Add results into the retry queue to post later?
+		}
+
+		runResult.ArtifactIds = append(runResult.ArtifactIds, urth.Artifact{
+			ResourceMeta: urth.ResourceMeta{
+				Model: gorm.Model{ID: uint(created.ID)},
+			}})
+	}
+
 	// Notify API-server that the job has been complete
-	_, err = resultsApiClient.Update(ctx, runCreated.VersionedResourceId, runCreated.Token, runResult)
+	created, err := resultsApiClient.Update(ctx, runCreated.VersionedResourceId, runCreated.Token, runResult)
 	if err != nil {
 		log.Printf("failed to post run results for %q: %v", runID, err)
 		return err // TODO: retry or not? Add results into the retry queue to post later?
 	}
 
-	log.Printf("job %q competed: %v", runID, runResult.Result)
+	log.Printf("job %q competed: %v, resultsID: %v", runID, runResult.Result, created.VersionedResourceId)
 	return nil
 }
 

@@ -13,11 +13,13 @@ type RunLog struct {
 }
 
 func (l *RunLog) Log(v ...any) {
-	logLine := fmt.Sprint(v...)
-	_, _ = l.content.WriteString(logLine)
-	_, _ = l.content.WriteString("\n")
+	// logLine := fmt.Sprint(v...)
+	fmt.Fprint(&l.content, v...)
+	fmt.Fprint(&l.content, "\n")
+	// _, _ = l.content.WriteString(logLine)
+	// _, _ = l.content.WriteString("\n")
 
-	log.Print(logLine)
+	log.Print(v...)
 }
 
 func (l *RunLog) Logf(format string, v ...any) {
@@ -32,9 +34,9 @@ func (l *RunLog) ToArtifact() urth.ArtifactValue {
 	}
 }
 
-func NewRunResultsWithLog(runResult urth.RunStatus, logger *RunLog, options ...urth.RunResultOption) urth.FinalRunResults {
-	return urth.NewRunResults(
-		urth.RunFinishedSuccess,
-		append([]urth.RunResultOption{urth.WithArtifacts(logger.ToArtifact())}, options...)...,
-	)
-}
+// func NewRunResultsWithLog(runResult urth.RunStatus, logger *RunLog, options ...urth.RunResultOption) urth.FinalRunResults {
+// 	return urth.NewRunResults(
+// 		runResult,
+// 		append([]urth.RunResultOption{urth.WithArtifacts(logger.ToArtifact())}, options...)...,
+// 	)
+// }

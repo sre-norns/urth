@@ -164,15 +164,26 @@ const (
 )
 
 type ArtifactValue struct {
-	Rel      string `form:"rel" json:"rel" yaml:"rel" xml:"rel"`
+	// Id of ScenarioRun that produced this artifact
+	ScenarioRunResultsID uint `form:"scenarioRunId" json:"scenarioRunId" yaml:"scenarioRunId" xml:"scenarioRunId"`
+
+	// If set, point in time when artifact will expire
+	ExpireTime sql.NullTime `form:"expire_time" json:"expire_time" yaml:"expire_time" xml:"expire_time" time_format:"unix"`
+
+	// Relation type: log / HAR / etc? Determines how content is consumed by clients
+	Rel string `form:"rel" json:"rel" yaml:"rel" xml:"rel"`
+
+	// MimeType of the content
 	MimeType string `form:"mimeType" json:"mimeType" yaml:"mimeType" xml:"mimeType"`
-	Content  []byte `form:"content" json:"content" yaml:"content" xml:"content"`
+
+	// Blob content of the artifact
+	Content []byte `form:"content" json:"content" yaml:"content" xml:"content"`
 }
 
-// Artifact model as produced by the script runner
+// Artifact model. Artifacts are produced and published by a script runner,
+// as a result of scenario execution.
 type Artifact struct {
-	OwnerID   ResourceID
-	OwnerType string
+	ResourceMeta `json:",inline" yaml:",inline"`
 
 	ArtifactValue `json:",inline" yaml:",inline"`
 }
@@ -187,7 +198,8 @@ type FinalRunResults struct {
 
 	// TODO:
 	// Artifacts []Artifact `json:"-" yaml:"-" gorm:"polymorphic:Owner;"`
-	Artifacts []Artifact `json:"artifacts,omitempty" yaml:"artifacts,omitempty" gorm:"polymorphic:Owner;"`
+	// Artifacts []Artifact `json:"artifacts,omitempty" yaml:"artifacts,omitempty" gorm:"foreignKey:ScenarioRunResultsID"`
+	ArtifactIds []Artifact `json:"artifactIds,omitempty" yaml:"artifactIds,omitempty"`
 }
 
 type RunResultOption func(value *FinalRunResults)
@@ -201,15 +213,15 @@ func WithTime(value time.Time) RunResultOption {
 	}
 }
 
-func WithArtifacts(artifacts ...ArtifactValue) RunResultOption {
-	return func(result *FinalRunResults) {
-		for _, artifact := range artifacts {
-			result.Artifacts = append(result.Artifacts, Artifact{
-				ArtifactValue: artifact,
-			})
-		}
-	}
-}
+// func WithArtifacts(artifacts ...ArtifactValue) RunResultOption {
+// 	return func(result *FinalRunResults) {
+// 		for _, artifact := range artifacts {
+// 			result.Artifacts = append(result.Artifacts, Artifact{
+// 				ArtifactValue: artifact,
+// 			})
+// 		}
+// 	}
+// }
 
 func NewRunResults(runResult RunStatus, options ...RunResultOption) FinalRunResults {
 	result := FinalRunResults{
@@ -228,7 +240,7 @@ func NewRunResults(runResult RunStatus, options ...RunResultOption) FinalRunResu
 }
 
 // CreateScenarioRunResults is info that runner reports about a running job
-type CreateScenarioRunResults struct {
+type InitialScenarioRunResults struct {
 	// ID and version of the scenario that this results were produced for
 	ScenarioID VersionedResourceId `form:"play_id" json:"play_id" yaml:"play_id" xml:"play_id"  binding:"required"  gorm:"embedded;embeddedPrefix:scenario_"`
 	// ID and version of the runner that executed the scenario
@@ -238,8 +250,8 @@ type CreateScenarioRunResults struct {
 }
 
 type ScenarioRunResultSpec struct {
-	CreateScenarioRunResults `json:",inline" yaml:",inline"`
-	FinalRunResults          `json:",inline" yaml:",inline"`
+	InitialScenarioRunResults `json:",inline" yaml:",inline"`
+	FinalRunResults           `json:",inline" yaml:",inline"`
 }
 
 // ScenarioRunResults results of a single execution of a given scenario

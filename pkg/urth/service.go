@@ -35,6 +35,15 @@ type ScenarioApi interface {
 	ListRunnable(ctx context.Context, query SearchQuery) ([]Scenario, error)
 }
 
+type ArtifactApi interface {
+	ReadableRecourseApi[Artifact]
+
+	Create(ctx context.Context, entry CreateArtifactRequest) (CreatedResponse, error)
+
+	// Delete a single resource identified by a unique ID
+	Delete(ctx context.Context, id ResourceID) (bool, error)
+}
+
 type RunResultApi interface {
 	ReadableRecourseApi[ScenarioRunResults]
 
@@ -43,6 +52,7 @@ type RunResultApi interface {
 	Update(ctx context.Context, id VersionedResourceId, token ApiToken, entry FinalRunResults) (CreatedResponse, error)
 }
 
+// RunnersApi encapsulate APIs to interacting with `Runners`
 type RunnersApi interface {
 	ReadableRecourseApi[Runner]
 
@@ -63,6 +73,7 @@ type Service interface {
 	GetRunnerAPI() RunnersApi
 	GetScenarioAPI() ScenarioApi
 	GetResultsAPI(ResourceID) RunResultApi
+	GetArtifactsApi() ArtifactApi
 
 	GetLabels() LabelsApi
 
@@ -121,6 +132,12 @@ func (s *serviceImpl) GetResultsAPI(id ResourceID) RunResultApi {
 	}
 }
 
+func (s *serviceImpl) GetArtifactsApi() ArtifactApi {
+	return &artifactApiImp{
+		store: s.store,
+	}
+}
+
 func (s *serviceImpl) GetLabels() LabelsApi {
 	return &labelsApiImpl{
 		store: s.store,
@@ -146,7 +163,7 @@ func (s *serviceImpl) ScheduleScenarioRun(ctx context.Context, id ResourceID, re
 	// 	return urth.InvalidRunId, nil
 	// }
 
-	log.Printf("Scheduling manually: %v (active=%t)", scenario.GetVersionedID(), scenario.IsActive)
+	log.Printf("Scheduling scenario: %v (active=%t)", scenario.GetVersionedID(), scenario.IsActive)
 	runId, err := s.scheduler.Schedule(ctx, ScenarioToRunnable(scenario))
 
 	return ManualRunRequestResponse{
@@ -189,10 +206,7 @@ func (m *scenarioApiImpl) List(ctx context.Context, query SearchQuery) ([]Partia
 
 func (m *scenarioApiImpl) Create(ctx context.Context, newEntry CreateScenarioRequest) (CreatedResponse, error) {
 	entry := Scenario{
-		ResourceMeta: ResourceMeta{
-			Name:   newEntry.Name,
-			Labels: newEntry.Labels,
-		},
+		ResourceMeta:   newEntry.Metadata(),
 		CreateScenario: newEntry.CreateScenario,
 	}
 
@@ -205,7 +219,7 @@ func (m *scenarioApiImpl) Create(ctx context.Context, newEntry CreateScenarioReq
 
 	return CreatedResponse{
 		TypeMeta:            kind,
-		VersionedResourceId: NewVersionedId(entry.ID, entry.Version),
+		VersionedResourceId: entry.GetVersionedID(),
 	}, err
 }
 
@@ -316,8 +330,9 @@ func (m *resultsApiImpl) Create(ctx context.Context, newEntry CreateScenarioRunR
 	// TODO: Validate that Create results request is from an authentic worker that is allowed to take jobs!
 
 	entry := ScenarioRunResults{
+		ResourceMeta: newEntry.Metadata(),
 		ScenarioRunResultSpec: ScenarioRunResultSpec{
-			CreateScenarioRunResults: newEntry,
+			InitialScenarioRunResults: newEntry.InitialScenarioRunResults,
 		},
 		UpdateToken: RandStringBytesRmndr(21), // FIXME: Generate JWT with valid-until clause, to give worker a time to post
 	}
@@ -331,7 +346,7 @@ func (m *resultsApiImpl) Create(ctx context.Context, newEntry CreateScenarioRunR
 	return CreatedRunResponse{
 		CreatedResponse: CreatedResponse{
 			TypeMeta:            kind,
-			VersionedResourceId: NewVersionedId(entry.ID, entry.Version),
+			VersionedResourceId: entry.GetVersionedID(),
 		},
 		Token: entry.UpdateToken,
 	}, err
@@ -408,10 +423,7 @@ func (m *runnersApiImpl) Get(ctx context.Context, id ResourceID) (Runner, bool, 
 
 func (m *runnersApiImpl) Create(ctx context.Context, newEntry CreateRunnerRequest) (CreatedResponse, error) {
 	entry := Runner{
-		ResourceMeta: ResourceMeta{
-			Name:   newEntry.Name,
-			Labels: newEntry.Labels,
-		},
+		ResourceMeta: newEntry.Metadata(),
 		RunnerSpec: RunnerSpec{
 			RunnerDefinition: newEntry.RunnerDefinition,
 		},
@@ -427,7 +439,7 @@ func (m *runnersApiImpl) Create(ctx context.Context, newEntry CreateRunnerReques
 
 	return CreatedResponse{
 		TypeMeta:            kind,
-		VersionedResourceId: NewVersionedId(entry.ID, entry.Version),
+		VersionedResourceId: entry.GetVersionedID(),
 	}, err
 }
 
@@ -439,6 +451,63 @@ func (m *runnersApiImpl) Auth(ctx context.Context, token ApiToken, entry RunnerR
 	}
 
 	return result, err
+}
+
+//------------------------------
+/// ArtifactsApis implementation
+//------------------------------
+type artifactApiImp struct {
+	store Store
+}
+
+func (m *artifactApiImp) List(ctx context.Context, query SearchQuery) ([]PartialObjectMetadata, error) {
+	var resources []Artifact
+	kind, err := m.store.FindResources(ctx, &resources, query)
+	if err != nil {
+		return nil, err
+	}
+
+	results := make([]PartialObjectMetadata, 0, len(resources))
+	for _, sc := range resources {
+		// Note: Do not return artifact value when listing
+		results = append(results, PartialObjectMetadata{
+			TypeMeta:     kind,
+			ResourceMeta: sc.ResourceMeta,
+			Spec:         sc.ScenarioRunResultsID,
+		})
+	}
+
+	return results, nil
+}
+
+func (m *artifactApiImp) Get(ctx context.Context, id ResourceID) (Artifact, bool, error) {
+	var result Artifact
+	_, err := m.store.Get(ctx, &result, id)
+
+	return result, result.ID == uint(id) && !result.DeletedAt.Valid, err
+}
+
+func (m *artifactApiImp) Create(ctx context.Context, newEntry CreateArtifactRequest) (CreatedResponse, error) {
+	entry := Artifact{
+		ResourceMeta:  newEntry.Metadata(),
+		ArtifactValue: newEntry.ArtifactValue,
+	}
+
+	kind, err := m.store.GuessKind(reflect.ValueOf(&entry))
+	if err != nil {
+		return CreatedResponse{}, err
+	}
+
+	err = m.store.Create(ctx, &entry)
+
+	return CreatedResponse{
+		TypeMeta:            kind,
+		VersionedResourceId: entry.GetVersionedID(),
+	}, err
+}
+
+func (m *artifactApiImp) Delete(ctx context.Context, id ResourceID) (bool, error) {
+	return m.store.Delete(ctx, &Artifact{}, id)
 }
 
 //------------------------------

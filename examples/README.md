@@ -34,7 +34,7 @@ curl -X DELETE 'http://localhost:8080/api/v1/scenarios/1'
 ```bash
 curl -X PUT 'http://localhost:8080/api/v1/scenarios/1/results'  \
 -H "Content-Type: application/json" \
---data-binary "@examples/run.scenario.tcp.json"
+--data-binary "@examples/run.scenario.json"
 ```
 
 

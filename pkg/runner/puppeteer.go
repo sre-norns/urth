@@ -40,15 +40,15 @@ func SetupRunEnv(workDir string) error {
 	return nil
 }
 
-func runPuppeteerScript(ctx context.Context, scriptContent []byte, options RunOptions) (urth.FinalRunResults, error) {
+func runPuppeteerScript(ctx context.Context, scriptContent []byte, options RunOptions) (urth.FinalRunResults, []urth.ArtifactValue, error) {
 	texLogger := RunLog{}
 	texLogger.Log("Running puppeteer script")
 
 	workDir, err := os.MkdirTemp(options.Puppeteer.WorkingDirectory, options.Puppeteer.TempDirPrefix)
 	if err != nil {
-		err = fmt.Errorf("failed create work directory: %w", err)
+		err = fmt.Errorf("failed to create work directory: %w", err)
 		texLogger.Log(err)
-		return NewRunResultsWithLog(urth.RunFinishedError, &texLogger), err
+		return urth.NewRunResults(urth.RunFinishedError), []urth.ArtifactValue{texLogger.ToArtifact()}, nil
 	}
 
 	defer func(dir string, keep bool) {
@@ -61,7 +61,7 @@ func runPuppeteerScript(ctx context.Context, scriptContent []byte, options RunOp
 	if err := SetupRunEnv(options.Puppeteer.WorkingDirectory); err != nil {
 		err = fmt.Errorf("failed setup run-time environment: %w", err)
 		texLogger.Log(err)
-		return NewRunResultsWithLog(urth.RunFinishedError, &texLogger), err
+		return urth.NewRunResults(urth.RunFinishedError), []urth.ArtifactValue{texLogger.ToArtifact()}, nil
 	}
 
 	cmd := exec.Command("node", "-")
@@ -73,7 +73,7 @@ func runPuppeteerScript(ctx context.Context, scriptContent []byte, options RunOp
 	if err != nil {
 		err := fmt.Errorf("failed to open input pipe: %w", err)
 		texLogger.Log(err)
-		return NewRunResultsWithLog(urth.RunFinishedError, &texLogger), err
+		return urth.NewRunResults(urth.RunFinishedError), []urth.ArtifactValue{texLogger.ToArtifact()}, nil
 	}
 
 	// TODO: Write common prolog for all scrips
@@ -96,5 +96,5 @@ func runPuppeteerScript(ctx context.Context, scriptContent []byte, options RunOp
 		runResult = urth.RunFinishedError
 	}
 
-	return NewRunResultsWithLog(runResult, &texLogger), err
+	return urth.NewRunResults(runResult), []urth.ArtifactValue{texLogger.ToArtifact()}, nil
 }

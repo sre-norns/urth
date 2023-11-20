@@ -24,6 +24,11 @@ type (
 		RunResultsID    ResourceID `uri:"runId" form:"runId" binding:"required"`
 	}
 
+	ScenarioRunResultArtifactRequest struct {
+		ScenarioRunResultsRequest `uri:",inline" form:",inline" binding:"required"`
+		ArtifactID                ResourceID `uri:"artifactId" form:"artifactId" binding:"required"`
+	}
+
 	PaginatedResponse[T any] struct {
 		Pagination `form:",inline" json:",inline" yaml:",inline"`
 
@@ -31,7 +36,7 @@ type (
 		Data  []T `form:"data" json:"data" yaml:"data" xml:"data"`
 	}
 
-	ErrorRepose struct {
+	ErrorResponse struct {
 		Code    string
 		Message string
 	}
@@ -55,6 +60,17 @@ type (
 		RunnerDefinition   `uri:",inline" form:",inline" json:",inline" yaml:",inline" `
 	}
 
+	CreateScenarioRunResults struct {
+		CreateResourceMeta        `uri:",inline" form:",inline" json:",inline" yaml:",inline" `
+		InitialScenarioRunResults `uri:",inline" form:",inline" json:",inline" yaml:",inline" `
+	}
+
+	CreateArtifactRequest struct {
+		CreateResourceMeta   `uri:",inline" form:",inline" json:",inline" yaml:",inline" `
+		ScenarioRunResultsID ResourceID `form:"scenarioRunId" json:"scenarioRunId" yaml:"scenarioRunId" xml:"scenarioRunId"`
+		ArtifactValue        `uri:",inline" form:",inline" json:",inline" yaml:",inline" `
+	}
+
 	CreatedResponse struct {
 		// Gives us kind info
 		TypeMeta `json:",inline" yaml:",inline"`
@@ -76,8 +92,8 @@ type (
 	}
 )
 
-func NewErrorRepose(httpCode string, err error) ErrorRepose {
-	return ErrorRepose{
+func NewErrorResponse(httpCode string, err error) ErrorResponse {
+	return ErrorResponse{
 		Code:    httpCode,
 		Message: err.Error(),
 	}
@@ -98,5 +114,12 @@ func (r ResourceRequest) ResourceID() ResourceID {
 func (p *Pagination) ClampLimit(maxLimit uint) {
 	if p.Limit > maxLimit || p.Limit == 0 {
 		p.Limit = maxLimit
+	}
+}
+
+func (m *CreateResourceMeta) Metadata() ResourceMeta {
+	return ResourceMeta{
+		Name:   m.Name,
+		Labels: m.Labels,
 	}
 }

@@ -34,10 +34,10 @@ type DbStore struct {
 func NewDbStore(db *gorm.DB) Store {
 
 	// TODO: Add InstanceLabelsModel
-	dbWithPreloads := db.Preload("LabelsModel")
+	// dbWithPreloads := db.Preload("LabelsModel")
 
 	return &DbStore{
-		db: dbWithPreloads,
+		db: db,
 	}
 }
 
@@ -64,7 +64,6 @@ func (s *DbStore) GetWithVersion(ctx context.Context, dest any, id VersionedReso
 
 func (s *DbStore) GetByToken(ctx context.Context, dest any, token ApiToken) (bool, error) {
 	tx := s.db.WithContext(ctx).Where("id_token = ?", token).First(dest)
-	log.Print("Fond for token ", token, "n: ", tx.RowsAffected)
 	if errors.Is(tx.Error, gorm.ErrRecordNotFound) {
 		return false, nil
 	}
@@ -106,8 +105,9 @@ func (s *DbStore) FindResources(ctx context.Context, resources any, searchQuery 
 		return resultType, err
 	}
 
-	tx, err := s.selectorAsQuery(s.startPaginatedTx(ctx, searchQuery.Pagination), selector)
-	// tx, err := s.selectorAsQuery(s.startPaginatedTx(ctx, searchQuery.Pagination).Preload(clause.Associations), selector)
+	// tx, err := s.selectorAsQuery(s.startPaginatedTx(ctx, searchQuery.Pagination), selector)
+	// tx, err := s.selectorAsQuery(s.startPaginatedTx(ctx, searchQuery.Pagination).Preload(clzause.Associations), selector)
+	tx, err := s.selectorAsQuery(s.startPaginatedTx(ctx, searchQuery.Pagination).Preload("LabelsModel"), selector)
 	if err != nil {
 		return resultType, err
 	}
@@ -119,7 +119,8 @@ func (s *DbStore) FindResources(ctx context.Context, resources any, searchQuery 
 
 	t := reflect.ValueOf(resources).Elem()
 	if (t.Kind() == reflect.Slice || t.Kind() == reflect.Array) && t.Len() > 0 {
-		resultType, err = s.GuessKind(t.Index(0))
+		// resultType, err = s.GuessKind(t.Index(0)) // FIXME: Should use 0 value of
+		resultType, err = s.GuessKind(reflect.Zero(t.Type()))
 		if err != nil {
 			return resultType, err
 		}
@@ -130,6 +131,36 @@ func (s *DbStore) FindResources(ctx context.Context, resources any, searchQuery 
 
 func (s *DbStore) FindInto(ctx context.Context, model any, into any, pagination Pagination) error {
 	return s.startPaginatedTx(ctx, pagination).Model(model).Group("key").Group("value").Find(into).Error
+}
+
+func (s *DbStore) FindDependentResources(ctx context.Context, id ResourceID, model any, into any, pagination Pagination) error {
+	kind, err := s.GuessKind(reflect.ValueOf(model))
+	if err != nil {
+		return err
+	}
+
+	return s.startPaginatedTx(ctx, pagination).
+		Where("owner_id = ?", id).
+		Where("owner_type = ?", kind.Kind).
+		Find(into).
+		Error
+}
+
+func (s *DbStore) GetDependent(ctx context.Context, owner_id ResourceID, model, into any, id ResourceID) (bool, error) {
+	kind, err := s.GuessKind(reflect.ValueOf(model))
+	if err != nil {
+		return false, err
+	}
+
+	tx := s.db.WithContext(ctx).
+		Where("owner_id = ?", id).
+		Where("owner_type = ?", kind.Kind).
+		First(into)
+
+	if errors.Is(tx.Error, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	return tx.RowsAffected == 1, tx.Error
 }
 
 func (s *DbStore) selectorAsQuery(tx *gorm.DB, selector labels.Selector) (*gorm.DB, error) {

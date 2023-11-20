@@ -31,7 +31,7 @@ func (c *RunCmd) runScenario(cmdCtx context.Context, sourceName string, script *
 	ctx, cancel := context.WithTimeout(cmdCtx, timeout)
 	defer cancel()
 
-	runResult, err := runner.Play(ctx, script, runner.RunOptions{
+	runResult, artifacts, err := runner.Play(ctx, script, runner.RunOptions{
 		Puppeteer: runner.PuppeteerOptions{
 			Headless:         c.Headless,
 			WorkingDirectory: workingDir,
@@ -49,12 +49,12 @@ func (c *RunCmd) runScenario(cmdCtx context.Context, sourceName string, script *
 	}
 
 	if runResult.Result == urth.RunFinishedSuccess {
-		log.Println("artifacts produced:", len(runResult.Artifacts))
+		log.Println("artifacts produced:", len(artifacts))
 	}
 	log.Printf("script finished: %q", runResult.Result)
 
 	// Process artifacts produced by the local run
-	for _, artifact := range runResult.Artifacts {
+	for _, artifact := range artifacts {
 		log.Println("artifact:", artifact.Rel)
 
 		if artifact.Rel == "har" && c.SaveHAR {
