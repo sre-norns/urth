@@ -12,15 +12,17 @@ func (l Labels) Get(key string) string {
 	return l[key]
 }
 
-func MergeLabels(l, r Labels) Labels {
-	result := make(Labels, len(l)+len(r))
-
-	for k, v := range l {
-		result[k] = v
+func MergeLabels(labl ...Labels) Labels {
+	count := 0
+	for _, l := range labl {
+		count += len(l)
 	}
 
-	for k, v := range r {
-		result[k] = v
+	result := make(Labels, count)
+	for _, l := range labl {
+		for k, v := range l {
+			result[k] = v
+		}
 	}
 
 	return result

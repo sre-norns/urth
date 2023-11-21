@@ -178,7 +178,7 @@ func runHttpRequests(ctx context.Context, texLogger *RunLog, requests []httppars
 	return urth.NewRunResults(outcome),
 		[]urth.ArtifactValue{
 			texLogger.ToArtifact(),
-			urth.ArtifactValue{
+			{
 				Rel:      "har",
 				MimeType: "application/json",
 				Content:  harData,

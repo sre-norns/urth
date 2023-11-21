@@ -17,6 +17,7 @@ const (
 )
 
 type RunnerConfig struct {
+	SystemLabels wyrd.Labels        `kong:"-"`
 	Labels       wyrd.Labels        `help:"Extra labels to identify this instance of the runner"`
 	Requirements wyrd.LabelSelector `kong:"-"`
 
@@ -58,11 +59,13 @@ func GetRuntimeLabels() wyrd.Labels {
 }
 
 func NewDefaultConfig() RunnerConfig {
-	labels := GetRuntimeLabels()
-	labels = wyrd.MergeLabels(labels, GetNodeRuntimeLabels())
-	labels = wyrd.MergeLabels(labels, GetPythonRuntimeLabels())
+	labels := wyrd.MergeLabels(
+		GetRuntimeLabels(),
+		GetNodeRuntimeLabels(),
+		GetPythonRuntimeLabels(),
+	)
 
 	return RunnerConfig{
-		Labels: labels,
+		SystemLabels: labels,
 	}
 }

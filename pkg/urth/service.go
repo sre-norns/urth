@@ -8,7 +8,7 @@ import (
 	"reflect"
 )
 
-type ReadableRecourseApi[T interface{}] interface {
+type ReadableResourceApi[T interface{}] interface {
 	// List all resources matching given search query
 	List(ctx context.Context, searchQuery SearchQuery) ([]PartialObjectMetadata, error)
 
@@ -19,7 +19,7 @@ type ReadableRecourseApi[T interface{}] interface {
 }
 
 type ScenarioApi interface {
-	ReadableRecourseApi[Scenario]
+	ReadableResourceApi[Scenario]
 
 	Create(ctx context.Context, entry CreateScenarioRequest) (CreatedResponse, error)
 
@@ -36,7 +36,7 @@ type ScenarioApi interface {
 }
 
 type ArtifactApi interface {
-	ReadableRecourseApi[Artifact]
+	ReadableResourceApi[Artifact]
 
 	Create(ctx context.Context, entry CreateArtifactRequest) (CreatedResponse, error)
 
@@ -45,7 +45,7 @@ type ArtifactApi interface {
 }
 
 type RunResultApi interface {
-	ReadableRecourseApi[ScenarioRunResults]
+	ReadableResourceApi[ScenarioRunResults]
 
 	Create(ctx context.Context, entry CreateScenarioRunResults) (CreatedRunResponse, error)
 
@@ -54,7 +54,7 @@ type RunResultApi interface {
 
 // RunnersApi encapsulate APIs to interacting with `Runners`
 type RunnersApi interface {
-	ReadableRecourseApi[Runner]
+	ReadableResourceApi[Runner]
 
 	// Client request to create a new 'slot' for a runner
 	Create(ctx context.Context, entry CreateRunnerRequest) (CreatedResponse, error)

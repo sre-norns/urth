@@ -6,7 +6,7 @@ This project provides a platform to run scripts that monitor infrastructure, dev
 
 # How
 The project consist of 3 main component:
-- [api-server](./cmd/api-server/README.md) Rest API server responsible for all recourse objects, such as scripts, runners, results etc.
+- [api-server](./cmd/api-server/README.md) Rest API server responsible for all resource objects, such as scripts, runners, results etc.
 - [runner](./cmd/red-runner) An implementation of async job runner responsible for execution of a script and retuning results back to the API server.
 - [scheduler](./cmd/red-scheduler) An implementation of a cron-scheduler that gets a list of all scripts that can be run at a given scheduling interval and creates jobs for runners to execute those scripts.
 - [urthctl](./cmd/urthctl/README.md) Command line tool and alternative interface to interact with API service. Inspired by `kubectl`, it similarly allows user to create and inspect resources such as scripts and runners.

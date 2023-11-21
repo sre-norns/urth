@@ -11,7 +11,7 @@
 [] Enable *scheduler* to actually USE scenario schedules field
 [] Script should be passed compressed / (zlib?)
 [] Ensure that only Scenarios with non-empty script are schedulable / ready
-[x] Use gorilla for CLI flags and config handling
+[x] Use kong for CLI flags and config handling
 [?] Expose option for headless chrome remote debug?
 [] Search for config files using xdg! lib and standard
 [] Architecture: Implement web-hooks for events! (UI design to add option to add hooks + UI to manage existing hooks on account level?)
@@ -21,7 +21,8 @@
 - Deadline for a TCP request
 - Response Body for TCP request
 - Regexp to match response body for TCP request
-- Response code for HTTP request 
+- Response code for HTTP request
+[] Validate labels names!
 
 ## CLI tooling
 [x] `urthctl` - support reading scenario / script from stdin
@@ -55,7 +56,6 @@
 
 [] Allow for script config / encrypted variables
 [] Support authentication for HTTP and Puppeteer scenarios
-
 
 
 # Notes

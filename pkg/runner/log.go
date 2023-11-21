@@ -33,10 +33,3 @@ func (l *RunLog) ToArtifact() urth.ArtifactValue {
 		Content:  []byte(l.content.String()),
 	}
 }
-
-// func NewRunResultsWithLog(runResult urth.RunStatus, logger *RunLog, options ...urth.RunResultOption) urth.FinalRunResults {
-// 	return urth.NewRunResults(
-// 		runResult,
-// 		append([]urth.RunResultOption{urth.WithArtifacts(logger.ToArtifact())}, options...)...,
-// 	)
-// }

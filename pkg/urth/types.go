@@ -68,13 +68,13 @@ func (meta *ResourceMeta) GetVersionedID() VersionedResourceId {
 	return NewVersionedId(meta.ID, meta.Version)
 }
 
-// PartialObjectMetadata is a common information about a managed recourse without details of that resource.
+// PartialObjectMetadata is a common information about a managed resource without details of that resource.
 // TypeMeta represents info about the type of resource.
 // This Type is return by API that manage collection of resources.
 type PartialObjectMetadata struct {
 	TypeMeta `json:",inline" yaml:",inline"`
 
-	// Standard recourse's metadata.
+	// Standard resource's metadata.
 	ResourceMeta `json:"metadata,omitempty" yaml:"metadata,omitempty"`
 
 	Spec interface{} `json:"spec,omitempty" yaml:"spec,omitempty"`
@@ -105,7 +105,7 @@ type RunnerSpec struct {
 	RunnerRegistration `json:",inline" yaml:",inline"`
 }
 
-// Runner is a recourse manager by Urth service that represents
+// Runner is a resource manager by Urth service that represents
 // an instance of a job processing worker
 type Runner struct {
 	ResourceMeta `json:",inline" yaml:",inline"`
@@ -168,16 +168,16 @@ type ArtifactValue struct {
 	// ScenarioRunResultsID uint `form:"scenarioRunId" json:"scenarioRunId" yaml:"scenarioRunId" xml:"scenarioRunId"`
 
 	// If set, point in time when artifact will expire
-	ExpireTime sql.NullTime `form:"expire_time" json:"expire_time" yaml:"expire_time" xml:"expire_time" time_format:"unix"`
+	ExpireTime sql.NullTime `form:"expire_time,omitempty" json:"expire_time,omitempty" yaml:"expire_time,omitempty" xml:"expire_time,omitempty" time_format:"unix"`
 
 	// Relation type: log / HAR / etc? Determines how content is consumed by clients
-	Rel string `form:"rel" json:"rel" yaml:"rel" xml:"rel"`
+	Rel string `form:"rel,omitempty" json:"rel,omitempty" yaml:"rel,omitempty" xml:"rel,omitempty"`
 
 	// MimeType of the content
-	MimeType string `form:"mimeType" json:"mimeType" yaml:"mimeType" xml:"mimeType"`
+	MimeType string `form:"mimeType,omitempty" json:"mimeType,omitempty" yaml:"mimeType,omitempty" xml:"mimeType,omitempty"`
 
 	// Blob content of the artifact
-	Content []byte `form:"content" json:"content" yaml:"content" xml:"content"`
+	Content []byte `form:"content,omitempty" json:"content,omitempty" yaml:"content,omitempty" xml:"content,omitempty"`
 }
 
 // Artifact model. Artifacts are produced and published by a script runner,
@@ -195,11 +195,6 @@ type FinalRunResults struct {
 
 	// Result is a status of the run
 	Result RunStatus `form:"result" json:"result" yaml:"result" xml:"result"  binding:"required"`
-
-	// TODO:
-	// Artifacts []Artifact `json:"-" yaml:"-" gorm:"polymorphic:Owner;"`
-	// Artifacts []Artifact `json:"artifacts,omitempty" yaml:"artifacts,omitempty" gorm:"foreignKey:ScenarioRunResultsID"`
-	// ArtifactIds []Artifact `json:"artifactIds,omitempty" yaml:"artifactIds,omitempty"`
 }
 
 type RunResultOption func(value *FinalRunResults)
@@ -212,16 +207,6 @@ func WithTime(value time.Time) RunResultOption {
 		}
 	}
 }
-
-// func WithArtifacts(artifacts ...ArtifactValue) RunResultOption {
-// 	return func(result *FinalRunResults) {
-// 		for _, artifact := range artifacts {
-// 			result.Artifacts = append(result.Artifacts, Artifact{
-// 				ArtifactValue: artifact,
-// 			})
-// 		}
-// 	}
-// }
 
 func NewRunResults(runResult RunStatus, options ...RunResultOption) FinalRunResults {
 	result := FinalRunResults{

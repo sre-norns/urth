@@ -20,7 +20,8 @@ import (
 type WorkerConfig struct {
 	runner.RunnerConfig
 
-	RedisAddress string `help:"Redis server address:port to connect to" default:"localhost:6379"`
+	RedisAddress           string        `help:"Redis server address:port to connect to" default:"localhost:6379"`
+	ApiRegistrationTimeout time.Duration `help:"Maximum time alloted for this worker to register with API server" default:"1m"`
 
 	// isDone    bool
 	apiClient urth.Service
@@ -51,8 +52,11 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 	// FIXME: Worker must use its credentials jwt
 	runCreated, err := resultsApiClient.Create(ctx, urth.CreateScenarioRunResults{
 		CreateResourceMeta: urth.CreateResourceMeta{
-			Name:   runID, // Note: not unique!
-			Labels: w.Labels,
+			Name: runID, // Note: not unique!
+			Labels: wyrd.MergeLabels(
+				w.Labels,
+				job.Labels,
+			),
 		},
 		InitialScenarioRunResults: urth.InitialScenarioRunResults{
 			ScenarioID:  job.ScenarioID,
@@ -99,11 +103,14 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 		wg.Go(func() error {
 			_, err := artifactsApiClient.Create(ctx, urth.CreateArtifactRequest{
 				CreateResourceMeta: urth.CreateResourceMeta{
-					Name: fmt.Sprintf("%v-%v", runID, artifact.Rel),
-					Labels: wyrd.MergeLabels(w.Labels,
+					Name: fmt.Sprintf("%v.%v", runID, artifact.Rel),
+					Labels: wyrd.MergeLabels(
+						w.SystemLabels,
+						w.Labels,
+						job.Labels,
 						wyrd.Labels{
 							"scenario.versioned": job.ScenarioID.String(),                           // Groups all artifacts produced by the same version of the scenario
-							"scenario":           strconv.FormatUint(uint64(job.ScenarioID.ID), 10), // Groups all artifacts produced by the same scenario
+							"scenario":           strconv.FormatUint(uint64(job.ScenarioID.ID), 10), // Groups all artifacts produced by the same scenario regardless of version
 							"runner":             strconv.FormatUint(uint64(w.identity.ID), 10),     // Groups all artifacts produced by the same runner
 							"run":                strconv.FormatUint(uint64(runCreated.ID), 10),     // Groups all artifacts produced in the same run
 						},
@@ -122,16 +129,20 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 		})
 	}
 
-	wg.Wait()
-
 	// Notify API-server that the job has been complete
-	created, err := resultsApiClient.Update(ctx, runCreated.VersionedResourceId, runCreated.Token, runResult)
-	if err != nil {
-		log.Printf("failed to post run results for %q: %v", runID, err)
-		return err // TODO: retry or not? Add results into the retry queue to post later?
-	}
+	wg.Go(func() error {
+		created, err := resultsApiClient.Update(ctx, runCreated.VersionedResourceId, runCreated.Token, runResult)
+		if err != nil {
+			log.Printf("failed to post run results for %q: %v", runID, err)
+			return err // TODO: retry or not? Add results into the retry queue to post later?
+		}
 
-	log.Printf("job %q competed: %v, resultsID: %v", runID, runResult.Result, created.VersionedResourceId)
+		log.Printf("job %q resultsID: %v", runID, created.VersionedResourceId)
+		return nil
+	})
+
+	wg.Wait()
+	log.Printf("job %q competed: %v", runID, runResult.Result)
 	return nil
 }
 
@@ -172,14 +183,17 @@ func main() {
 		IsOnline:       true,
 		InstanceLabels: defaultConfig.Labels,
 	}
-	identity, err := apiClient.GetRunnerAPI().Auth(context.Background(), urth.ApiToken(defaultConfig.ApiToken), rego)
+
+	regoCtx, cancel := context.WithTimeout(context.Background(), defaultConfig.ApiRegistrationTimeout)
+	defer cancel()
+
+	defaultConfig.identity, err = apiClient.GetRunnerAPI().Auth(regoCtx, urth.ApiToken(defaultConfig.ApiToken), rego)
 	if err != nil {
 		// TODO: Should be back-off
 		appCtx.FatalIfErrorf(err)
 		return
 	}
-	defaultConfig.identity = identity
-	log.Print("Registered with API server as: ", identity.Name, "id: ", identity.GetVersionedID())
+	log.Print("Registered with API server as: ", defaultConfig.identity.Name, "Id:", defaultConfig.identity.GetVersionedID())
 
 	// Create and configuring Redis connection.
 	redisConnection := asynq.RedisClientOpt{
@@ -192,5 +206,4 @@ func main() {
 	})
 
 	appCtx.FatalIfErrorf(workerServer.Run(mux))
-	// }
 }
