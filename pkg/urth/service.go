@@ -305,7 +305,7 @@ func RandStringBytesRmndr(n int) ApiToken {
 //------------------------------
 func (m *resultsApiImpl) List(ctx context.Context, searchQuery SearchQuery) ([]PartialObjectMetadata, error) {
 	var resources []ScenarioRunResults
-	kind, err := m.store.FindResources(ctx, &resources, searchQuery)
+	kind, err := m.store.FindResourcesWithEx(ctx, m.scenarioId, &resources, searchQuery)
 	if err != nil {
 		return nil, err
 	}

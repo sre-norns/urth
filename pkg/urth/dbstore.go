@@ -97,6 +97,35 @@ func (s *DbStore) startPaginatedTx(ctx context.Context, pagination Pagination) *
 	return s.db.WithContext(ctx).Offset(int(pagination.Offset)).Limit(int(pagination.Limit))
 }
 
+func (s *DbStore) FindResourcesWithEx(ctx context.Context, owner_id ResourceID, resources any, searchQuery SearchQuery) (TypeMeta, error) {
+	var resultType TypeMeta
+
+	selector, err := labels.Parse(searchQuery.Labels)
+	if err != nil {
+		return resultType, err
+	}
+
+	tx, err := s.selectorAsQuery(s.startPaginatedTx(ctx, searchQuery.Pagination).Preload("LabelsModel"), selector)
+	if err != nil {
+		return resultType, err
+	}
+
+	rtx := tx.Where("scenario_id = ?", owner_id).Find(resources)
+	if rtx.Error != nil {
+		return resultType, rtx.Error
+	}
+
+	t := reflect.ValueOf(resources).Elem()
+	if (t.Kind() == reflect.Slice || t.Kind() == reflect.Array) && t.Len() > 0 {
+		resultType, err = s.GuessKind(reflect.Zero(t.Type()))
+		if err != nil {
+			return resultType, err
+		}
+	}
+
+	return resultType, nil
+}
+
 func (s *DbStore) FindResources(ctx context.Context, resources any, searchQuery SearchQuery) (TypeMeta, error) {
 	var resultType TypeMeta
 
