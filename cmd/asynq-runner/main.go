@@ -29,6 +29,21 @@ type WorkerConfig struct {
 	identity urth.Runner
 }
 
+func (w *WorkerConfig) labelJob(job urth.RunScenarioJob) wyrd.Labels {
+	return wyrd.MergeLabels(
+		w.SystemLabels,
+		w.Labels,
+		job.Labels,
+		wyrd.Labels{
+			"runner":             strconv.FormatUint(uint64(w.identity.ID), 10),     // Groups all artifacts produced by the same runner
+			"runner.versioned":   w.identity.GetVersionedID().String(),              // Groups all artifacts produced by the same version of the scenario
+			"scenario":           strconv.FormatUint(uint64(job.ScenarioID.ID), 10), // Groups all artifacts produced by the same scenario regardless of version
+			"scenario.versioned": job.ScenarioID.String(),                           // Groups all artifacts produced by the same version of the scenario
+			"scenario.kind":      string(job.Script.Kind),                           // Groups all artifacts produced by the type of script: TCP probe, HTTP probe, etc.
+		},
+	)
+}
+
 // HandleWelcomeEmailTask handler for welcome email task.
 func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task) error {
 	log.Println("New job execution request")
@@ -52,11 +67,8 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 	// FIXME: Worker must use its credentials jwt
 	runCreated, err := resultsApiClient.Create(ctx, urth.CreateScenarioRunResults{
 		CreateResourceMeta: urth.CreateResourceMeta{
-			Name: runID, // Note: not unique!
-			Labels: wyrd.MergeLabels(
-				w.Labels,
-				job.Labels,
-			),
+			Name:   runID, // Note: not unique!
+			Labels: w.labelJob(job),
 		},
 		InitialScenarioRunResults: urth.InitialScenarioRunResults{
 			ScenarioID:  job.ScenarioID,
@@ -105,14 +117,9 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 				CreateResourceMeta: urth.CreateResourceMeta{
 					Name: fmt.Sprintf("%v.%v", runID, artifact.Rel),
 					Labels: wyrd.MergeLabels(
-						w.SystemLabels,
-						w.Labels,
-						job.Labels,
+						w.labelJob(job),
 						wyrd.Labels{
-							"scenario.versioned": job.ScenarioID.String(),                           // Groups all artifacts produced by the same version of the scenario
-							"scenario":           strconv.FormatUint(uint64(job.ScenarioID.ID), 10), // Groups all artifacts produced by the same scenario regardless of version
-							"runner":             strconv.FormatUint(uint64(w.identity.ID), 10),     // Groups all artifacts produced by the same runner
-							"run":                strconv.FormatUint(uint64(runCreated.ID), 10),     // Groups all artifacts produced in the same run
+							"run": strconv.FormatUint(uint64(runCreated.ID), 10), // Groups all artifacts produced in the same run
 						},
 					),
 				},
