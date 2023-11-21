@@ -165,7 +165,7 @@ const (
 
 type ArtifactValue struct {
 	// Id of ScenarioRun that produced this artifact
-	ScenarioRunResultsID uint `form:"scenarioRunId" json:"scenarioRunId" yaml:"scenarioRunId" xml:"scenarioRunId"`
+	// ScenarioRunResultsID uint `form:"scenarioRunId" json:"scenarioRunId" yaml:"scenarioRunId" xml:"scenarioRunId"`
 
 	// If set, point in time when artifact will expire
 	ExpireTime sql.NullTime `form:"expire_time" json:"expire_time" yaml:"expire_time" xml:"expire_time" time_format:"unix"`
@@ -199,7 +199,7 @@ type FinalRunResults struct {
 	// TODO:
 	// Artifacts []Artifact `json:"-" yaml:"-" gorm:"polymorphic:Owner;"`
 	// Artifacts []Artifact `json:"artifacts,omitempty" yaml:"artifacts,omitempty" gorm:"foreignKey:ScenarioRunResultsID"`
-	ArtifactIds []Artifact `json:"artifactIds,omitempty" yaml:"artifactIds,omitempty"`
+	// ArtifactIds []Artifact `json:"artifactIds,omitempty" yaml:"artifactIds,omitempty"`
 }
 
 type RunResultOption func(value *FinalRunResults)

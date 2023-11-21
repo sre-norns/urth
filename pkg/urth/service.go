@@ -470,10 +470,11 @@ func (m *artifactApiImp) List(ctx context.Context, query SearchQuery) ([]Partial
 	results := make([]PartialObjectMetadata, 0, len(resources))
 	for _, sc := range resources {
 		// Note: Do not return artifact value when listing
+		sc.ArtifactValue.Content = nil
 		results = append(results, PartialObjectMetadata{
 			TypeMeta:     kind,
 			ResourceMeta: sc.ResourceMeta,
-			Spec:         sc.ScenarioRunResultsID,
+			Spec:         sc.ArtifactValue,
 		})
 	}
 

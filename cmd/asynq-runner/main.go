@@ -4,16 +4,17 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strconv"
 	"time"
 
 	"github.com/alecthomas/kong"
 	"github.com/hibiken/asynq"
-	"gorm.io/gorm"
 
 	"github.com/sre-norns/urth/pkg/grace"
 	"github.com/sre-norns/urth/pkg/redqueue"
 	"github.com/sre-norns/urth/pkg/runner"
 	"github.com/sre-norns/urth/pkg/urth"
+	"github.com/sre-norns/urth/pkg/wyrd"
 )
 
 type WorkerConfig struct {
@@ -91,27 +92,37 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 	}
 
 	// Push artifacts if any:
+	wg := grace.NewWorkgroup(4)
+
 	artifactsApiClient := w.apiClient.GetArtifactsApi()
 	for _, artifact := range artifacts {
-		created, err := artifactsApiClient.Create(ctx, urth.CreateArtifactRequest{
-			CreateResourceMeta: urth.CreateResourceMeta{
-				Name:   fmt.Sprintf("%v-%v", runID, artifact.Rel),
-				Labels: w.Labels,
-			},
-			ScenarioRunResultsID: job.ScenarioID.ID,
-			ArtifactValue:        artifact,
+		wg.Go(func() error {
+			_, err := artifactsApiClient.Create(ctx, urth.CreateArtifactRequest{
+				CreateResourceMeta: urth.CreateResourceMeta{
+					Name: fmt.Sprintf("%v-%v", runID, artifact.Rel),
+					Labels: wyrd.MergeLabels(w.Labels,
+						wyrd.Labels{
+							"scenario.versioned": job.ScenarioID.String(),                           // Groups all artifacts produced by the same version of the scenario
+							"scenario":           strconv.FormatUint(uint64(job.ScenarioID.ID), 10), // Groups all artifacts produced by the same scenario
+							"runner":             strconv.FormatUint(uint64(w.identity.ID), 10),     // Groups all artifacts produced by the same runner
+							"run":                strconv.FormatUint(uint64(runCreated.ID), 10),     // Groups all artifacts produced in the same run
+						},
+					),
+				},
+				ScenarioRunResultsID: job.ScenarioID.ID,
+				ArtifactValue:        artifact,
+			})
+
+			if err != nil {
+				log.Printf("failed to post artifact %q for %q: %v", artifact.Rel, runID, err)
+				return err // TODO: retry or not? Add results into the retry queue to post later?
+			}
+
+			return nil
 		})
-
-		if err != nil {
-			log.Printf("failed to post artifact %q for %q: %v", artifact.Rel, runID, err)
-			return err // TODO: retry or not? Add results into the retry queue to post later?
-		}
-
-		runResult.ArtifactIds = append(runResult.ArtifactIds, urth.Artifact{
-			ResourceMeta: urth.ResourceMeta{
-				Model: gorm.Model{ID: uint(created.ID)},
-			}})
 	}
+
+	wg.Wait()
 
 	// Notify API-server that the job has been complete
 	created, err := resultsApiClient.Update(ctx, runCreated.VersionedResourceId, runCreated.Token, runResult)
