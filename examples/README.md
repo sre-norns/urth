@@ -10,7 +10,7 @@ curl -X POST 'http://localhost:8080/api/v1/scenarios'  \
 --data-binary "@examples/scenario.tcp.json"
 ```
 
-The command above will create a new scenario based on [example resource manifest](./scenaio.tcp.json). Note the system generated ID for the newly created resource.
+The command above will create a new scenario based on [example resource manifest](./scenario.tcp.json). Note the system generated ID for the newly created resource.
 You can use that ID to modify the example file and update scenario on the server.
 
 ### Update scenario object
