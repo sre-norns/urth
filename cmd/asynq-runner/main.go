@@ -119,7 +119,8 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 					Labels: wyrd.MergeLabels(
 						w.labelJob(job),
 						wyrd.Labels{
-							"run": strconv.FormatUint(uint64(runCreated.ID), 10), // Groups all artifacts produced in the same run
+							"artifact.kind": artifact.Rel,                                  // Groups all artifacts produced by the content type: logs / HAR / etc
+							"run":           strconv.FormatUint(uint64(runCreated.ID), 10), // Groups all artifacts produced in the same run
 						},
 					),
 				},

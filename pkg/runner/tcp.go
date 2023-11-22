@@ -16,22 +16,24 @@ func runTcpPortScript(ctx context.Context, scriptContent []byte, options RunOpti
 
 	if err != nil {
 		runLog.Log("failed to parse address: ", err)
-		return urth.NewRunResults(urth.RunFinishedError), []urth.ArtifactValue{runLog.ToArtifact()}, nil
+		return urth.NewRunResults(urth.RunFinishedError), runLog.Package(), nil
 	}
-	runLog.Logf("...host=%q port=%q", host, port)
+	runLog.Logf("script parsed: host=%q port=%q", host, port)
 
 	addr, err := net.ResolveTCPAddr("tcp", fmt.Sprintf("%s:%s", host, port))
 	if err != nil {
 		runLog.Log("failed to resolve address: ", err)
-		return urth.NewRunResults(urth.RunFinishedError), []urth.ArtifactValue{runLog.ToArtifact()}, nil
+		return urth.NewRunResults(urth.RunFinishedError), runLog.Package(), nil
 	}
+	runLog.Logf("address resolved as: %q", addr)
 
 	con, err := net.DialTCP("tcp", nil, addr)
 	if err != nil {
 		runLog.Log("failed to connect: ", err)
-		return urth.NewRunResults(urth.RunFinishedError), []urth.ArtifactValue{runLog.ToArtifact()}, nil
+		return urth.NewRunResults(urth.RunFinishedError), runLog.Package(), nil
 	}
+	runLog.Log("connected successfully")
 	defer con.Close()
 
-	return urth.NewRunResults(urth.RunFinishedSuccess), []urth.ArtifactValue{runLog.ToArtifact()}, nil
+	return urth.NewRunResults(urth.RunFinishedSuccess), runLog.Package(), nil
 }

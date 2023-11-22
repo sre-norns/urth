@@ -33,3 +33,7 @@ func (l *RunLog) ToArtifact() urth.ArtifactValue {
 		Content:  []byte(l.content.String()),
 	}
 }
+
+func (l *RunLog) Package() []urth.ArtifactValue {
+	return []urth.ArtifactValue{l.ToArtifact()}
+}

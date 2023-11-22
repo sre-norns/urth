@@ -48,7 +48,7 @@ func runPuppeteerScript(ctx context.Context, scriptContent []byte, options RunOp
 	if err != nil {
 		err = fmt.Errorf("failed to create work directory: %w", err)
 		texLogger.Log(err)
-		return urth.NewRunResults(urth.RunFinishedError), []urth.ArtifactValue{texLogger.ToArtifact()}, nil
+		return urth.NewRunResults(urth.RunFinishedError), texLogger.Package(), nil
 	}
 
 	defer func(dir string, keep bool) {
@@ -61,7 +61,7 @@ func runPuppeteerScript(ctx context.Context, scriptContent []byte, options RunOp
 	if err := SetupRunEnv(options.Puppeteer.WorkingDirectory); err != nil {
 		err = fmt.Errorf("failed setup run-time environment: %w", err)
 		texLogger.Log(err)
-		return urth.NewRunResults(urth.RunFinishedError), []urth.ArtifactValue{texLogger.ToArtifact()}, nil
+		return urth.NewRunResults(urth.RunFinishedError), texLogger.Package(), nil
 	}
 
 	cmd := exec.Command("node", "-")
@@ -73,7 +73,7 @@ func runPuppeteerScript(ctx context.Context, scriptContent []byte, options RunOp
 	if err != nil {
 		err := fmt.Errorf("failed to open input pipe: %w", err)
 		texLogger.Log(err)
-		return urth.NewRunResults(urth.RunFinishedError), []urth.ArtifactValue{texLogger.ToArtifact()}, nil
+		return urth.NewRunResults(urth.RunFinishedError), texLogger.Package(), nil
 	}
 
 	// TODO: Write common prolog for all scrips

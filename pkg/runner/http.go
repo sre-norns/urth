@@ -138,18 +138,18 @@ func runHttpRequests(ctx context.Context, texLogger *RunLog, requests []httppars
 
 		if err := harLogger.RecordRequest(id, req.Request); err != nil {
 			texLogger.Log("...failed to record request: ", err)
-			return urth.NewRunResults(urth.RunFinishedError), []urth.ArtifactValue{texLogger.ToArtifact()}, nil
+			return urth.NewRunResults(urth.RunFinishedError), texLogger.Package(), nil
 		}
 
 		res, err := client.Do(tracer.TraceRequest(req.Request))
 		if err != nil {
 			texLogger.Log("...failed: ", err)
-			return urth.NewRunResults(urth.RunFinishedError), []urth.ArtifactValue{texLogger.ToArtifact()}, nil
+			return urth.NewRunResults(urth.RunFinishedError), texLogger.Package(), nil
 		}
 
 		if err := harLogger.RecordResponse(id, res); err != nil {
 			texLogger.Log("...failed to record response: ", err)
-			return urth.NewRunResults(urth.RunFinishedError), []urth.ArtifactValue{texLogger.ToArtifact()}, nil
+			return urth.NewRunResults(urth.RunFinishedError), texLogger.Package(), nil
 		}
 
 		texLogger.Logf("Response:\n%v\n", formatResponse(res))
@@ -171,8 +171,8 @@ func runHttpRequests(ctx context.Context, texLogger *RunLog, requests []httppars
 	har := harLogger.ExportAndReset()
 	harData, err := json.Marshal(har)
 	if err != nil {
-		texLogger.Log("...error: failed to serialize HAR file", err)
-		return urth.NewRunResults(urth.RunFinishedError), []urth.ArtifactValue{texLogger.ToArtifact()}, nil
+		texLogger.Log("...error: failed to serialize HAR file ", err)
+		return urth.NewRunResults(urth.RunFinishedError), texLogger.Package(), nil
 	}
 
 	return urth.NewRunResults(outcome),
@@ -193,7 +193,7 @@ func runHttpRequestScript(ctx context.Context, scriptContent []byte, options Run
 	requests, err := httpparser.Parse(bytes.NewReader(scriptContent))
 	if err != nil {
 		texLogger.Log("failed: ", err)
-		return urth.NewRunResults(urth.RunFinishedError), []urth.ArtifactValue{texLogger.ToArtifact()}, nil
+		return urth.NewRunResults(urth.RunFinishedError), texLogger.Package(), nil
 	}
 
 	return runHttpRequests(ctx, &texLogger, requests, options)
