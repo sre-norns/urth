@@ -2,6 +2,7 @@ package urth
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -32,10 +33,6 @@ type DbStore struct {
 }
 
 func NewDbStore(db *gorm.DB) Store {
-
-	// TODO: Add InstanceLabelsModel
-	// dbWithPreloads := db.Preload("LabelsModel")
-
 	return &DbStore{
 		db: db,
 	}
@@ -46,7 +43,7 @@ func (s *DbStore) Create(ctx context.Context, value any) error {
 }
 
 func (s *DbStore) Get(ctx context.Context, dest any, id ResourceID) (bool, error) {
-	tx := s.db.WithContext(ctx).Preload("LabelsModel").First(dest, id)
+	tx := s.db.WithContext(ctx).First(dest, id)
 
 	if errors.Is(tx.Error, gorm.ErrRecordNotFound) {
 		return false, nil
@@ -55,7 +52,7 @@ func (s *DbStore) Get(ctx context.Context, dest any, id ResourceID) (bool, error
 }
 
 func (s *DbStore) GetWithVersion(ctx context.Context, dest any, id VersionedResourceId) (bool, error) {
-	tx := s.db.WithContext(ctx).Where("version = ?", id.Version).First(dest, id) // Note: no .Preload("LabelsModel")
+	tx := s.db.WithContext(ctx).Where("version = ?", id.Version).First(dest, id)
 	if errors.Is(tx.Error, gorm.ErrRecordNotFound) {
 		return false, nil
 	}
@@ -105,12 +102,13 @@ func (s *DbStore) FindResourcesWithEx(ctx context.Context, owner_id ResourceID, 
 		return resultType, err
 	}
 
-	tx, err := s.selectorAsQuery(s.startPaginatedTx(ctx, searchQuery.Pagination).Preload("LabelsModel"), selector)
+	tx := s.startPaginatedTx(ctx, searchQuery.Pagination).Where("scenario_id = ?", owner_id)
+	cond, err := s.selectorAsQuery(selector, tx)
 	if err != nil {
 		return resultType, err
 	}
 
-	rtx := tx.Where("scenario_id = ?", owner_id).Find(resources)
+	rtx := tx.Find(resources, cond)
 	if rtx.Error != nil {
 		return resultType, rtx.Error
 	}
@@ -134,11 +132,14 @@ func (s *DbStore) FindResources(ctx context.Context, resources any, searchQuery 
 		return resultType, err
 	}
 
-	// tx, err := s.selectorAsQuery(s.startPaginatedTx(ctx, searchQuery.Pagination), selector)
-	// tx, err := s.selectorAsQuery(s.startPaginatedTx(ctx, searchQuery.Pagination).Preload(clzause.Associations), selector)
-	tx, err := s.selectorAsQuery(s.startPaginatedTx(ctx, searchQuery.Pagination).Preload("LabelsModel"), selector)
+	tx := s.startPaginatedTx(ctx, searchQuery.Pagination)
+	cond, err := s.selectorAsQuery(selector, tx)
 	if err != nil {
 		return resultType, err
+	}
+
+	for _, c := range cond {
+		tx = tx.Where(c)
 	}
 
 	rtx := tx.Find(resources)
@@ -161,14 +162,13 @@ func (s *DbStore) FindInto(ctx context.Context, model any, into any, pagination 
 	return s.startPaginatedTx(ctx, pagination).Model(model).Group("key").Group("value").Find(into).Error
 }
 
-func (s *DbStore) selectorAsQuery(tx *gorm.DB, selector labels.Selector) (*gorm.DB, error) {
+func (s *DbStore) selectorAsQuery(selector labels.Selector, tx *gorm.DB) ([]any, error) {
 	reqs, ok := selector.Requirements()
 	if !ok || len(reqs) == 0 { // Selector has no requirements, easy way out
-		return tx, nil
+		return nil, nil
 	}
 
-	// subQuery := tx.Session(&gorm.Session{NewDB: true}).Model(&ResourceLabelModel{}).Distinct("owner_id")
-	subQuery := s.db.Model(&ResourceLabelModel{}).Distinct("owner_id")
+	qs := make([]any, 0, len(reqs))
 	for _, req := range reqs {
 		switch req.Operator() {
 		case selection.Equals, selection.DoubleEquals:
@@ -176,66 +176,59 @@ func (s *DbStore) selectorAsQuery(tx *gorm.DB, selector labels.Selector) (*gorm.
 			if !ok {
 				return nil, ErrNoRequirementsValueProvided
 			}
-			subQuery = subQuery.Where("key = ? AND value = ?", req.Key(), value)
+			qs = append(qs, JSONQuery("attributes").Equals(value, req.Key()))
 		case selection.NotEquals:
 			value, ok := req.Values().PopAny()
 			if !ok {
 				return nil, ErrNoRequirementsValueProvided
 			}
-			subQuery = subQuery.Where("key = ? AND value <> ?", req.Key(), value)
+			qs = append(qs, JSONQuery("attributes").NotEquals(value, req.Key()))
 		case selection.GreaterThan:
 			value, ok := req.Values().PopAny()
 			if !ok {
 				return nil, ErrNoRequirementsValueProvided
 			}
-			subQuery = subQuery.Where("key = ? AND value > ?", req.Key(), value)
+			qs = append(qs, JSONQuery("attributes").GreaterThan(value, req.Key()))
 		case selection.LessThan:
 			value, ok := req.Values().PopAny()
 			if !ok {
 				return nil, ErrNoRequirementsValueProvided
 			}
-			subQuery = subQuery.Where("key = ? AND value < ?", req.Key(), value)
+			qs = append(qs, JSONQuery("attributes").LessThan(value, req.Key()))
 
 		case selection.In:
-			subQuery = subQuery.Where("key = ? AND value IN ?", req.Key(), req.Values().UnsortedList())
+			qs = append(qs, JSONQuery("attributes").KeyIn(req.Key(), req.Values().UnsortedList()...))
 		case selection.NotIn:
-			subQuery = subQuery.Where("key = ? AND value NOT IN ?", req.Key(), req.Values().UnsortedList())
+			qs = append(qs, JSONQuery("attributes").KeyNotIn(req.Key(), req.Values().UnsortedList()...))
 		case selection.Exists:
-			subQuery = subQuery.Where("key = ?", req.Key())
+			qs = append(qs, JSONQuery("attributes").HasKey(req.Key()))
 		case selection.DoesNotExist:
-			subSubQuery := tx.Session(&gorm.Session{NewDB: true}).Model(&ResourceLabelModel{}).Distinct("owner_id").Where("key = ?", req.Key())
-			subQuery = subQuery.Where("owner_id NOT IN (?)", subSubQuery)
+			qs = append(qs, JSONQuery("attributes").HasNoKey(req.Key()))
 		default:
 			return nil, fmt.Errorf("%w: `%v`", ErrUnexpectedSelectorOperator, req.Operator())
 		}
 	}
 
-	log.Printf("SQL: %v", tx.ToSQL(func(tx *gorm.DB) *gorm.DB {
-		return tx.Model(&Scenario{}).Where("id in (?)", subQuery).Find(&[]Scenario{})
+	log.Print("[DEBUG] SQL: ", tx.ToSQL(func(tx *gorm.DB) *gorm.DB {
+		for _, c := range qs {
+			tx = tx.Where(c)
+		}
+		return tx.Find(&[]Scenario{})
 	}))
 
-	return tx.Where("id in (?)", subQuery), nil
+	return qs, nil
 }
 
 func (meta *ResourceMeta) AfterFind(tx *gorm.DB) (err error) {
-	meta.Labels = make(wyrd.Labels, len(meta.LabelsModel))
-	for _, label := range meta.LabelsModel {
-		meta.Labels[label.Key] = label.Value
+	if meta.Attributes == nil {
+		meta.Labels = wyrd.Labels{}
+		return nil
 	}
 
-	return
+	return json.Unmarshal(meta.Attributes, &meta.Labels)
 }
 
 func (meta *ResourceMeta) BeforeSave(tx *gorm.DB) (err error) {
-	meta.LabelsModel = make([]ResourceLabelModel, 0, len(meta.Labels))
-	for key, value := range meta.Labels {
-		meta.LabelsModel = append(meta.LabelsModel, ResourceLabelModel{
-			ResourceLabel: ResourceLabel{
-				Key:   key,
-				Value: value,
-			},
-		})
-	}
-
+	meta.Attributes, err = json.Marshal(meta.Labels)
 	return
 }

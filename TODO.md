@@ -23,6 +23,9 @@
 - Regexp to match response body for TCP request
 - Response code for HTTP request
 [] Validate labels names!
+[] Labels returned by a worked for a job-results / artifacts must be immutable
+[] Add API to find workers give a set of labels and requirements - to enable better UX where user can see how many probers will qualify for a given set of labels.
+[] A run results object with an update token must be created when a job is scheduler. Worker can only update, within a time alloted, already scheduler run. 
 
 ## CLI tooling
 [x] `urthctl` - support reading scenario / script from stdin
@@ -52,6 +55,7 @@
 [] New runner: Fuzzer to guess HTTP urls?
 [] New runner: Dataset checker!
 [X] New runner: HAR executor - replay HAR files using WEB Request runner
+[] When worked reports Node version, parse version string to `node.major` and `node.minor` to enable `<>` comparison using label selectors
 
 
 [] Allow for script config / encrypted variables

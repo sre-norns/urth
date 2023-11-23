@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/sre-norns/urth/pkg/wyrd"
+
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
@@ -36,13 +38,6 @@ type ResourceLabel struct {
 	Value string
 }
 
-type ResourceLabelModel struct {
-	OwnerID   int
-	OwnerType string
-
-	ResourceLabel
-}
-
 // ResourceMeta represents common data for all resources managed by the service
 type ResourceMeta struct {
 	gorm.Model
@@ -57,10 +52,10 @@ type ResourceMeta struct {
 	// Name is a human readable name of the resource used for display in UI
 	Name string `form:"name" json:"name" yaml:"name" xml:"name"  binding:"required"`
 
+	Attributes datatypes.JSON `form:"-" json:"-" yaml:"-" xml:"-"`
+
 	// Labels is map of string keys and values that can be used to organize and categorize
 	// (scope and select) resources.
-	LabelsModel []ResourceLabelModel `form:"-" json:"-" yaml:"-" xml:"-" gorm:"polymorphic:Owner;"`
-
 	Labels wyrd.Labels `form:"labels,omitempty" json:"labels,omitempty" yaml:"labels,omitempty" xml:"labels,omitempty" gorm:"-"`
 }
 

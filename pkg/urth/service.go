@@ -517,7 +517,7 @@ func (m *artifactApiImp) Delete(ctx context.Context, id ResourceID) (bool, error
 
 func (api *labelsApiImpl) List(ctx context.Context, searchQuery SearchQuery) ([]ResourceLabel, error) {
 	var resources []ResourceLabel
-	err := api.store.FindInto(ctx, &ResourceLabelModel{}, &resources, searchQuery.Pagination)
+	// err := api.store.FindInto(ctx, &ResourceLabelModel{}, &resources, searchQuery.Pagination)
 
-	return resources, err
+	return resources, nil
 }

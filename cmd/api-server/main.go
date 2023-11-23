@@ -592,7 +592,6 @@ func main() {
 		&urth.Scenario{},
 		&urth.Runner{},
 		&urth.ScenarioRunResults{},
-		&urth.ResourceLabelModel{},
 		&urth.Artifact{},
 	); err != nil {
 		panic(fmt.Sprintf("DB migration failed: %v", err))
