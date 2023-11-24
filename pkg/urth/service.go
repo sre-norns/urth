@@ -6,7 +6,6 @@ import (
 	"log"
 	"math/rand"
 	"reflect"
-	"strconv"
 	"strings"
 	"time"
 
@@ -312,9 +311,9 @@ func (m *resultsApiImpl) List(ctx context.Context, searchQuery SearchQuery) ([]P
 	var resources []ScenarioRunResults
 
 	if searchQuery.Labels == "" {
-		searchQuery.Labels = fmt.Sprintf("scenario=%v", m.scenarioId) // FIXME: No magic value, move well-known labels to a single place
+		searchQuery.Labels = fmt.Sprintf("%v=%v", LabelScenarioId, m.scenarioId)
 	} else if !strings.Contains(searchQuery.Labels, "scenario") {
-		searchQuery.Labels = fmt.Sprintf("scenario=%v,%v", m.scenarioId, searchQuery.Labels)
+		searchQuery.Labels = fmt.Sprintf("%v=%v,%v", LabelScenarioId, m.scenarioId, searchQuery.Labels)
 	}
 
 	kind, err := m.store.FindResources(ctx, &resources, searchQuery)
@@ -335,16 +334,16 @@ func (m *resultsApiImpl) List(ctx context.Context, searchQuery SearchQuery) ([]P
 }
 
 func (m *resultsApiImpl) Create(ctx context.Context, newEntry CreateScenarioRunResults) (CreatedRunResponse, error) {
-	scenarioIdLabelValue := strconv.FormatInt(int64(m.scenarioId), 10)
+	scenarioIdLabelValue := m.scenarioId.String()
 
 	if newEntry.Labels == nil {
 		newEntry.Labels = wyrd.Labels{
-			"scenario": scenarioIdLabelValue, // FIXME: No magic value, move well-known labels to a single place
+			LabelScenarioId: scenarioIdLabelValue,
 		}
-	} else if v, ok := newEntry.Labels["scenario"]; !ok {
-		newEntry.Labels["scenario"] = scenarioIdLabelValue
+	} else if v, ok := newEntry.Labels[LabelScenarioId]; !ok {
+		newEntry.Labels[LabelScenarioId] = scenarioIdLabelValue
 	} else if v != scenarioIdLabelValue {
-		return CreatedRunResponse{}, fmt.Errorf("invalid scenario ID for given results entry")
+		return CreatedRunResponse{}, fmt.Errorf("invalid scenario ID for the given results entry")
 	}
 
 	// Ensure timestamp is set:
@@ -481,6 +480,16 @@ func (m *runnersApiImpl) Auth(ctx context.Context, token ApiToken, entry RunnerR
 	ok, err := m.store.GetByToken(ctx, &result, token)
 	if err == nil && !ok {
 		return result, fmt.Errorf("no unique toke found")
+	}
+
+	// Update runner record:
+	result.IsOnline = entry.IsOnline
+	// TODO: Figure out a way to combine with Custom user-set labels!
+	result.Labels = entry.InstanceLabels
+
+	ok, err = m.store.Update(ctx, &result, ResourceID(result.ID))
+	if !ok && err == nil {
+		return result, fmt.Errorf("update failed to find resource by ID")
 	}
 
 	return result, err

@@ -12,6 +12,17 @@ const (
 	PyPuppeteerKind  ScenarioKind = "puppeteer/python"
 )
 
+// Well-know labels for scenarios
+const (
+	LabelScenarioId          = "scenario.id"
+	LabelScenarioVersionedId = "scenario.id.versioned"
+	LabelScenarioKind        = "scenario.kind"
+
+	LabelScenarioArtifactKind = "artifact.kind"
+	LabelScenarioRunId        = "run.id"
+	LabelScenarioRunMessageId = "run.messageId"
+)
+
 var kindToMimeMap = map[ScenarioKind]string{
 	TcpPortCheckKind: "text/plain",
 	HttpGetKind:      "application/http",

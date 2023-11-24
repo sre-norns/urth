@@ -489,23 +489,3 @@ func (c *LabelsApiClient) List(ctx context.Context, searchQuery SearchQuery) ([]
 
 	return responseObject.Data, err
 }
-
-// // Get a single resource given its unique ID,
-// // Returns a resource if it exists, false, if resource doesn't exists
-// // error if there was communication error with the storage
-// func (c *LabelsApiClient) Get(ctx context.Context, id ResourceID) (resource Runner, exists bool, commError error) {
-// 	var result Runner
-// 	targetApi := urlForPath(c.baseUrl, fmt.Sprintf("runners/%v", id), nil)
-// 	resp, err := c.get(targetApi)
-// 	if err != nil {
-// 		return result, false, err
-// 	}
-// 	defer resp.Body.Close()
-
-// 	err = json.NewDecoder(resp.Body).Decode(&result)
-// 	if err != nil {
-// 		return result, true, err
-// 	}
-
-// 	return result, true, nil
-// }

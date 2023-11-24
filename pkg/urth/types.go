@@ -2,6 +2,7 @@ package urth
 
 import (
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/sre-norns/urth/pkg/wyrd"
@@ -26,6 +27,10 @@ func NewVersionedId(id uint, version uint32) VersionedResourceId {
 		ID:      ResourceID(id),
 		Version: version,
 	}
+}
+
+func (r ResourceID) String() string {
+	return strconv.FormatInt(int64(r), 10)
 }
 
 func (r VersionedResourceId) String() string {
@@ -106,7 +111,7 @@ type Runner struct {
 
 	RunnerSpec `json:",inline" yaml:",inline"`
 
-	IdToken ApiToken `form:"token" json:"token,omitempty" yaml:"token,omitempty" xml:"token,omitempty"`
+	IdToken ApiToken `form:"-" json:"-" yaml:"-" xml:"-"`
 }
 
 // Type to represent cron-like schedule

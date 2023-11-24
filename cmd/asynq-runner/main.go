@@ -31,22 +31,23 @@ type WorkerConfig struct {
 
 func (w *WorkerConfig) labelJob(job urth.RunScenarioJob) wyrd.Labels {
 	return wyrd.MergeLabels(
-		w.SystemLabels,
-		w.Labels,
+		w.GetEffectiveLabels(),
 		job.Labels,
 		wyrd.Labels{
-			"runner":             strconv.FormatUint(uint64(w.identity.ID), 10),     // Groups all artifacts produced by the same runner
-			"runner.versioned":   w.identity.GetVersionedID().String(),              // Groups all artifacts produced by the same version of the scenario
-			"scenario":           strconv.FormatUint(uint64(job.ScenarioID.ID), 10), // Groups all artifacts produced by the same scenario regardless of version
-			"scenario.versioned": job.ScenarioID.String(),                           // Groups all artifacts produced by the same version of the scenario
-			"scenario.kind":      string(job.Script.Kind),                           // Groups all artifacts produced by the type of script: TCP probe, HTTP probe, etc.
+			runner.LabelRunnerId:          strconv.FormatUint(uint64(w.identity.ID), 10), // Groups all artifacts produced by the same runner
+			runner.LabelRunnerVersionedId: w.identity.GetVersionedID().String(),          // Groups all artifacts produced by the same version of the scenario
+
+			urth.LabelScenarioId:          job.ScenarioID.ID.String(), // Groups all artifacts produced by the same scenario regardless of version
+			urth.LabelScenarioVersionedId: job.ScenarioID.String(),    // Groups all artifacts produced by the same version of the scenario
+			urth.LabelScenarioKind:        string(job.Script.Kind),    // Groups all artifacts produced by the type of script: TCP probe, HTTP probe, etc.
 		},
 	)
 }
 
 // HandleWelcomeEmailTask handler for welcome email task.
 func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task) error {
-	log.Print("New job execution request: ", t.ResultWriter().TaskID())
+	messageId := t.ResultWriter().TaskID()
+	log.Print("New job execution request: ", messageId)
 
 	job, err := redqueue.UnmarshalJob(t)
 	if err != nil {
@@ -115,8 +116,9 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 					Labels: wyrd.MergeLabels(
 						w.labelJob(job),
 						wyrd.Labels{
-							"artifact.kind": artifact.Rel,                                  // Groups all artifacts produced by the content type: logs / HAR / etc
-							"run":           strconv.FormatUint(uint64(runCreated.ID), 10), // Groups all artifacts produced in the same run
+							urth.LabelScenarioArtifactKind: artifact.Rel,           // Groups all artifacts produced by the content type: logs / HAR / etc
+							urth.LabelScenarioRunId:        runCreated.ID.String(), // Groups all artifacts produced in the same run
+							urth.LabelScenarioRunMessageId: messageId,
 						},
 					),
 				},
@@ -182,18 +184,15 @@ func main() {
 		defaultConfig.handleRunScenarioTask, // handler function
 	)
 
-	// for !defaultConfig.isDone {
-	rego := urth.RunnerRegistration{
-		IsOnline:       true,
-		InstanceLabels: defaultConfig.Labels,
-	}
-
 	regoCtx, cancel := context.WithTimeout(context.Background(), defaultConfig.ApiRegistrationTimeout)
 	defer cancel()
 
-	defaultConfig.identity, err = apiClient.GetRunnerAPI().Auth(regoCtx, urth.ApiToken(defaultConfig.ApiToken), rego)
+	defaultConfig.identity, err = apiClient.GetRunnerAPI().Auth(regoCtx, urth.ApiToken(defaultConfig.ApiToken), urth.RunnerRegistration{
+		IsOnline:       true,
+		InstanceLabels: defaultConfig.GetEffectiveLabels(),
+	})
 	if err != nil {
-		// TODO: Should be back-off
+		// TODO: Should be back-off and retry
 		appCtx.FatalIfErrorf(err)
 		return
 	}

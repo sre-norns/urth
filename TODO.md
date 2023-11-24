@@ -38,7 +38,7 @@
 [] UI: Integrate with HAR viewer for artifacts of HAR-kind
 [] HAR viewer should offer an option to diff with previous runs!!
 [] Web Request runner: if response contains headers about the TRACE-ID, produce an artifact with a link to a trace viewer (configurable for installation)
-[] If a request return spanID - add a link to View Trace in <Jager>
+[] If a request return spanID - add a link to View Trace in <Jager> or <Tempo>
 [] UX - 'run now' button must be locked until post request returns with an ID of message posted into the run Queue.
 [?] A RUN must be in `pending` state when a message been posted into the queue but before being picked up by a worker.
 [] For manual runs - trigger identity of the who triggered the run as job labels, such that all jobs triggered by a given user can be found!
@@ -66,3 +66,5 @@
 
 # Notes
 - Docker has `--init` flag to run init process in a container that rips zombie processes.
+- Consider Tempo (Grafana tracing solution) for tracing
+- KeyDB - better implementation of Redis for distributed compute
