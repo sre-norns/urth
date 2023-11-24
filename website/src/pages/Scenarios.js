@@ -1,7 +1,7 @@
 import React from 'react'
 import {useDispatch, useSelector} from 'react-redux'
-import {fetchScenarios} from '../actions/scenarios.js'
 import styled from '@emotion/styled'
+import fetchScenarios from '../actions/fetchScenarios.js'
 import SpinnerInlay from '../components/SpinnerInlay.js'
 import Scenario from '../containers/Scenario.js'
 import EmptyInlay from '../components/EmptyInlay.js'
@@ -21,24 +21,24 @@ const Scenarios = () => {
   }, [])
 
   if (error) {
-    return (<ErrorInlay message={"Error fetching scenarios"} details={error.message || ""} />)
+    return <ErrorInlay message={"Error fetching scenarios"} details={error.message || ""}/>
   }
 
   if (fetching) {
-    return (<SpinnerInlay />)
+    return <SpinnerInlay/>
+  }
+
+  if (!scenarios || !Array.isArray(scenarios.data) || !scenarios.data.length) {
+    return <EmptyInlay/>
   }
 
   return (
-    (!scenarios || !Array.isArray(scenarios.data)) ? (
-      <EmptyInlay/>
-    ) : (
-      <ScenariosContainer>
-        {/*Loaded scenarios: {scenarios.count}*/}
-        {scenarios.data.map((s, i) =>
-          <Scenario key={s.metadata.ID} data={s} odd={i % 2 === 1}/>
-        )}
-      </ScenariosContainer>
-    )
+    <ScenariosContainer>
+      {/*Loaded scenarios: {scenarios.count}*/}
+      {scenarios.data.map((s, i) =>
+        <Scenario key={s.metadata.ID} data={s} odd={i % 2 === 1}/>
+      )}
+    </ScenariosContainer>
   )
 }
 

@@ -1,5 +1,6 @@
 import React from 'react'
 import styled from '@emotion/styled'
+import routed from '../utils/routed.js'
 
 const color = (props) => props.theme.color[props.color || 'primary']
 
@@ -23,4 +24,4 @@ const NavBrand = styled.a`
   border-radius: .5rem;
 `
 
-export default NavBrand
+export default routed(NavBrand)

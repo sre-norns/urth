@@ -1,5 +1,6 @@
 import React from 'react'
 import styled from '@emotion/styled'
+import routed from '../utils/routed.js'
 
 const color = (props) => props.theme.color[props.color || 'neutral']
 
@@ -51,4 +52,4 @@ const NavLink = styled.a`
   }
 `
 
-export default NavLink
+export default routed(NavLink)

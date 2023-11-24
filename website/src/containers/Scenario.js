@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import PropTypes from 'prop-types'
 import styled from '@emotion/styled'
+import {useDispatch, useSelector} from 'react-redux'
 import OddContainer from '../components/OddContainer.js'
 import Capsule from '../components/Capsule.js'
 import RagIndicator from '../components/RagIndicator.js'
@@ -8,7 +9,7 @@ import TextSpan, {TextDiv} from '../components/TextSpan.js'
 import {cyrb53} from '../utils/hash.js'
 import Button from '../components/Button.js'
 import Link from '../components/Link.js'
-import {apiPut} from '../utils/api.js'
+import runScenario from '../actions/runScenario.js'
 
 
 const TopContainer = styled.div`
@@ -75,28 +76,15 @@ const Scenario = ({data, odd}) => {
   const playDisabled = !active
   const stopDisabled = !active
 
-  const [isSending, setIsSending] = useState(false)
+  const scenarioActions = useSelector(s => s.scenarioActions)
+  const {fetching, result, error} = scenarioActions[ID] || {}
 
-  const requestRun = useCallback(async () => {
-    // don't send again while we are sending
-    if (isSending) return
+  const dispatch = useDispatch()
 
-    // update state
-    setIsSending(true)
-
-    // send the actual request
-    try {
-      const runRequest = await apiPut(`/api/v1/scenarios/${ID}/results`, {
-          token: "fsd"
-      })
-      
-    } catch (error) {
-      console.log("Failed to post: ", error);
-    }
-
-    setIsSending(false)
-  }, [isSending]) // update the callback if the state changes
-
+  const requestRun = useCallback((event) => {
+    event.preventDefault()
+    dispatch(runScenario(ID))
+  }, [])
 
   return (
     <OddContainer odd={odd}>
@@ -104,7 +92,7 @@ const Scenario = ({data, odd}) => {
         <BodyContainer>
           <TextDiv size="medium" level={2} weight={500}>
             <RagIndicator color={statusColor} style={{margin: '0 .5rem 0 2px'}} />
-            <Link href="#" onClick={onNonClick}>{description}</Link>
+            <Link href={`/scenarios/${ID}`}>{description}</Link>
           </TextDiv>
           <TextDiv size='small' level={4}>
             <TextSpan>Schedule: </TextSpan>
@@ -118,7 +106,7 @@ const Scenario = ({data, odd}) => {
           </TextDiv>
         </BodyContainer>
         <ActionsContainer>
-          <PlayButton color="contrast" disabled={playDisabled || isSending} onClick={requestRun}><i className="fi fi-play"></i></PlayButton>
+          <PlayButton color="contrast" disabled={playDisabled || fetching} onClick={requestRun}><i className="fi fi-play"></i></PlayButton>
           <StopButton color={stopDisabled ? 'contrast' : 'error'} disabled={stopDisabled}><i className="fi fi-stop"></i></StopButton>
         </ActionsContainer>
       </TopContainer>
