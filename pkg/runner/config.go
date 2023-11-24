@@ -10,13 +10,19 @@ import (
 
 	// TODO: move to github.com/sre-norns/wyrd
 	"github.com/sre-norns/urth/pkg/wyrd"
+	"golang.org/x/mod/semver"
 )
 
 const (
-	LabelOS            = "runner.os"
-	LabelArch          = "runner.arch"
-	LabelNodeJsVersion = "runner.node.version"
-	LabelPythonVersion = "runner.python.version"
+	LabelOS   = "runner.os"
+	LabelArch = "runner.arch"
+
+	// Runtimes available:
+	LabelNodeJsVersion      = "runner.node.version"
+	LabelNodeJsVersionMajor = "runner.node.version" + ".major"
+
+	LabelPythonVersion      = "runner.python.version"
+	LabelPythonVersionMajor = LabelPythonVersion + ".major"
 
 	// Well-known labels used by runners:
 	LabelBuildVersion      = "runner.version"
@@ -42,8 +48,10 @@ func GetNodeRuntimeLabels() wyrd.Labels {
 		return wyrd.Labels{}
 	}
 
+	vstr := strings.TrimSpace(string(out))
 	return wyrd.Labels{
-		LabelNodeJsVersion: strings.TrimSpace(string(out)),
+		LabelNodeJsVersion:      vstr[1:],
+		LabelNodeJsVersionMajor: semver.Major(vstr)[1:],
 	}
 }
 
@@ -59,8 +67,10 @@ func GetPythonRuntimeLabels() wyrd.Labels {
 		return wyrd.Labels{}
 	}
 
+	vstr := strings.TrimSpace(parts[1])
 	return wyrd.Labels{
-		LabelPythonVersion: strings.TrimSpace(parts[1]),
+		LabelPythonVersion:      vstr,
+		LabelPythonVersionMajor: semver.Major("v" + vstr)[1:],
 	}
 }
 

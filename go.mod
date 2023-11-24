@@ -9,6 +9,7 @@ require (
 	github.com/google/martian v2.1.0+incompatible
 	github.com/hibiken/asynq v0.24.1
 	github.com/stretchr/testify v1.8.4
+	golang.org/x/mod v0.8.0
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/datatypes v1.2.0
 	gorm.io/driver/sqlite v1.5.4
