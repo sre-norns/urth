@@ -6,14 +6,14 @@ const runScenario = (id) => async dispatch => {
   dispatch({type: ActionType.RUN_SCENARIO_FETCHING, id})
 
   try {
-    const result = await apiPut(`/api/v1/scenarios/${id}/results`, {
+    const response = await apiPut(`/api/v1/scenarios/${id}/results`, {
       token: "fsd"
     })
 
     dispatch({
       type: ActionType.RUN_SCENARIO_FETCHED,
       id,
-      result,
+      response,
     })
   } catch (error) {
     dispatch({

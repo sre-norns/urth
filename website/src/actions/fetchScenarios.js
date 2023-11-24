@@ -6,11 +6,11 @@ const fetchScenarios = () => async dispatch => {
   dispatch({type: ActionType.SCENARIOS_FETCHING})
 
   try {
-    const scenarios = await apiGet('/api/v1/scenarios')
+    const response = await apiGet('/api/v1/scenarios')
 
     dispatch({
       type: ActionType.SCENARIOS_FETCHED,
-      scenarios,
+      response,
     })
   } catch (error) {
     dispatch({

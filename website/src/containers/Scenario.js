@@ -77,7 +77,7 @@ const Scenario = ({data, odd}) => {
   const stopDisabled = !active
 
   const scenarioActions = useSelector(s => s.scenarioActions)
-  const {fetching, result, error} = scenarioActions[ID] || {}
+  const {fetching, response, error} = scenarioActions[ID] || {}
 
   const dispatch = useDispatch()
 

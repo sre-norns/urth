@@ -14,7 +14,7 @@ const ScenariosContainer = styled.div`
 
 const Scenarios = () => {
   const dispatch = useDispatch()
-  const {fetching, scenarios, error} = useSelector(s => s.scenarios)
+  const {fetching, response, error} = useSelector(s => s.scenarios)
 
   React.useEffect(() => {
     dispatch(fetchScenarios())
@@ -28,14 +28,13 @@ const Scenarios = () => {
     return <SpinnerInlay/>
   }
 
-  if (!scenarios || !Array.isArray(scenarios.data) || !scenarios.data.length) {
+  if (!response || !Array.isArray(response.data) || !response.data.length) {
     return <EmptyInlay/>
   }
 
   return (
     <ScenariosContainer>
-      {/*Loaded scenarios: {scenarios.count}*/}
-      {scenarios.data.map((s, i) =>
+      {response.data.map((s, i) =>
         <Scenario key={s.metadata.ID} data={s} odd={i % 2 === 1}/>
       )}
     </ScenariosContainer>

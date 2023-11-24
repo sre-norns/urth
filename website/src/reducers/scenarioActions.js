@@ -25,7 +25,7 @@ export default (state = initialState, action) => {
         [action.id]: {
           ...state[action.id],
           fetching: false,
-          result: action.result,
+          response: action.response,
         },
       }
 
