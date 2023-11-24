@@ -38,13 +38,17 @@ func NewDbStore(db *gorm.DB) Store {
 	}
 }
 
-func (s *DbStore) Create(ctx context.Context, value any) error {
-	return s.db.WithContext(ctx).Create(value).Error
+func (s *DbStore) Create(ctx context.Context, value any) (TypeMeta, error) {
+	kind, err := s.GuessKind(reflect.ValueOf(value))
+	if err != nil {
+		return kind, err
+	}
+
+	return kind, s.db.WithContext(ctx).Create(value).Error
 }
 
 func (s *DbStore) Get(ctx context.Context, dest any, id ResourceID) (bool, error) {
 	tx := s.db.WithContext(ctx).First(dest, id)
-
 	if errors.Is(tx.Error, gorm.ErrRecordNotFound) {
 		return false, nil
 	}
@@ -82,10 +86,6 @@ func (s *DbStore) Delete(ctx context.Context, value any, id ResourceID) (bool, e
 
 func (s *DbStore) GuessKind(value reflect.Value) (TypeMeta, error) {
 	kind, err := guessDbTable(s.db, value.Interface())
-	// stmt := &gorm.Statement{DB: s.db}
-	// if err := stmt.Parse(value.Interface()); err != nil {
-	// 	return TypeMeta{}, err
-	// }
 
 	return TypeMeta{Kind: kind}, err
 }
@@ -198,6 +198,7 @@ func (meta *ResourceMeta) AfterFind(tx *gorm.DB) (err error) {
 }
 
 func (meta *ResourceMeta) BeforeSave(tx *gorm.DB) (err error) {
+	meta.Version += 1
 	meta.Attributes, err = json.Marshal(meta.Labels)
 	return
 }

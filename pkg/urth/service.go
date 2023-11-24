@@ -12,6 +12,12 @@ import (
 	"github.com/sre-norns/urth/pkg/wyrd"
 )
 
+var (
+	ErrResourceVersionConflict = &ErrorResponse{Code: 409, Message: "resource version conflict"}
+	ErrResourceNotFound        = &ErrorResponse{Code: 404, Message: "requested resource not found"}
+	ErrResourceUnauthorized    = &ErrorResponse{Code: 401, Message: "resource access unauthorized"}
+)
+
 type ReadableResourceApi[T interface{}] interface {
 	// List all resources matching given search query
 	List(ctx context.Context, searchQuery SearchQuery) ([]PartialObjectMetadata, error)
@@ -63,10 +69,14 @@ type RunnersApi interface {
 	// Client request to create a new 'slot' for a runner
 	Create(ctx context.Context, entry CreateRunnerRequest) (CreatedResponse, error)
 
-	// Register Job runner and receive Identity from the server
+	// Delete a single resource identified by a unique ID
+	Delete(ctx context.Context, id ResourceID) (bool, error)
+
+	// Update a single resource identified by a unique ID
+	Update(ctx context.Context, id VersionedResourceId, entry CreateRunnerRequest) (CreatedResponse, error)
+
+	// Authenticate a worker and receive Identity from the server
 	Auth(ctx context.Context, token ApiToken, entry RunnerRegistration) (Runner, error)
-	// UserControl() error
-	// PostUpdate() error
 }
 
 type LabelsApi interface {
@@ -196,7 +206,7 @@ func (m *scenarioApiImpl) List(ctx context.Context, query SearchQuery) ([]Partia
 
 	results := make([]PartialObjectMetadata, 0, len(resources))
 	for _, sc := range resources {
-		// TODO: Script should be moved into a separate table, that way we wont have to filter it out
+		// TODO: Script should be moved into a separate table, that way we won't have to filter it out here
 		sc.Script = nil
 		results = append(results, PartialObjectMetadata{
 			TypeMeta:     kind,
@@ -214,12 +224,7 @@ func (m *scenarioApiImpl) Create(ctx context.Context, newEntry CreateScenarioReq
 		CreateScenario: newEntry.CreateScenario,
 	}
 
-	kind, err := m.store.GuessKind(reflect.ValueOf(&entry))
-	if err != nil {
-		return CreatedResponse{}, err
-	}
-
-	err = m.store.Create(ctx, &entry)
+	kind, err := m.store.Create(ctx, &entry)
 
 	return CreatedResponse{
 		TypeMeta:            kind,
@@ -229,7 +234,10 @@ func (m *scenarioApiImpl) Create(ctx context.Context, newEntry CreateScenarioReq
 
 func (m *scenarioApiImpl) Get(ctx context.Context, id ResourceID) (Scenario, bool, error) {
 	var result Scenario
-	_, err := m.store.Get(ctx, &result, id)
+	ok, err := m.store.Get(ctx, &result, id)
+	if !ok {
+		return result, ok, err
+	}
 
 	return result, result.ID == uint(id) && !result.DeletedAt.Valid, err
 }
@@ -241,15 +249,14 @@ func (m *scenarioApiImpl) Delete(ctx context.Context, id ResourceID) (bool, erro
 func (m *scenarioApiImpl) UpdateScript(ctx context.Context, id ResourceID, script ScenarioScript) (VersionedResourceId, bool, error) {
 	var result Scenario
 	ok, err := m.store.Get(ctx, &result, id)
-	if err != nil || !ok {
+	if !ok || err != nil {
 		return result.GetVersionedID(), ok, err
 	}
 
 	result.Script = &script
-	result.Version += 1
-	_, err = m.store.Update(ctx, &result, id)
+	ok, err = m.store.Update(ctx, &result, id)
 
-	return result.GetVersionedID(), true, err
+	return result.GetVersionedID(), ok, err
 }
 
 // FIXME: Must take versionedID?
@@ -261,9 +268,12 @@ func (m *scenarioApiImpl) Update(ctx context.Context, id ResourceID, scenarioUpd
 		return CreatedResponse{}, err
 	}
 
-	_, err = m.store.Get(ctx, &result, id)
+	ok, err := m.store.Get(ctx, &result, id)
 	if err != nil {
 		return CreatedResponse{}, err
+	}
+	if !ok {
+		return CreatedResponse{}, ErrResourceNotFound
 	}
 
 	// // TODO: Update other fields!
@@ -284,8 +294,10 @@ func (m *scenarioApiImpl) Update(ctx context.Context, id ResourceID, scenarioUpd
 
 	result.IsActive = scenarioUpdate.IsActive
 
-	result.Version += 1
-	_, err = m.store.Update(ctx, &result, id)
+	ok, err = m.store.Update(ctx, &result, id)
+	if !ok {
+		return CreatedResponse{}, ErrResourceVersionConflict
+	}
 
 	return CreatedResponse{
 		TypeMeta:            kind,
@@ -312,7 +324,7 @@ func (m *resultsApiImpl) List(ctx context.Context, searchQuery SearchQuery) ([]P
 
 	if searchQuery.Labels == "" {
 		searchQuery.Labels = fmt.Sprintf("%v=%v", LabelScenarioId, m.scenarioId)
-	} else if !strings.Contains(searchQuery.Labels, "scenario") {
+	} else if !strings.Contains(searchQuery.Labels, LabelScenarioId) {
 		searchQuery.Labels = fmt.Sprintf("%v=%v,%v", LabelScenarioId, m.scenarioId, searchQuery.Labels)
 	}
 
@@ -362,12 +374,8 @@ func (m *resultsApiImpl) Create(ctx context.Context, newEntry CreateScenarioRunR
 		},
 		UpdateToken: RandStringBytesRmndr(21), // FIXME: Generate JWT with valid-until clause, to give worker a time to post
 	}
-	kind, err := m.store.GuessKind(reflect.ValueOf(&entry))
-	if err != nil {
-		return CreatedRunResponse{}, err
-	}
 
-	err = m.store.Create(ctx, &entry)
+	kind, err := m.store.Create(ctx, &entry)
 
 	return CreatedRunResponse{
 		CreatedResponse: CreatedResponse{
@@ -392,20 +400,27 @@ func (m *resultsApiImpl) Update(ctx context.Context, id VersionedResourceId, tok
 	}
 
 	ok, err := m.store.GetWithVersion(ctx, &entry, id)
-	if !ok || err != nil {
-		return CreatedResponse{}, fmt.Errorf("requested resource not found") // FIXME: 404!
+	if err != nil {
+		return CreatedResponse{}, ErrResourceNotFound
+	}
+	if !ok {
+		return CreatedResponse{}, ErrResourceVersionConflict
 	}
 
 	//FIXME: Validate API Token
 	if entry.UpdateToken != token {
-		return CreatedResponse{}, fmt.Errorf("invalid token") // FIXME: 404!
+		return CreatedResponse{}, ErrResourceUnauthorized
 	}
 
 	entry.Status = JobCompleted
 	entry.FinalRunResults = runResults
+
 	ok, err = m.store.Update(ctx, &entry, ResourceID(entry.ID))
-	if !ok && err == nil {
-		return CreatedResponse{}, fmt.Errorf("update failed to find resource by ID")
+	if err != nil {
+		return CreatedResponse{}, err
+	}
+	if !ok {
+		return CreatedResponse{}, ErrResourceVersionConflict
 	}
 
 	return CreatedResponse{
@@ -416,7 +431,10 @@ func (m *resultsApiImpl) Update(ctx context.Context, id VersionedResourceId, tok
 
 func (m *resultsApiImpl) Get(ctx context.Context, id ResourceID) (ScenarioRunResults, bool, error) {
 	var result ScenarioRunResults
-	_, err := m.store.Get(ctx, &result, id)
+	ok, err := m.store.Get(ctx, &result, id)
+	if !ok {
+		return result, ok, err
+	}
 
 	return result, result.ID == uint(id) && !result.DeletedAt.Valid, err
 }
@@ -448,7 +466,10 @@ func (m *runnersApiImpl) List(ctx context.Context, searchQuery SearchQuery) ([]P
 
 func (m *runnersApiImpl) Get(ctx context.Context, id ResourceID) (Runner, bool, error) {
 	var result Runner
-	_, err := m.store.Get(ctx, &result, id)
+	ok, err := m.store.Get(ctx, &result, id)
+	if !ok {
+		return result, ok, err
+	}
 
 	return result, result.ID == uint(id) && !result.DeletedAt.Valid, err
 }
@@ -462,12 +483,7 @@ func (m *runnersApiImpl) Create(ctx context.Context, newEntry CreateRunnerReques
 		IdToken: RandStringBytesRmndr(12),
 	}
 
-	kind, err := m.store.GuessKind(reflect.ValueOf(&entry))
-	if err != nil {
-		return CreatedResponse{}, err
-	}
-
-	err = m.store.Create(ctx, &entry)
+	kind, err := m.store.Create(ctx, &entry)
 
 	return CreatedResponse{
 		TypeMeta:            kind,
@@ -475,21 +491,71 @@ func (m *runnersApiImpl) Create(ctx context.Context, newEntry CreateRunnerReques
 	}, err
 }
 
+func (m *runnersApiImpl) Delete(ctx context.Context, id ResourceID) (bool, error) {
+	return m.store.Delete(ctx, &Runner{}, id)
+}
+
+func (m *runnersApiImpl) Update(ctx context.Context, id VersionedResourceId, entry CreateRunnerRequest) (CreatedResponse, error) {
+	var result Runner
+	kind, err := m.store.GuessKind(reflect.ValueOf(&result))
+	if err != nil {
+		return CreatedResponse{}, err
+	}
+
+	ok, err := m.store.GetWithVersion(ctx, &result, id)
+	if err != nil {
+		return CreatedResponse{}, err
+	}
+	if !ok {
+		return CreatedResponse{}, ErrResourceVersionConflict
+	}
+
+	result.IsActive = entry.IsActive
+
+	if entry.Description != "" {
+		result.Description = entry.Description
+	}
+
+	if len(entry.Requirements.MatchLabels) > 0 {
+		result.Requirements.MatchLabels = entry.Requirements.MatchLabels
+	}
+	if len(entry.Requirements.MatchSelector) > 0 {
+		result.Requirements.MatchSelector = entry.Requirements.MatchSelector
+	}
+
+	// Persist changes
+	ok, err = m.store.Update(ctx, &result, id.ID)
+	if !ok {
+		return CreatedResponse{}, ErrResourceVersionConflict
+	}
+
+	return CreatedResponse{
+		TypeMeta:            kind,
+		VersionedResourceId: result.GetVersionedID(),
+	}, err
+}
+
 func (m *runnersApiImpl) Auth(ctx context.Context, token ApiToken, entry RunnerRegistration) (Runner, error) {
 	var result Runner
 	ok, err := m.store.GetByToken(ctx, &result, token)
-	if err == nil && !ok {
-		return result, fmt.Errorf("no unique toke found")
+	if err != nil {
+		return result, err
+	}
+	if !ok {
+		return result, ErrResourceUnauthorized
 	}
 
 	// Update runner record:
 	result.IsOnline = entry.IsOnline
+
 	// TODO: Figure out a way to combine with Custom user-set labels!
-	result.Labels = entry.InstanceLabels
+	if entry.InstanceLabels != nil {
+		result.Labels = entry.InstanceLabels
+	}
 
 	ok, err = m.store.Update(ctx, &result, ResourceID(result.ID))
-	if !ok && err == nil {
-		return result, fmt.Errorf("update failed to find resource by ID")
+	if !ok {
+		return result, ErrResourceVersionConflict
 	}
 
 	return result, err
@@ -525,7 +591,10 @@ func (m *artifactApiImp) List(ctx context.Context, query SearchQuery) ([]Partial
 
 func (m *artifactApiImp) Get(ctx context.Context, id ResourceID) (Artifact, bool, error) {
 	var result Artifact
-	_, err := m.store.Get(ctx, &result, id)
+	ok, err := m.store.Get(ctx, &result, id)
+	if !ok {
+		return result, ok, err
+	}
 
 	return result, result.ID == uint(id) && !result.DeletedAt.Valid, err
 }
@@ -536,12 +605,7 @@ func (m *artifactApiImp) Create(ctx context.Context, newEntry CreateArtifactRequ
 		ArtifactValue: newEntry.ArtifactValue,
 	}
 
-	kind, err := m.store.GuessKind(reflect.ValueOf(&entry))
-	if err != nil {
-		return CreatedResponse{}, err
-	}
-
-	err = m.store.Create(ctx, &entry)
+	kind, err := m.store.Create(ctx, &entry)
 
 	return CreatedResponse{
 		TypeMeta:            kind,

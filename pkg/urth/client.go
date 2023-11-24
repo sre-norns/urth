@@ -295,6 +295,41 @@ func (c *RunnersApiClient) Create(ctx context.Context, newEntry CreateRunnerRequ
 	return c.createResource("v1/runners", &newEntry)
 }
 
+func (c *RunnersApiClient) Delete(ctx context.Context, id ResourceID) (bool, error) {
+	return c.deleteResource(fmt.Sprintf("v1/runners/%v", id))
+}
+
+func (c *RunnersApiClient) Update(ctx context.Context, id VersionedResourceId, entry CreateRunnerRequest) (CreatedResponse, error) {
+	var result CreatedResponse
+	data, err := json.Marshal(entry)
+	if err != nil {
+		return result, err
+	}
+
+	queryParams := url.Values{}
+	queryParams.Set("version", strconv.FormatInt(int64(id.Version), 10))
+
+	targetApi := urlForPath(c.baseUrl, fmt.Sprintf("v1/runners/%v", id), queryParams)
+	resp, err := c.put(targetApi,
+		http.Header{
+			// "Authorization": []string{fmt.Sprintf("Bearer %s", token)},
+			"If-Match": []string{id.String()},
+		},
+		bytes.NewReader(data),
+	)
+	if err != nil {
+		return result, err
+	}
+
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
+		return result, readApiError(resp)
+	}
+
+	err = json.NewDecoder(resp.Body).Decode(&result)
+	return result, err
+}
+
 func (m *RunnersApiClient) Auth(ctx context.Context, token ApiToken, newEntry RunnerRegistration) (Runner, error) {
 	var result Runner
 	data, err := json.Marshal(newEntry)

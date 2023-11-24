@@ -31,9 +31,8 @@ const (
 )
 
 type RunnerConfig struct {
-	systemLabels wyrd.Labels        `kong:"-"`
-	CustomLabels wyrd.Labels        `help:"Extra labels to identify this instance of the runner"`
-	Requirements wyrd.LabelSelector `kong:"-"`
+	systemLabels wyrd.Labels `kong:"-"`
+	CustomLabels wyrd.Labels `help:"Extra labels to identify this instance of the runner"`
 
 	ApiToken         string        `help:"API token to register this runner instance"`
 	ApiServerAddress string        `help:"URL address of the API server" default:"http://localhost:8080/" `

@@ -19,10 +19,10 @@ type ApiToken string
 
 type VersionedResourceId struct {
 	ID      ResourceID `form:"id" json:"id" yaml:"id" xml:"id"`
-	Version uint32     `form:"version" json:"version" yaml:"version" xml:"version"`
+	Version uint64     `form:"version" json:"version" yaml:"version" xml:"version"`
 }
 
-func NewVersionedId(id uint, version uint32) VersionedResourceId {
+func NewVersionedId(id uint, version uint64) VersionedResourceId {
 	return VersionedResourceId{
 		ID:      ResourceID(id),
 		Version: version,
@@ -51,7 +51,7 @@ type ResourceMeta struct {
 
 	// A sequence number representing a specific generation of the resource.
 	// Populated by the system. Read-only.
-	Version uint32 `form:"version" json:"version" yaml:"version" xml:"version" gorm:"default:1"`
+	Version uint64 `form:"version" json:"version" yaml:"version" xml:"version" gorm:"default:1"`
 
 	// Name is a human readable name of the resource used for display in UI
 	Name string `form:"name" json:"name" yaml:"name" xml:"name"  binding:"required"`
@@ -94,7 +94,7 @@ type RunnerDefinition struct {
 // RunnerRegistration is information that owned and managed by the runner itself
 type RunnerRegistration struct {
 	// IsOnline is this runner is online and accepts jobs or is currently processing one
-	IsOnline bool `form:"online" json:"online" yaml:"online" xml:"online"`
+	IsOnline bool `form:"online" json:"online" yaml:"online" xml:"online" binding:"required"`
 
 	InstanceLabels wyrd.Labels `form:"runner_labels,omitempty" json:"runner_labels,omitempty" yaml:"runner_labels,omitempty" xml:"runner_labels,omitempty" gorm:"-"`
 }

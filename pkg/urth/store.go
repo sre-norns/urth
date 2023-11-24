@@ -6,7 +6,7 @@ import (
 )
 
 type Store interface {
-	Create(ctx context.Context, value any) error
+	Create(ctx context.Context, value any) (TypeMeta, error)
 	Get(ctx context.Context, value any, id ResourceID) (bool, error)
 	Delete(ctx context.Context, value any, id ResourceID) (bool, error)
 	//FIXME: Update must accept versionedId

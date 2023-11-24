@@ -1,6 +1,10 @@
 package urth
 
-import "github.com/sre-norns/urth/pkg/wyrd"
+import (
+	"fmt"
+
+	"github.com/sre-norns/urth/pkg/wyrd"
+)
 
 type (
 
@@ -37,7 +41,7 @@ type (
 	}
 
 	ErrorResponse struct {
-		Code    string
+		Code    int
 		Message string
 	}
 
@@ -92,9 +96,9 @@ type (
 	}
 )
 
-func NewErrorResponse(httpCode string, err error) ErrorResponse {
+func NewErrorResponse(statusCode int, err error) ErrorResponse {
 	return ErrorResponse{
-		Code:    httpCode,
+		Code:    statusCode,
 		Message: err.Error(),
 	}
 }
@@ -122,4 +126,9 @@ func (m *CreateResourceMeta) Metadata() ResourceMeta {
 		Name:   m.Name,
 		Labels: m.Labels,
 	}
+}
+
+// ErrorResponse implements error interface
+func (e *ErrorResponse) Error() string {
+	return fmt.Sprintf("%v %s", e.Code, e.Message)
 }
