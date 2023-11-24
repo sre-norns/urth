@@ -17,7 +17,5 @@ type Store interface {
 	FindResources(ctx context.Context, dest any, searchQuery SearchQuery) (TypeMeta, error)
 	FindInto(ctx context.Context, model, into any, pagination Pagination) error
 
-	FindResourcesWithEx(ctx context.Context, owner_id ResourceID, resources any, searchQuery SearchQuery) (TypeMeta, error)
-
 	GuessKind(value reflect.Value) (TypeMeta, error)
 }

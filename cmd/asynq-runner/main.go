@@ -71,8 +71,6 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 			Labels: w.labelJob(job),
 		},
 		InitialScenarioRunResults: urth.InitialScenarioRunResults{
-			ScenarioID:  job.ScenarioID,
-			RunnerID:    w.identity.GetVersionedID(),
 			TimeStarted: timeStarted,
 		},
 	})

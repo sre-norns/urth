@@ -159,9 +159,6 @@ const (
 )
 
 type ArtifactValue struct {
-	// Id of ScenarioRun that produced this artifact
-	// ScenarioRunResultsID uint `form:"scenarioRunId" json:"scenarioRunId" yaml:"scenarioRunId" xml:"scenarioRunId"`
-
 	// If set, point in time when artifact will expire
 	ExpireTime sql.NullTime `form:"expire_time,omitempty" json:"expire_time,omitempty" yaml:"expire_time,omitempty" xml:"expire_time,omitempty" time_format:"unix"`
 
@@ -222,9 +219,9 @@ func NewRunResults(runResult RunStatus, options ...RunResultOption) FinalRunResu
 // CreateScenarioRunResults is info that runner reports about a running job
 type InitialScenarioRunResults struct {
 	// ID and version of the scenario that this results were produced for
-	ScenarioID VersionedResourceId `form:"play_id" json:"play_id" yaml:"play_id" xml:"play_id"  binding:"required"  gorm:"embedded;embeddedPrefix:scenario_"`
+	// ScenarioID VersionedResourceId `form:"play_id" json:"play_id" yaml:"play_id" xml:"play_id"  binding:"required"  gorm:"embedded;embeddedPrefix:scenario_"`
 	// ID and version of the runner that executed the scenario
-	RunnerID VersionedResourceId `form:"runner_id" json:"runner_id" yaml:"runner_id" xml:"runner_id"  binding:"required"  gorm:"embedded;embeddedPrefix:runner_"`
+	// RunnerID VersionedResourceId `form:"runner_id" json:"runner_id" yaml:"runner_id" xml:"runner_id"  binding:"required"  gorm:"embedded;embeddedPrefix:runner_"`
 	// Timestamp when execution started
 	TimeStarted time.Time `form:"start_time" json:"start_time" yaml:"start_time" xml:"start_time" binding:"required"`
 }

@@ -3,7 +3,7 @@
 
 
 ## Code quality
-[] Switch to make
+[x] Switch to make
 [] Add `go vet ` to go-lang build pipeline
 [] Add static `testtool` to go-lang build pipeline
 

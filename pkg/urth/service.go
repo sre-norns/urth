@@ -6,6 +6,10 @@ import (
 	"log"
 	"math/rand"
 	"reflect"
+	"strconv"
+	"strings"
+
+	"github.com/sre-norns/urth/pkg/wyrd"
 )
 
 type ReadableResourceApi[T interface{}] interface {
@@ -305,7 +309,14 @@ func RandStringBytesRmndr(n int) ApiToken {
 //------------------------------
 func (m *resultsApiImpl) List(ctx context.Context, searchQuery SearchQuery) ([]PartialObjectMetadata, error) {
 	var resources []ScenarioRunResults
-	kind, err := m.store.FindResourcesWithEx(ctx, m.scenarioId, &resources, searchQuery)
+
+	if searchQuery.Labels == "" {
+		searchQuery.Labels = fmt.Sprintf("scenario=%v", m.scenarioId) // FIXME: No magic value, move well-known labels to a single place
+	} else if !strings.Contains(searchQuery.Labels, "scenario") {
+		searchQuery.Labels = fmt.Sprintf("scenario=%v,%v", m.scenarioId, searchQuery.Labels)
+	}
+
+	kind, err := m.store.FindResources(ctx, &resources, searchQuery)
 	if err != nil {
 		return nil, err
 	}
@@ -323,7 +334,15 @@ func (m *resultsApiImpl) List(ctx context.Context, searchQuery SearchQuery) ([]P
 }
 
 func (m *resultsApiImpl) Create(ctx context.Context, newEntry CreateScenarioRunResults) (CreatedRunResponse, error) {
-	if newEntry.ScenarioID.ID != m.scenarioId {
+	scenarioIdLabelValue := strconv.FormatInt(int64(m.scenarioId), 10)
+
+	if newEntry.Labels == nil {
+		newEntry.Labels = wyrd.Labels{
+			"scenario": scenarioIdLabelValue, // FIXME: No magic value, move well-known labels to a single place
+		}
+	} else if v, ok := newEntry.Labels["scenario"]; !ok {
+		newEntry.Labels["scenario"] = scenarioIdLabelValue
+	} else if v != scenarioIdLabelValue {
 		return CreatedRunResponse{}, fmt.Errorf("invalid scenario ID for given results entry")
 	}
 

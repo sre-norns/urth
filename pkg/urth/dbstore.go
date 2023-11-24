@@ -94,36 +94,6 @@ func (s *DbStore) startPaginatedTx(ctx context.Context, pagination Pagination) *
 	return s.db.WithContext(ctx).Offset(int(pagination.Offset)).Limit(int(pagination.Limit))
 }
 
-func (s *DbStore) FindResourcesWithEx(ctx context.Context, owner_id ResourceID, resources any, searchQuery SearchQuery) (TypeMeta, error) {
-	var resultType TypeMeta
-
-	selector, err := labels.Parse(searchQuery.Labels)
-	if err != nil {
-		return resultType, err
-	}
-
-	tx := s.startPaginatedTx(ctx, searchQuery.Pagination).Where("scenario_id = ?", owner_id)
-	cond, err := s.selectorAsQuery(selector, tx)
-	if err != nil {
-		return resultType, err
-	}
-
-	rtx := tx.Find(resources, cond)
-	if rtx.Error != nil {
-		return resultType, rtx.Error
-	}
-
-	t := reflect.ValueOf(resources).Elem()
-	if (t.Kind() == reflect.Slice || t.Kind() == reflect.Array) && t.Len() > 0 {
-		resultType, err = s.GuessKind(reflect.Zero(t.Type()))
-		if err != nil {
-			return resultType, err
-		}
-	}
-
-	return resultType, nil
-}
-
 func (s *DbStore) FindResources(ctx context.Context, resources any, searchQuery SearchQuery) (TypeMeta, error) {
 	var resultType TypeMeta
 
@@ -132,14 +102,9 @@ func (s *DbStore) FindResources(ctx context.Context, resources any, searchQuery 
 		return resultType, err
 	}
 
-	tx := s.startPaginatedTx(ctx, searchQuery.Pagination)
-	cond, err := s.selectorAsQuery(selector, tx)
+	tx, err := s.withSelector(s.startPaginatedTx(ctx, searchQuery.Pagination), selector)
 	if err != nil {
 		return resultType, err
-	}
-
-	for _, c := range cond {
-		tx = tx.Where(c)
 	}
 
 	rtx := tx.Find(resources)
@@ -162,10 +127,10 @@ func (s *DbStore) FindInto(ctx context.Context, model any, into any, pagination 
 	return s.startPaginatedTx(ctx, pagination).Model(model).Group("key").Group("value").Find(into).Error
 }
 
-func (s *DbStore) selectorAsQuery(selector labels.Selector, tx *gorm.DB) ([]any, error) {
+func (s *DbStore) withSelector(tx *gorm.DB, selector labels.Selector) (*gorm.DB, error) {
 	reqs, ok := selector.Requirements()
 	if !ok || len(reqs) == 0 { // Selector has no requirements, easy way out
-		return nil, nil
+		return tx, nil
 	}
 
 	qs := make([]any, 0, len(reqs))
@@ -205,7 +170,7 @@ func (s *DbStore) selectorAsQuery(selector labels.Selector, tx *gorm.DB) ([]any,
 		case selection.DoesNotExist:
 			qs = append(qs, JSONQuery("attributes").HasNoKey(req.Key()))
 		default:
-			return nil, fmt.Errorf("%w: `%v`", ErrUnexpectedSelectorOperator, req.Operator())
+			return tx, fmt.Errorf("%w: `%v`", ErrUnexpectedSelectorOperator, req.Operator())
 		}
 	}
 
@@ -216,7 +181,11 @@ func (s *DbStore) selectorAsQuery(selector labels.Selector, tx *gorm.DB) ([]any,
 		return tx.Find(&[]Scenario{})
 	}))
 
-	return qs, nil
+	for _, c := range qs {
+		tx = tx.Where(c)
+	}
+
+	return tx, nil
 }
 
 func (meta *ResourceMeta) AfterFind(tx *gorm.DB) (err error) {
