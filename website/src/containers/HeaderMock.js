@@ -18,8 +18,8 @@ const HeaderMock = () => (
   <Nav>
     <NavRowContainer size="large">
       <NavRow>
-        <NavBrand href="#" onClick={onNonClick}>Urth</NavBrand>
-        <NavLink href="#" onClick={onNonClick} active>Scenarios</NavLink>
+        <NavBrand href="/">Urth</NavBrand>
+        <NavLink href="/scenarios" active>Scenarios</NavLink>
         <NavLink href="#" onClick={onNonClick}>Run Results</NavLink>
         <NavLink href="#" onClick={onNonClick}>Runners</NavLink>
         <NavLink href="#" onClick={onNonClick} disabled active>Dashboards</NavLink>
