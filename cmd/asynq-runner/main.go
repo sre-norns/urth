@@ -46,11 +46,11 @@ func (w *WorkerConfig) labelJob(job urth.RunScenarioJob) wyrd.Labels {
 
 // HandleWelcomeEmailTask handler for welcome email task.
 func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task) error {
-	log.Println("New job execution request")
+	log.Print("New job execution request: ", t.ResultWriter().TaskID())
 
 	job, err := redqueue.UnmarshalJob(t)
 	if err != nil {
-		log.Println("Failed to deserialize message content: ", err)
+		log.Print("Failed to deserialize message content: ", err)
 		// TODO: Log and count metrics
 		return err // Note: job can be re-tried
 	}
@@ -58,7 +58,7 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 	timeStarted := time.Now()
 	scenarioName := fmt.Sprintf("%v-%v", job.Name, job.ScenarioID)
 	runID := fmt.Sprintf("%v-%v", scenarioName, timeStarted.UnixMicro())
-	log.Println("jobID:", runID)
+	log.Print("jobID: ", runID)
 
 	// TODO: Check requirements!
 
@@ -70,9 +70,7 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 			Name:   runID, // Note: not unique!
 			Labels: w.labelJob(job),
 		},
-		InitialScenarioRunResults: urth.InitialScenarioRunResults{
-			TimeStarted: timeStarted,
-		},
+		InitialScenarioRunResults: urth.InitialScenarioRunResults{},
 	})
 	if err != nil {
 		log.Printf("failed to register new run %q: %v", runID, err)
@@ -86,7 +84,7 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 	}
 	workCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	log.Println("jobID: ", runID, ", starting timeout:", timeout)
+	log.Print("jobID: ", runID, ", starting timeout: ", timeout)
 
 	runResult, artifacts, err := runner.Play(workCtx, job.Script, runner.RunOptions{
 		Http: runner.HttpOptions{
@@ -143,12 +141,12 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 			return err // TODO: retry or not? Add results into the retry queue to post later?
 		}
 
-		log.Printf("job %q resultsID: %v", runID, created.VersionedResourceId)
+		log.Print("jobID: ", runID, ", resultsID: ", created.VersionedResourceId)
 		return nil
 	})
 
 	wg.Wait()
-	log.Printf("job %q competed: %v", runID, runResult.Result)
+	log.Print("jobID: ", runID, ", competed: ", runResult.Result)
 	return nil
 }
 

@@ -40,7 +40,8 @@
 [] Web Request runner: if response contains headers about the TRACE-ID, produce an artifact with a link to a trace viewer (configurable for installation)
 [] If a request return spanID - add a link to View Trace in <Jager>
 [] UX - 'run now' button must be locked until post request returns with an ID of message posted into the run Queue.
-[] A RUN must be in 'scheduled' state when a message been posted into the queue but before being picked up by a worker.
+[?] A RUN must be in `pending` state when a message been posted into the queue but before being picked up by a worker.
+[] For manual runs - trigger identity of the who triggered the run as job labels, such that all jobs triggered by a given user can be found!
 
 ## Workers / Script Runners
 [x] Add .HTTP/.REST file runner into its own package
@@ -56,6 +57,7 @@
 [] New runner: Dataset checker!
 [X] New runner: HAR executor - replay HAR files using WEB Request runner
 [] When worked reports Node version, parse version string to `node.major` and `node.minor` to enable `<>` comparison using label selectors
+[] Script should be typed by `kind`: TCP, DNS and similar infra probers have well defined fields. 
 
 
 [] Allow for script config / encrypted variables

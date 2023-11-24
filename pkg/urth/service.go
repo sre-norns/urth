@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/sre-norns/urth/pkg/wyrd"
 )
@@ -346,11 +347,18 @@ func (m *resultsApiImpl) Create(ctx context.Context, newEntry CreateScenarioRunR
 		return CreatedRunResponse{}, fmt.Errorf("invalid scenario ID for given results entry")
 	}
 
+	// Ensure timestamp is set:
+	if newEntry.TimeStarted == nil {
+		now := time.Now()
+		newEntry.TimeStarted = &now
+	}
+
 	// TODO: Validate that Create results request is from an authentic worker that is allowed to take jobs!
 
 	entry := ScenarioRunResults{
 		ResourceMeta: newEntry.Metadata(),
 		ScenarioRunResultSpec: ScenarioRunResultSpec{
+			Status:                    JobPending, // Ensure initial status is set:
 			InitialScenarioRunResults: newEntry.InitialScenarioRunResults,
 		},
 		UpdateToken: RandStringBytesRmndr(21), // FIXME: Generate JWT with valid-until clause, to give worker a time to post
@@ -374,6 +382,11 @@ func (m *resultsApiImpl) Create(ctx context.Context, newEntry CreateScenarioRunR
 func (m *resultsApiImpl) Update(ctx context.Context, id VersionedResourceId, token ApiToken, runResults FinalRunResults) (CreatedResponse, error) {
 	var entry ScenarioRunResults
 
+	if runResults.TimeEnded == nil {
+		now := time.Now()
+		runResults.TimeEnded = &now
+	}
+
 	kind, err := m.store.GuessKind(reflect.ValueOf(&entry))
 	if err != nil {
 		return CreatedResponse{}, err
@@ -389,6 +402,7 @@ func (m *resultsApiImpl) Update(ctx context.Context, id VersionedResourceId, tok
 		return CreatedResponse{}, fmt.Errorf("invalid token") // FIXME: 404!
 	}
 
+	entry.Status = JobCompleted
 	entry.FinalRunResults = runResults
 	ok, err = m.store.Update(ctx, &entry, ResourceID(entry.ID))
 	if !ok && err == nil {

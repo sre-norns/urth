@@ -1,7 +1,6 @@
 package urth
 
 import (
-	"database/sql"
 	"fmt"
 	"time"
 
@@ -147,10 +146,20 @@ type Scenario struct {
 	CreateScenario `json:",inline" yaml:",inline"`
 }
 
+type JobStatus string
 type RunStatus string
 
 const (
-	RunStatusPending    RunStatus = "pending"
+	// A new request has been created and is waiting for a runner to pick it up
+	JobPending JobStatus = "pending"
+	// A runner picked up the job and is currently executing it
+	JobRunning JobStatus = "running"
+	// No runner picked the job in time and the request expired
+	JobExpired JobStatus = "timeout"
+	// A runner finished the job and with a status
+	JobCompleted JobStatus = "completed"
+
+	// A run completed with a status
 	RunFinishedSuccess  RunStatus = "success"
 	RunFinishedFailed   RunStatus = "failed"
 	RunFinishedError    RunStatus = "errored"
@@ -160,7 +169,7 @@ const (
 
 type ArtifactValue struct {
 	// If set, point in time when artifact will expire
-	ExpireTime sql.NullTime `form:"expire_time,omitempty" json:"expire_time,omitempty" yaml:"expire_time,omitempty" xml:"expire_time,omitempty" time_format:"unix"`
+	ExpireTime *time.Time `form:"expire_time,omitempty" json:"expire_time,omitempty" yaml:"expire_time,omitempty" xml:"expire_time,omitempty" time_format:"unix" gorm:"type:TIMESTAMP NULL"`
 
 	// Relation type: log / HAR / etc? Determines how content is consumed by clients
 	Rel string `form:"rel,omitempty" json:"rel,omitempty" yaml:"rel,omitempty" xml:"rel,omitempty"`
@@ -183,7 +192,7 @@ type Artifact struct {
 // Final results of the script run
 type FinalRunResults struct {
 	// Timestamp when execution finished, if it finished
-	TimeEnded sql.NullTime `form:"end_time" json:"end_time" yaml:"end_time" xml:"end_time" time_format:"unix"  binding:"required"`
+	TimeEnded *time.Time `form:"end_time" json:"end_time" yaml:"end_time" xml:"end_time" time_format:"unix" gorm:"type:TIMESTAMP NULL"`
 
 	// Result is a status of the run
 	Result RunStatus `form:"result" json:"result" yaml:"result" xml:"result"  binding:"required"`
@@ -193,20 +202,15 @@ type RunResultOption func(value *FinalRunResults)
 
 func WithTime(value time.Time) RunResultOption {
 	return func(result *FinalRunResults) {
-		result.TimeEnded = sql.NullTime{
-			Time:  value,
-			Valid: true,
-		}
+		result.TimeEnded = &value
 	}
 }
 
 func NewRunResults(runResult RunStatus, options ...RunResultOption) FinalRunResults {
+	now := time.Now()
 	result := FinalRunResults{
-		TimeEnded: sql.NullTime{
-			Time:  time.Now(),
-			Valid: true,
-		},
-		Result: runResult,
+		TimeEnded: &now,
+		Result:    runResult,
 	}
 
 	for _, option := range options {
@@ -218,17 +222,15 @@ func NewRunResults(runResult RunStatus, options ...RunResultOption) FinalRunResu
 
 // CreateScenarioRunResults is info that runner reports about a running job
 type InitialScenarioRunResults struct {
-	// ID and version of the scenario that this results were produced for
-	// ScenarioID VersionedResourceId `form:"play_id" json:"play_id" yaml:"play_id" xml:"play_id"  binding:"required"  gorm:"embedded;embeddedPrefix:scenario_"`
-	// ID and version of the runner that executed the scenario
-	// RunnerID VersionedResourceId `form:"runner_id" json:"runner_id" yaml:"runner_id" xml:"runner_id"  binding:"required"  gorm:"embedded;embeddedPrefix:runner_"`
-	// Timestamp when execution started
-	TimeStarted time.Time `form:"start_time" json:"start_time" yaml:"start_time" xml:"start_time" binding:"required"`
+	// Timestamp when a job has been picked-up by a worked
+	TimeStarted *time.Time `form:"start_time" json:"start_time" yaml:"start_time" xml:"start_time" gorm:"type:TIMESTAMP NULL"`
 }
 
 type ScenarioRunResultSpec struct {
 	InitialScenarioRunResults `json:",inline" yaml:",inline"`
 	FinalRunResults           `json:",inline" yaml:",inline"`
+
+	Status JobStatus `form:"status" json:"status" yaml:"status" xml:"status"  binding:"required"`
 }
 
 // ScenarioRunResults results of a single execution of a given scenario
