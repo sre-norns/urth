@@ -9,7 +9,7 @@
 
 # Feature:
 [] Enable *scheduler* to actually USE scenario schedules field
-[] Script should be passed compressed / (zlib?)
+[] (MAYBE) Script should be stored compressed / (zlib?)
 [] Ensure that only Scenarios with non-empty script are schedulable / ready
 [x] Use kong for CLI flags and config handling
 [?] Expose option for headless chrome remote debug?
@@ -25,7 +25,7 @@
 [] Validate labels names!
 [] Labels returned by a worked for a job-results / artifacts must be immutable
 [] Add API to find workers give a set of labels and requirements - to enable better UX where user can see how many probers will qualify for a given set of labels.
-[] A run results object with an update token must be created when a job is scheduler. Worker can only update, within a time alloted, already scheduler run. 
+[] A run results object with an update time-limited JWT token must be created when a job is scheduled. Worker can only update, within a time alloted, an already `pending` run. 
 
 ## CLI tooling
 [x] `urthctl` - support reading scenario / script from stdin
@@ -60,7 +60,7 @@
 [] Script should be typed by `kind`: TCP, DNS and similar infra probers have well defined fields. 
 
 
-[] Allow for script config / encrypted variables
+[] Allow for script config / encrypted variables. Consider gocloud: secrets API
 [] Support authentication for HTTP and Puppeteer scenarios
 
 
