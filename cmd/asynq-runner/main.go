@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"strconv"
 	"time"
 
 	"github.com/alecthomas/kong"
@@ -29,21 +28,6 @@ type WorkerConfig struct {
 	identity urth.Runner
 }
 
-func (w *WorkerConfig) labelJob(job urth.RunScenarioJob) wyrd.Labels {
-	return wyrd.MergeLabels(
-		w.GetEffectiveLabels(),
-		job.Labels,
-		wyrd.Labels{
-			runner.LabelRunnerId:          strconv.FormatUint(uint64(w.identity.ID), 10), // Groups all artifacts produced by the same runner
-			runner.LabelRunnerVersionedId: w.identity.GetVersionedID().String(),          // Groups all artifacts produced by the same version of the scenario
-
-			urth.LabelScenarioId:          job.ScenarioID.ID.String(), // Groups all artifacts produced by the same scenario regardless of version
-			urth.LabelScenarioVersionedId: job.ScenarioID.String(),    // Groups all artifacts produced by the same version of the scenario
-			urth.LabelScenarioKind:        string(job.Script.Kind),    // Groups all artifacts produced by the type of script: TCP probe, HTTP probe, etc.
-		},
-	)
-}
-
 // HandleWelcomeEmailTask handler for welcome email task.
 func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task) error {
 	messageId := t.ResultWriter().TaskID()
@@ -56,9 +40,12 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 		return err // Note: job can be re-tried
 	}
 
-	timeStarted := time.Now()
-	scenarioName := fmt.Sprintf("%v-%v", job.Name, job.ScenarioID)
-	runID := fmt.Sprintf("%v-%v", scenarioName, timeStarted.UnixMicro())
+	timeout := w.Timeout
+	if (job.Script != nil && job.Script.Timeout != 0) && timeout > job.Script.Timeout {
+		timeout = job.Script.Timeout
+	}
+
+	runID := job.RunName
 	log.Print("jobID: ", runID)
 
 	// TODO: Check requirements!
@@ -66,23 +53,25 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 	resultsApiClient := w.apiClient.GetResultsAPI(job.ScenarioID.ID)
 	// Notify API-server that a job has been accepted by this worker
 	// FIXME: Worker must use its credentials jwt
-	runCreated, err := resultsApiClient.Create(ctx, urth.CreateScenarioRunResults{
-		CreateResourceMeta: urth.CreateResourceMeta{
-			Name:   runID, // Note: not unique!
-			Labels: w.labelJob(job),
-		},
-		InitialScenarioRunResults: urth.InitialScenarioRunResults{},
+	// Authorize this worker to pick up this job:
+	log.Print("jobID: ", runID, " requesting authorization to execute")
+	runAuth, err := resultsApiClient.Auth(ctx, job.RunID, urth.AuthRunRequest{
+		RunnerID: urth.ResourceID(w.identity.ID),
+		Timeout:  timeout,
+		Labels: wyrd.MergeLabels(
+			w.LabelJob(w.identity.GetVersionedID(), job),
+			wyrd.Labels{
+				urth.LabelScenarioRunMessageId: messageId,
+			},
+		),
 	})
+
 	if err != nil {
 		log.Printf("failed to register new run %q: %v", runID, err)
 		// TODO: Log and count metrics
 		return err // Note: job can be re-tried
 	}
 
-	timeout := w.Timeout
-	if (job.Script != nil && job.Script.Timeout != 0) && timeout > job.Script.Timeout {
-		timeout = job.Script.Timeout
-	}
 	workCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	log.Print("jobID: ", runID, ", starting timeout: ", timeout)
@@ -96,28 +85,31 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 		Puppeteer: runner.PuppeteerOptions{
 			Headless:         true,
 			WorkingDirectory: w.WorkingDirectory,
-			TempDirPrefix:    fmt.Sprintf("run-%v", scenarioName),
+			TempDirPrefix:    job.RunName,
 			KeepTempDir:      job.IsKeepDirectory,
 		},
 	})
 	if err != nil {
 		log.Printf("failed to run the job %q: %v", runID, err)
+		// Note this error - does not abort the task as details(logs and status) must be posted back to the server
 	}
 
 	// Push artifacts if any:
 	wg := grace.NewWorkgroup(4)
 
 	artifactsApiClient := w.apiClient.GetArtifactsApi()
-	for _, artifact := range artifacts {
+	for _, a := range artifacts {
+		artifact := a
 		wg.Go(func() error {
+			// TODO: Must include run Auth Token
 			_, err := artifactsApiClient.Create(ctx, urth.CreateArtifactRequest{
 				CreateResourceMeta: urth.CreateResourceMeta{
 					Name: fmt.Sprintf("%v.%v", runID, artifact.Rel),
 					Labels: wyrd.MergeLabels(
-						w.labelJob(job),
+						w.LabelJob(w.identity.GetVersionedID(), job),
 						wyrd.Labels{
-							urth.LabelScenarioArtifactKind: artifact.Rel,           // Groups all artifacts produced by the content type: logs / HAR / etc
-							urth.LabelScenarioRunId:        runCreated.ID.String(), // Groups all artifacts produced in the same run
+							urth.LabelScenarioArtifactKind: artifact.Rel,          // Groups all artifacts produced by the content type: logs / HAR / etc
+							urth.LabelScenarioRunId:        job.RunID.ID.String(), // Groups all artifacts produced in the same run
 							urth.LabelScenarioRunMessageId: messageId,
 						},
 					),
@@ -137,13 +129,13 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 
 	// Notify API-server that the job has been complete
 	wg.Go(func() error {
-		created, err := resultsApiClient.Update(ctx, runCreated.VersionedResourceId, runCreated.Token, runResult)
+		created, err := resultsApiClient.Update(ctx, runAuth.VersionedResourceId, runAuth.Token, runResult)
 		if err != nil {
 			log.Printf("failed to post run results for %q: %v", runID, err)
 			return err // TODO: retry or not? Add results into the retry queue to post later?
 		}
 
-		log.Print("jobID: ", runID, ", resultsID: ", created.VersionedResourceId)
+		log.Print("jobID: ", runID, ", resultID: ", created.VersionedResourceId)
 		return nil
 	})
 

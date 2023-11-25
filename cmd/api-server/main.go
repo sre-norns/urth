@@ -132,6 +132,7 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 			})
 		})
 
+		// TODO: Extract labels from JSON field
 		// v1.GET("/labels", searchableApi(), contentTypeApi(), func(ctx *gin.Context) {
 		// 	searchQuery := ctx.MustGet(searchQueryKey).(urth.SearchQuery)
 
@@ -176,9 +177,10 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 				return
 			}
 
+			ctx.Header("Location", fmt.Sprintf("%v/%v", ctx.Request.URL.Path, result.ID))
 			marshalResponse(ctx, http.StatusCreated, result)
 		})
-		// Auth runner
+		// Auth runner. TODO: Should it be something like `/auth/runner` ?
 		v1.PUT("/runners", contentTypeApi(), func(ctx *gin.Context) {
 			var newEntry urth.RunnerRegistration
 			if err := ctx.ShouldBind(&newEntry); err != nil {
@@ -295,6 +297,7 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 				return
 			}
 
+			ctx.Header("Location", fmt.Sprintf("%v/%v", ctx.Request.URL.Path, result.ID))
 			marshalResponse(ctx, http.StatusCreated, result)
 		})
 
@@ -432,36 +435,6 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 
 			marshalResponse(ctx, http.StatusOK, urth.NewPaginatedResponse(results, searchQuery.Pagination))
 		})
-
-		// Sneaky manual run trigger API
-		v1.PUT("/scenarios/:id/results", contentTypeApi(), func(ctx *gin.Context) {
-			var resourceRequest urth.ResourceRequest
-			if err := ctx.BindUri(&resourceRequest); err != nil {
-				abortWithError(ctx, http.StatusNotFound, err)
-				return
-			}
-
-			var newEntry urth.CreateScenarioManualRunRequest
-			if err := ctx.ShouldBind(&newEntry); err != nil {
-				abortWithError(ctx, http.StatusBadRequest, err)
-				return
-			}
-
-			result, exists, err := srv.ScheduleScenarioRun(ctx.Request.Context(), resourceRequest.ResourceID(), newEntry)
-			if err != nil {
-				abortWithError(ctx, http.StatusBadRequest, err)
-				return
-			}
-
-			if !exists {
-				abortWithError(ctx, http.StatusNotFound, urth.ErrResourceNotFound)
-				return
-			}
-
-			marshalResponse(ctx, http.StatusCreated, result)
-		})
-
-		// TODO: Can only be posted by a runner with valid JWT
 		v1.POST("/scenarios/:id/results", contentTypeApi(), func(ctx *gin.Context) {
 			var resourceRequest urth.ResourceRequest
 			if err := ctx.BindUri(&resourceRequest); err != nil {
@@ -481,6 +454,7 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 				return
 			}
 
+			ctx.Header("Location", fmt.Sprintf("%v/%v", ctx.Request.URL.Path, result.ID))
 			marshalResponse(ctx, http.StatusCreated, result)
 		})
 
@@ -505,6 +479,34 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 			marshalResponse(ctx, http.StatusOK, resource)
 		})
 
+		v1.POST("/scenarios/:id/results/:runId/auth", contentTypeApi(), func(ctx *gin.Context) {
+			var resourceRequest urth.ScenarioRunResultsRequest
+			if err := ctx.ShouldBindUri(&resourceRequest); err != nil {
+				abortWithError(ctx, http.StatusNotFound, err)
+				return
+			}
+
+			version, err := strconv.ParseUint(ctx.Query("version"), 10, 64)
+			if err != nil {
+				abortWithError(ctx, http.StatusBadRequest, fmt.Errorf("could not decode `version` value: %w", err))
+				return
+			}
+
+			var entry urth.AuthRunRequest
+			if err := ctx.ShouldBind(&entry); err != nil {
+				abortWithError(ctx, http.StatusBadRequest, err)
+				return
+			}
+
+			resource, err := srv.GetResultsAPI(resourceRequest.ID).Auth(ctx.Request.Context(), urth.NewVersionedId(uint(resourceRequest.RunResultsID), version), entry)
+			if err != nil {
+				abortWithError(ctx, http.StatusBadRequest, err)
+				return
+			}
+
+			marshalResponse(ctx, http.StatusOK, resource)
+		})
+
 		v1.PUT("/scenarios/:id/results/:runId", contentTypeApi(), func(ctx *gin.Context) {
 			var resourceRequest urth.ScenarioRunResultsRequest
 			if err := ctx.ShouldBindUri(&resourceRequest); err != nil {
@@ -523,7 +525,6 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 				abortWithError(ctx, http.StatusUnauthorized, err)
 				return
 			}
-			// FIXME: Get version from the tokens claims!
 
 			var newEntry urth.FinalRunResults
 			if err := ctx.ShouldBind(&newEntry); err != nil {
@@ -555,6 +556,24 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 			marshalResponse(ctx, http.StatusOK, urth.NewPaginatedResponse(results, searchQuery.Pagination))
 		})
 
+		// FIXME: Require valid worker auth / JWT
+		v1.POST("/artifacts", contentTypeApi(), func(ctx *gin.Context) {
+			var newEntry urth.CreateArtifactRequest
+			if err := ctx.ShouldBind(&newEntry); err != nil {
+				abortWithError(ctx, http.StatusBadRequest, err)
+				return
+			}
+
+			result, err := srv.GetArtifactsApi().Create(ctx.Request.Context(), newEntry)
+			if err != nil {
+				abortWithError(ctx, http.StatusBadRequest, err)
+				return
+			}
+
+			ctx.Header("Location", fmt.Sprintf("%v/%v", ctx.Request.URL.Path, result.ID))
+			marshalResponse(ctx, http.StatusCreated, result)
+		})
+
 		v1.GET("/artifacts/:id", contentTypeApi(), func(ctx *gin.Context) {
 			var resourceRequest urth.ResourceRequest
 			if err := ctx.ShouldBindUri(&resourceRequest); err != nil {
@@ -577,21 +596,6 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 			ctx.Writer.Header().Set("Content-Type", resource.MimeType)
 			ctx.Writer.Write(resource.Content)
 		})
-		v1.POST("/artifacts", contentTypeApi(), func(ctx *gin.Context) {
-			var newEntry urth.CreateArtifactRequest
-			if err := ctx.ShouldBind(&newEntry); err != nil {
-				abortWithError(ctx, http.StatusBadRequest, err)
-				return
-			}
-
-			result, err := srv.GetArtifactsApi().Create(ctx.Request.Context(), newEntry)
-			if err != nil {
-				abortWithError(ctx, http.StatusBadRequest, err)
-				return
-			}
-
-			marshalResponse(ctx, http.StatusCreated, result)
-		})
 		v1.DELETE("/artifacts/:id", func(ctx *gin.Context) {
 			var resourceRequest urth.ResourceRequest
 			if err := ctx.BindUri(&resourceRequest); err != nil {
@@ -607,32 +611,6 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 
 			ctx.Status(http.StatusNoContent)
 		})
-
-		// v1.GET("/scenarios/:id/results/:runId/artifacts", searchableApi(), contentTypeApi(), func(ctx *gin.Context) {
-		// 	var resourceRequest urth.ScenarioRunResultsRequest
-		// 	if err := ctx.ShouldBindUri(&resourceRequest); err != nil {
-		// 		ctx.AbortWithStatusJSON(http.StatusNotFound, urth.NewErrorResponse(http.StatusText(http.StatusNotFound), err))
-		// 		return
-		// 	}
-
-		// 	searchQuery := ctx.MustGet(searchQueryKey).(urth.SearchQuery)
-
-		// 	results, err := srv.GetResultsAPI(resourceRequest.ID).ListArtifacts(ctx.Request.Context(), resourceRequest.RunResultsID, searchQuery)
-		// 	if err != nil {
-		// 		abortWithError(ctx, http.StatusBadRequest, err)
-		// 		return
-		// 	}
-
-		// 	marshalResponse(ctx, http.StatusOK, urth.PaginatedResponse[urth.ArtifactValue]{
-		// 		Pagination: searchQuery.Pagination,
-		// 		Count:      len(results),
-		// 		Data:       results,
-		// 	})
-		// })
-
-		// TODO: !!!
-		// v1.POST("/scenarios/:id/results/:runId/artifacts", contentTypeApi(), authBearerApi(), func(ctx *gin.Context) {})
-
 	}
 
 	return router

@@ -51,10 +51,6 @@ func (c *RestApiClient) GetLabels() LabelsApi {
 	}
 }
 
-func (c *RestApiClient) GetScheduler() Scheduler {
-	return nil
-}
-
 func (c *RestApiClient) GetArtifactsApi() ArtifactApi {
 	return &artifactApiClient{
 		RestApiClient: *c,
@@ -83,9 +79,9 @@ func (c *RestApiClient) ApplyObjectDefinition(ctx context.Context, spec Resource
 	return result, err
 }
 
-func (c *RestApiClient) ScheduleScenarioRun(ctx context.Context, id ResourceID, request CreateScenarioManualRunRequest) (ManualRunRequestResponse, bool, error) {
-	return ManualRunRequestResponse{}, false, nil
-}
+// func (c *RestApiClient) ScheduleScenarioRun(ctx context.Context, id ResourceID, request CreateScenarioManualRunRequest) (ManualRunRequestResponse, bool, error) {
+// 	return ManualRunRequestResponse{}, false, nil
+// }
 
 func (c *RestApiClient) get(apiUrl *url.URL) (*http.Response, error) {
 	request, err := http.NewRequest("GET", apiUrl.String(), nil)
@@ -375,8 +371,8 @@ func (c *RunResultApiRestClient) Get(ctx context.Context, id ResourceID) (Scenar
 	return result, exists, err
 }
 
-func (c *RunResultApiRestClient) Create(ctx context.Context, runResults CreateScenarioRunResults) (CreatedRunResponse, error) {
-	var result CreatedRunResponse
+func (c *RunResultApiRestClient) Create(ctx context.Context, runResults CreateScenarioRunResults) (CreatedResponse, error) {
+	var result CreatedResponse
 	data, err := json.Marshal(runResults)
 	if err != nil {
 		return result, err
@@ -390,6 +386,37 @@ func (c *RunResultApiRestClient) Create(ctx context.Context, runResults CreateSc
 
 	defer resp.Body.Close()
 	if (resp.StatusCode != http.StatusCreated) && (resp.StatusCode != http.StatusAccepted) && resp.StatusCode != http.StatusOK {
+		return result, readApiError(resp)
+	}
+
+	err = json.NewDecoder(resp.Body).Decode(&result)
+	return result, err
+}
+
+func (c *RunResultApiRestClient) Auth(ctx context.Context, id VersionedResourceId, authRequest AuthRunRequest) (CreatedRunResponse, error) {
+	var result CreatedRunResponse
+	data, err := json.Marshal(authRequest)
+	if err != nil {
+		return result, err
+	}
+
+	queryParams := url.Values{}
+	queryParams.Set("version", strconv.FormatInt(int64(id.Version), 10))
+
+	targetApi := urlForPath(c.baseUrl, fmt.Sprintf("v1/scenarios/%v/results/%v/auth", c.ScenarioId, id.ID), queryParams)
+	resp, err := c.post(targetApi,
+		// http.Header{
+		// 	// "Authorization": []string{fmt.Sprintf("Bearer %s", token)},
+		// 	"If-Match": []string{id.String()},
+		// },
+		bytes.NewReader(data),
+	)
+	if err != nil {
+		return result, err
+	}
+
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
 		return result, readApiError(resp)
 	}
 

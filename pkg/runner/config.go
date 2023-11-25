@@ -5,10 +5,12 @@ import (
 	"os/exec"
 	"runtime"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"time"
 
 	// TODO: move to github.com/sre-norns/wyrd
+	"github.com/sre-norns/urth/pkg/urth"
 	"github.com/sre-norns/urth/pkg/wyrd"
 	"golang.org/x/mod/semver"
 )
@@ -101,4 +103,21 @@ func NewDefaultConfig() RunnerConfig {
 			GetPythonRuntimeLabels(),
 		),
 	}
+}
+
+func (c *RunnerConfig) LabelJob(runnerId urth.VersionedResourceId, job urth.RunScenarioJob) wyrd.Labels {
+	return wyrd.MergeLabels(
+		job.Labels,
+		c.GetEffectiveLabels(),
+		wyrd.Labels{
+			LabelRunnerId:          strconv.FormatUint(uint64(runnerId.ID), 10), // Groups all artifacts produced by the same runner
+			LabelRunnerVersionedId: runnerId.String(),                           // Groups all artifacts produced by the same version of the scenario
+
+			urth.LabelScenarioId:          job.ScenarioID.ID.String(), // Groups all artifacts produced by the same scenario regardless of version
+			urth.LabelScenarioVersionedId: job.ScenarioID.String(),    // Groups all artifacts produced by the same version of the scenario
+			urth.LabelScenarioKind:        string(job.Script.Kind),    // Groups all artifacts produced by the type of script: TCP probe, HTTP probe, etc.
+
+			urth.LabelScenarioRunId: job.RunID.ID.String(), // Groups all artifacts produced in the same run
+		},
+	)
 }

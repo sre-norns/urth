@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"math/rand"
 	"reflect"
 	"strings"
 	"time"
@@ -13,9 +12,10 @@ import (
 )
 
 var (
-	ErrResourceVersionConflict = &ErrorResponse{Code: 409, Message: "resource version conflict"}
-	ErrResourceNotFound        = &ErrorResponse{Code: 404, Message: "requested resource not found"}
 	ErrResourceUnauthorized    = &ErrorResponse{Code: 401, Message: "resource access unauthorized"}
+	ErrForbidden               = &ErrorResponse{Code: 403, Message: "forbidden"}
+	ErrResourceNotFound        = &ErrorResponse{Code: 404, Message: "requested resource not found"}
+	ErrResourceVersionConflict = &ErrorResponse{Code: 409, Message: "resource version conflict"}
 )
 
 type ReadableResourceApi[T interface{}] interface {
@@ -48,6 +48,7 @@ type ScenarioApi interface {
 type ArtifactApi interface {
 	ReadableResourceApi[Artifact]
 
+	// FIXME: Only authorized runner are allowed to create artifacts
 	Create(ctx context.Context, entry CreateArtifactRequest) (CreatedResponse, error)
 
 	// Delete a single resource identified by a unique ID
@@ -57,8 +58,11 @@ type ArtifactApi interface {
 type RunResultApi interface {
 	ReadableResourceApi[ScenarioRunResults]
 
-	Create(ctx context.Context, entry CreateScenarioRunResults) (CreatedRunResponse, error)
+	Create(ctx context.Context, entry CreateScenarioRunResults) (CreatedResponse, error)
 
+	Auth(ctx context.Context, runID VersionedResourceId, authRequest AuthRunRequest) (CreatedRunResponse, error)
+
+	// TODO: Token can be used to look-up ID!
 	Update(ctx context.Context, id VersionedResourceId, token ApiToken, entry FinalRunResults) (CreatedResponse, error)
 }
 
@@ -90,10 +94,6 @@ type Service interface {
 	GetArtifactsApi() ArtifactApi
 
 	GetLabels() LabelsApi
-
-	GetScheduler() Scheduler
-
-	ScheduleScenarioRun(ctx context.Context, id ResourceID, request CreateScenarioManualRunRequest) (ManualRunRequestResponse, bool, error)
 }
 
 func NewService(store Store, scheduler Scheduler) Service {
@@ -118,8 +118,10 @@ type (
 	}
 
 	resultsApiImpl struct {
-		store      Store
-		scenarioId ResourceID
+		store       Store
+		scenarioId  ResourceID
+		scheduler   Scheduler
+		scenarioApi ScenarioApi
 	}
 
 	labelsApiImpl struct {
@@ -141,8 +143,10 @@ func (s *serviceImpl) GetScenarioAPI() ScenarioApi {
 
 func (s *serviceImpl) GetResultsAPI(id ResourceID) RunResultApi {
 	return &resultsApiImpl{
-		store:      s.store,
-		scenarioId: id,
+		store:       s.store,
+		scenarioId:  id,
+		scheduler:   s.scheduler,
+		scenarioApi: s.GetScenarioAPI(),
 	}
 }
 
@@ -156,33 +160,6 @@ func (s *serviceImpl) GetLabels() LabelsApi {
 	return &labelsApiImpl{
 		store: s.store,
 	}
-}
-
-func (s *serviceImpl) GetScheduler() Scheduler {
-	return s.scheduler
-}
-
-func (s *serviceImpl) ScheduleScenarioRun(ctx context.Context, id ResourceID, request CreateScenarioManualRunRequest) (ManualRunRequestResponse, bool, error) {
-	scenario, ok, err := s.GetScenarioAPI().Get(ctx, id)
-	if !ok || err != nil {
-		return ManualRunRequestResponse{}, ok, err
-	}
-
-	if s.scheduler == nil {
-		return ManualRunRequestResponse{}, true, err
-	}
-
-	// TODO: Check if scenario is enabled!
-	// if !scenario.IsActive {
-	// 	return urth.InvalidRunId, nil
-	// }
-
-	log.Printf("Scheduling scenario: %v (active=%t)", scenario.GetVersionedID(), scenario.IsActive)
-	runId, err := s.scheduler.Schedule(ctx, ScenarioToRunnable(scenario))
-
-	return ManualRunRequestResponse{
-		RunId: runId,
-	}, ok, err
 }
 
 //------------------------------
@@ -305,20 +282,24 @@ func (m *scenarioApiImpl) Update(ctx context.Context, id ResourceID, scenarioUpd
 	}, err
 }
 
-// FIXME: Use better token generation!
-const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-
-func RandStringBytesRmndr(n int) ApiToken {
-	b := make([]byte, n)
-	for i := range b {
-		b[i] = letterBytes[rand.Int63()%int64(len(letterBytes))]
-	}
-	return ApiToken(b)
-}
-
 //------------------------------
 /// Scenarios run results
 //------------------------------
+
+func (s *resultsApiImpl) scheduleRun(ctx context.Context, run ScenarioRunResults, scenario Scenario) (RunId, error) {
+	if s.scheduler == nil {
+		return InvalidRunId, nil
+	}
+
+	// TODO: Check if scenario is enabled!
+	// if !scenario.IsActive {
+	// 	return InvalidRunId, nil
+	// }
+
+	log.Printf("Scheduling scenario: %v (active=%t)", scenario.GetVersionedID(), scenario.IsActive)
+	return s.scheduler.Schedule(ctx, scenarioToRunnable(run, scenario))
+}
+
 func (m *resultsApiImpl) List(ctx context.Context, searchQuery SearchQuery) ([]PartialObjectMetadata, error) {
 	var resources []ScenarioRunResults
 
@@ -345,18 +326,36 @@ func (m *resultsApiImpl) List(ctx context.Context, searchQuery SearchQuery) ([]P
 	return results, nil
 }
 
-func (m *resultsApiImpl) Create(ctx context.Context, newEntry CreateScenarioRunResults) (CreatedRunResponse, error) {
+func (m *resultsApiImpl) Create(ctx context.Context, newEntry CreateScenarioRunResults) (CreatedResponse, error) {
 	scenarioIdLabelValue := m.scenarioId.String()
-
-	if newEntry.Labels == nil {
-		newEntry.Labels = wyrd.Labels{
-			LabelScenarioId: scenarioIdLabelValue,
-		}
-	} else if v, ok := newEntry.Labels[LabelScenarioId]; !ok {
-		newEntry.Labels[LabelScenarioId] = scenarioIdLabelValue
-	} else if v != scenarioIdLabelValue {
-		return CreatedRunResponse{}, fmt.Errorf("invalid scenario ID for the given results entry")
+	if v, ok := newEntry.Labels[LabelScenarioId]; ok && v != scenarioIdLabelValue {
+		return CreatedResponse{}, fmt.Errorf("invalid scenario ID for the given results entry")
 	}
+
+	scenario, ok, err := m.scenarioApi.Get(ctx, m.scenarioId)
+	if err != nil {
+		return CreatedResponse{}, err
+	}
+	if !ok {
+		return CreatedResponse{}, ErrResourceNotFound
+	}
+
+	if !scenario.IsActive {
+		return CreatedResponse{}, ErrForbidden
+	}
+
+	if newEntry.Name == "" || newEntry.Name == "manual-" { // Generate run name for scheduled runs
+		newEntry.Name = fmt.Sprintf("%v%v-v%v-%v", newEntry.Name, scenario.Name, scenario.Version, RandToken(32))
+	}
+
+	// Ensure labels are set correctly
+	newEntry.Labels = wyrd.MergeLabels(
+		scenario.Labels,
+		newEntry.Labels,
+		wyrd.Labels{
+			LabelScenarioId: scenarioIdLabelValue,
+		},
+	)
 
 	// Ensure timestamp is set:
 	if newEntry.TimeStarted == nil {
@@ -364,22 +363,81 @@ func (m *resultsApiImpl) Create(ctx context.Context, newEntry CreateScenarioRunR
 		newEntry.TimeStarted = &now
 	}
 
-	// TODO: Validate that Create results request is from an authentic worker that is allowed to take jobs!
+	// TODO: Validate that request is from an authentic worker that is allowed to take jobs!
 
 	entry := ScenarioRunResults{
 		ResourceMeta: newEntry.Metadata(),
 		ScenarioRunResultSpec: ScenarioRunResultSpec{
-			Status:                    JobPending, // Ensure initial status is set:
+			Status:                    JobPending, // Ensure initial status is set
 			InitialScenarioRunResults: newEntry.InitialScenarioRunResults,
 		},
-		UpdateToken: RandStringBytesRmndr(21), // FIXME: Generate JWT with valid-until clause, to give worker a time to post
 	}
 
 	kind, err := m.store.Create(ctx, &entry)
+	if err != nil {
+		return CreatedResponse{}, err
+	}
+
+	_, err = m.scheduleRun(ctx, entry, scenario)
+	if err != nil {
+		// Well, scheduling failed. Might as well cancel it:
+		entry.Status = JobErrored
+		_, uerr := m.store.Update(ctx, &entry, ResourceID(entry.ID))
+		// TODO: Update metrics!
+		if uerr != nil {
+			log.Print("embarrassing error: failed to update run DB entry after failure to schedule it: ", uerr)
+		}
+
+		// Note: we do want to return original error, to know why we failed to schedule in a first place
+		return CreatedResponse{}, err
+	}
+
+	return CreatedResponse{
+		TypeMeta:            kind,
+		VersionedResourceId: entry.GetVersionedID(),
+	}, err
+}
+
+func (m *resultsApiImpl) Auth(ctx context.Context, id VersionedResourceId, authRequest AuthRunRequest) (CreatedRunResponse, error) {
+	var entry ScenarioRunResults
+
+	ok, err := m.store.GetWithVersion(ctx, &entry, id)
+	if err != nil {
+		return CreatedRunResponse{}, ErrResourceNotFound
+	}
+	if !ok {
+		return CreatedRunResponse{}, ErrResourceUnauthorized
+	}
+
+	// Check that no one else took this job
+	// Note: This means that no re-try is possible!
+	if entry.UpdateToken != "" {
+		return CreatedRunResponse{}, ErrResourceUnauthorized
+	}
+
+	// TODO: Record expected deadline and JWT's exp claim
+	entry.Status = JobRunning
+	entry.UpdateToken = RandToken(32) // FIXME: Generate JWT with valid-until clause, to give worker a time to post
+	entry.Labels = wyrd.MergeLabels(
+		entry.Labels,
+		authRequest.Labels,
+		// Last to ensure that LabelScenarioId can not be overriden by the worker labels
+		wyrd.Labels{
+			LabelScenarioId: m.scenarioId.String(),
+		},
+	)
+
+	log.Print("authorizing worker ", authRequest.RunnerID, " to execute ", entry.Name, " for at most ", authRequest.Timeout)
+	ok, err = m.store.Update(ctx, &entry, ResourceID(entry.ID))
+	if err != nil {
+		return CreatedRunResponse{}, err
+	}
+	if !ok {
+		return CreatedRunResponse{}, ErrResourceVersionConflict
+	}
 
 	return CreatedRunResponse{
 		CreatedResponse: CreatedResponse{
-			TypeMeta:            kind,
 			VersionedResourceId: entry.GetVersionedID(),
 		},
 		Token: entry.UpdateToken,
@@ -480,7 +538,7 @@ func (m *runnersApiImpl) Create(ctx context.Context, newEntry CreateRunnerReques
 		RunnerSpec: RunnerSpec{
 			RunnerDefinition: newEntry.RunnerDefinition,
 		},
-		IdToken: RandStringBytesRmndr(12),
+		IdToken: RandToken(16),
 	}
 
 	kind, err := m.store.Create(ctx, &entry)

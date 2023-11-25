@@ -26,6 +26,10 @@
 [] Labels returned by a worked for a job-results / artifacts must be immutable
 [] Add API to find workers give a set of labels and requirements - to enable better UX where user can see how many probers will qualify for a given set of labels.
 [] A run results object with an update time-limited JWT token must be created when a job is scheduled. Worker can only update, within a time alloted, an already `pending` run. 
+[] Restore labels API: Extract labels from JSON field
+[] Create API must return metadata for a newly created object as `names` may be generated.
+[X] For `Create` API set `Location` header to point to a newly created resource as per rest best practice
+[] All non-GET request must require authentication!
 
 ## CLI tooling
 [x] `urthctl` - support reading scenario / script from stdin
@@ -40,7 +44,7 @@
 [] Web Request runner: if response contains headers about the TRACE-ID, produce an artifact with a link to a trace viewer (configurable for installation)
 [] If a request return spanID - add a link to View Trace in <Jager> or <Tempo>
 [] UX - 'run now' button must be locked until post request returns with an ID of message posted into the run Queue.
-[?] A RUN must be in `pending` state when a message been posted into the queue but before being picked up by a worker.
+[X] A RUN must be in `pending` state when a message been posted into the queue but before being picked up by a worker.
 [] For manual runs - trigger identity of the who triggered the run as job labels, such that all jobs triggered by a given user can be found!
 
 ## Workers / Script Runners

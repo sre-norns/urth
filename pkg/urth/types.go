@@ -163,6 +163,8 @@ const (
 	JobExpired JobStatus = "timeout"
 	// A runner finished the job and with a status
 	JobCompleted JobStatus = "completed"
+	// A server failed to schedule the job
+	JobErrored JobStatus = "errored"
 
 	// A run completed with a status
 	RunFinishedSuccess  RunStatus = "success"

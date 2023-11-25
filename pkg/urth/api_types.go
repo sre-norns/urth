@@ -2,6 +2,7 @@ package urth
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/sre-norns/urth/pkg/wyrd"
 )
@@ -87,12 +88,11 @@ type (
 		Token           ApiToken `form:"token" json:"token" yaml:"token" xml:"token"`
 	}
 
-	CreateScenarioManualRunRequest struct {
-		Token ApiToken `form:"token" json:"token" yaml:"token" xml:"token"`
-	}
-
-	ManualRunRequestResponse struct {
-		RunId RunId `form:"id" json:"id" yaml:"id" xml:"id"`
+	AuthRunRequest struct {
+		RunnerID ResourceID `form:"runnerId" json:"runnerId" yaml:"runnerId" xml:"runnerId"`
+		Timeout  time.Duration
+		Labels   wyrd.Labels `form:"labels,omitempty" json:"labels,omitempty" yaml:"labels,omitempty" xml:"labels,omitempty"`
+		// Token    ApiToken   `form:"token" json:"token" yaml:"token" xml:"token"`
 	}
 )
 

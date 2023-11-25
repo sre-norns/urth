@@ -27,16 +27,28 @@ type RunScenarioJob struct {
 
 	// True if you want the worker to keep temp working directory with run artifacts
 	IsKeepDirectory bool `form:"keepDir" json:"keepDir" yaml:"keepDir" xml:"keepDir" `
+
+	// Version and ID of the run to update results to
+	RunID   VersionedResourceId
+	RunName string
 }
 
-func ScenarioToRunnable(scenario Scenario) RunScenarioJob {
+func scenarioToRunnable(run ScenarioRunResults, scenario Scenario) RunScenarioJob {
 	return RunScenarioJob{
-		Name:         scenario.Name,
-		Labels:       scenario.Labels,
+		Name: scenario.Name,
+
 		Requirements: scenario.Requirements,
 		RunSchedule:  scenario.RunSchedule,
 		ScenarioID:   scenario.GetVersionedID(),
 		Script:       scenario.Script,
+
+		Labels: wyrd.MergeLabels(
+			scenario.Labels,
+			run.Labels,
+		),
+
+		RunID:   run.GetVersionedID(),
+		RunName: run.Name,
 	}
 }
 
