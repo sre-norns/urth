@@ -29,6 +29,11 @@ type (
 		Id urth.ResourceID `help:"Id of the runner" arg:"" name:"scenario" `
 	}
 
+	Artifact struct {
+		Id       urth.ResourceID `help:"Id of the artifact to get" arg:"" name:"artifact" `
+		ShowMeta bool            `help:"Show artifact meta information instead of content" name:"meta"`
+	}
+
 	Labels struct {
 		Selector string `help:"Keys to match" optional:"" name:"selector" short:"l"`
 	}
@@ -37,6 +42,7 @@ type (
 		Scenario Scenario `cmd:"" help:"Get scenario object from the server"`
 		Script   Script   `cmd:"" help:"Get a script data for a given scenario"`
 		Results  Results  `cmd:"" help:"Get a run result"`
+		Artifact Artifact `cmd:"" help:"Get artifact produced during a scenario execution"`
 		Runner   Runner   `cmd:"" help:"Get a runner object from the server"`
 		Labels   Labels   `cmd:"" help:"Get labels"`
 
@@ -68,7 +74,7 @@ func jsonFormatter(resource any) error {
 	return nil
 }
 
-func getFormatter(formatName string) (formatter, error) {
+func getFormatter(formatName outputFormat) (formatter, error) {
 	switch formatName {
 	case "yaml", "yml":
 		return yamlFormatter, nil
@@ -80,11 +86,6 @@ func getFormatter(formatName string) (formatter, error) {
 }
 
 func (c *Scenario) Run(cfg *commandContext) error {
-	format, err := getFormatter(cfg.Format)
-	if err != nil {
-		return err
-	}
-
 	ctx, cancel := context.WithTimeout(cfg.Context, 30*time.Second)
 	defer cancel()
 
@@ -93,15 +94,10 @@ func (c *Scenario) Run(cfg *commandContext) error {
 		return err
 	}
 
-	return format(&resource)
+	return cfg.OutputFormatter(&resource)
 }
 
 func (c *Runner) Run(cfg *commandContext) error {
-	format, err := getFormatter(cfg.Format)
-	if err != nil {
-		return err
-	}
-
 	ctx, cancel := context.WithTimeout(cfg.Context, 30*time.Second)
 	defer cancel()
 
@@ -110,15 +106,10 @@ func (c *Runner) Run(cfg *commandContext) error {
 		return err
 	}
 
-	return format(&resource)
+	return cfg.OutputFormatter(&resource)
 }
 
 func (c *Results) Run(cfg *commandContext) error {
-	format, err := getFormatter(cfg.Format)
-	if err != nil {
-		return err
-	}
-
 	ctx, cancel := context.WithTimeout(cfg.Context, 30*time.Second)
 	defer cancel()
 
@@ -127,7 +118,7 @@ func (c *Results) Run(cfg *commandContext) error {
 		return err
 	}
 
-	return format(&resource)
+	return cfg.OutputFormatter(&resource)
 }
 
 func (c *Labels) Run(cfg *commandContext) error {
@@ -149,4 +140,22 @@ func (c *Labels) Run(cfg *commandContext) error {
 	}
 
 	return nil
+}
+
+func (c *Artifact) Run(cfg *commandContext) error {
+	ctx, cancel := context.WithTimeout(cfg.Context, 30*time.Second)
+	defer cancel()
+
+	resource, err := fetchArtifact(ctx, c.Id, cfg.ApiServerAddress)
+	if err != nil {
+		return err
+	}
+
+	if c.ShowMeta {
+		return cfg.OutputFormatter(&resource)
+	}
+
+	_, err = os.Stdout.Write(resource.Content)
+
+	return err
 }

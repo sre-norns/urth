@@ -9,20 +9,6 @@ import (
 
 var ErrResourceNotFound = fmt.Errorf("requested resource not found")
 
-func fetchScenario(ctx context.Context, id urth.ResourceID, apiServerAddress string) (urth.Scenario, error) {
-	apiClient, err := urth.NewRestApiClient(apiServerAddress)
-	if err != nil {
-		return urth.Scenario{}, fmt.Errorf("failed to initialize API Client: %w", err)
-	}
-
-	resource, ok, err := apiClient.GetScenarioAPI().Get(ctx, id)
-	if !ok && err == nil {
-		err = fmt.Errorf("%w: scenarioId=%v", ErrResourceNotFound, id)
-	}
-
-	return resource, err
-}
-
 func fetchRunner(ctx context.Context, id urth.ResourceID, apiServerAddress string) (urth.Runner, error) {
 	apiClient, err := urth.NewRestApiClient(apiServerAddress)
 	if err != nil {
@@ -37,6 +23,20 @@ func fetchRunner(ctx context.Context, id urth.ResourceID, apiServerAddress strin
 	return resource, err
 }
 
+func fetchScenario(ctx context.Context, id urth.ResourceID, apiServerAddress string) (urth.Scenario, error) {
+	apiClient, err := urth.NewRestApiClient(apiServerAddress)
+	if err != nil {
+		return urth.Scenario{}, fmt.Errorf("failed to initialize API Client: %w", err)
+	}
+
+	resource, ok, err := apiClient.GetScenarioAPI().Get(ctx, id)
+	if !ok && err == nil {
+		err = fmt.Errorf("%w: scenarioId=%v", ErrResourceNotFound, id)
+	}
+
+	return resource, err
+}
+
 func fetchResults(ctx context.Context, scenarioId, id urth.ResourceID, apiServerAddress string) (urth.ScenarioRunResults, error) {
 	apiClient, err := urth.NewRestApiClient(apiServerAddress)
 	if err != nil {
@@ -46,6 +46,20 @@ func fetchResults(ctx context.Context, scenarioId, id urth.ResourceID, apiServer
 	resource, ok, err := apiClient.GetResultsAPI(scenarioId).Get(ctx, id)
 	if !ok && err == nil {
 		err = fmt.Errorf("%w: scenarioId=%v, runId=%v", ErrResourceNotFound, scenarioId, id)
+	}
+
+	return resource, err
+}
+
+func fetchArtifact(ctx context.Context, id urth.ResourceID, apiServerAddress string) (urth.Artifact, error) {
+	apiClient, err := urth.NewRestApiClient(apiServerAddress)
+	if err != nil {
+		return urth.Artifact{}, fmt.Errorf("failed to initialize API Client: %w", err)
+	}
+
+	resource, ok, err := apiClient.GetArtifactsApi().Get(ctx, id)
+	if !ok && err == nil {
+		err = fmt.Errorf("%w: id=%v", ErrResourceNotFound, id)
 	}
 
 	return resource, err

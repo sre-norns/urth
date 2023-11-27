@@ -42,9 +42,15 @@ type ResourceLabel struct {
 	Value string
 }
 
+type Resourceable interface {
+	GetID() ResourceID
+	GetVersionedID() VersionedResourceId
+	IsDeleted() bool
+}
+
 // ResourceMeta represents common data for all resources managed by the service
 type ResourceMeta struct {
-	gorm.Model
+	gorm.Model `json:",inline" yaml:",inline"`
 
 	// Unique system generated identified of the resource
 	// ID ResourceID `form:"id" json:"id" yaml:"id" xml:"id"`
@@ -61,6 +67,14 @@ type ResourceMeta struct {
 	// Labels is map of string keys and values that can be used to organize and categorize
 	// (scope and select) resources.
 	Labels wyrd.Labels `form:"labels,omitempty" json:"labels,omitempty" yaml:"labels,omitempty" xml:"labels,omitempty" gorm:"-"`
+}
+
+func (meta *ResourceMeta) GetID() ResourceID {
+	return ResourceID(meta.ID)
+}
+
+func (meta *ResourceMeta) IsDeleted() bool {
+	return meta.DeletedAt.Valid
 }
 
 func (meta *ResourceMeta) GetVersionedID() VersionedResourceId {

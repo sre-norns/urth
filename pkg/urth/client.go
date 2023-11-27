@@ -147,11 +147,12 @@ func (c *RestApiClient) delete(apiUrl *url.URL) (*http.Response, error) {
 }
 
 func readApiError(resp *http.Response) error {
-	if resp.StatusCode < 500 {
+	if resp.StatusCode >= 400 && resp.StatusCode < 500 {
 		var errorResponse ErrorResponse
 		err := json.NewDecoder(resp.Body).Decode(&errorResponse)
 		if err != nil {
-			return err
+			// Failed to unmarshal error message, fallback to HTTP status code
+			return fmt.Errorf(resp.Status)
 		}
 
 		return fmt.Errorf(errorResponse.Message)

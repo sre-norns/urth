@@ -592,6 +592,28 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 				return
 			}
 
+			// TODO: Find a better way to not-expand content
+			resource.Content = nil
+			marshalResponse(ctx, http.StatusOK, resource)
+		})
+		v1.GET("/artifacts/:id/content", contentTypeApi(), func(ctx *gin.Context) {
+			var resourceRequest urth.ResourceRequest
+			if err := ctx.ShouldBindUri(&resourceRequest); err != nil {
+				abortWithError(ctx, http.StatusNotFound, err)
+				return
+			}
+
+			resource, exists, err := srv.GetArtifactsApi().Get(ctx.Request.Context(), resourceRequest.ID)
+			if err != nil {
+				abortWithError(ctx, http.StatusBadRequest, err)
+				return
+			}
+
+			if !exists {
+				abortWithError(ctx, http.StatusNotFound, urth.ErrResourceNotFound)
+				return
+			}
+
 			ctx.Status(http.StatusOK)
 			ctx.Writer.Header().Set("Content-Type", resource.MimeType)
 			ctx.Writer.Write(resource.Content)

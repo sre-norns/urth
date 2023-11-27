@@ -162,6 +162,14 @@ func (s *serviceImpl) GetLabels() LabelsApi {
 	}
 }
 
+// Nice idea, but we use object not pointers...
+// func getFromStore[T Resourceable](store Store, ctx context.Context, id ResourceID) (T, bool, error) {
+// 	var result T
+// 	ok, err := store.Get(ctx, &result, id)
+// 	return result, ok && (result.GetID() == id) && !result.IsDeleted(), err
+
+// }
+
 //------------------------------
 /// Scenarios API
 //------------------------------
@@ -212,11 +220,7 @@ func (m *scenarioApiImpl) Create(ctx context.Context, newEntry CreateScenarioReq
 func (m *scenarioApiImpl) Get(ctx context.Context, id ResourceID) (Scenario, bool, error) {
 	var result Scenario
 	ok, err := m.store.Get(ctx, &result, id)
-	if !ok {
-		return result, ok, err
-	}
-
-	return result, result.ID == uint(id) && !result.DeletedAt.Valid, err
+	return result, ok && result.GetID() == id && !result.IsDeleted(), err
 }
 
 func (m *scenarioApiImpl) Delete(ctx context.Context, id ResourceID) (bool, error) {
@@ -490,11 +494,7 @@ func (m *resultsApiImpl) Update(ctx context.Context, id VersionedResourceId, tok
 func (m *resultsApiImpl) Get(ctx context.Context, id ResourceID) (ScenarioRunResults, bool, error) {
 	var result ScenarioRunResults
 	ok, err := m.store.Get(ctx, &result, id)
-	if !ok {
-		return result, ok, err
-	}
-
-	return result, result.ID == uint(id) && !result.DeletedAt.Valid, err
+	return result, ok && result.GetID() == id && !result.IsDeleted(), err
 }
 
 //------------------------------
@@ -525,11 +525,7 @@ func (m *runnersApiImpl) List(ctx context.Context, searchQuery SearchQuery) ([]P
 func (m *runnersApiImpl) Get(ctx context.Context, id ResourceID) (Runner, bool, error) {
 	var result Runner
 	ok, err := m.store.Get(ctx, &result, id)
-	if !ok {
-		return result, ok, err
-	}
-
-	return result, result.ID == uint(id) && !result.DeletedAt.Valid, err
+	return result, ok && result.GetID() == id && !result.IsDeleted(), err
 }
 
 func (m *runnersApiImpl) Create(ctx context.Context, newEntry CreateRunnerRequest) (CreatedResponse, error) {
@@ -650,11 +646,7 @@ func (m *artifactApiImp) List(ctx context.Context, query SearchQuery) ([]Partial
 func (m *artifactApiImp) Get(ctx context.Context, id ResourceID) (Artifact, bool, error) {
 	var result Artifact
 	ok, err := m.store.Get(ctx, &result, id)
-	if !ok {
-		return result, ok, err
-	}
-
-	return result, result.ID == uint(id) && !result.DeletedAt.Valid, err
+	return result, ok && result.GetID() == id && !result.IsDeleted(), err
 }
 
 func (m *artifactApiImp) Create(ctx context.Context, newEntry CreateArtifactRequest) (CreatedResponse, error) {
