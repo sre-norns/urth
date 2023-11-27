@@ -35,12 +35,14 @@ const FormContainer = styled.div`
   gap: 1rem;
 `
 
-const validateName = value => validateNotEmpty(value) || validateMaxLength(32)(value)
+const validateName = (...args) => validateNotEmpty(...args) || validateMaxLength(32)(...args)
 
 const validateDescription = validateMaxLength(128)
 
 const ScenarioEditor = () => {
   const {scenarioId} = useParams()
+
+  const [isNew, setIsNew] = React.useState(false)
 
   const [name, setName] = React.useState('')
   const [description, setDescription] = React.useState('')
@@ -58,7 +60,11 @@ const ScenarioEditor = () => {
   const dispatch = useDispatch()
 
   React.useEffect(() => {
-    dispatch(fetchScenario(scenarioId))
+    if (scenarioId === 'new') {
+      setIsNew(true)
+    } else {
+      dispatch(fetchScenario(scenarioId))
+    }
   }, [scenarioId])
 
   React.useEffect(() => {
@@ -68,7 +74,7 @@ const ScenarioEditor = () => {
     }
   }, [response])
 
-  if (id !== scenarioId) {
+  if (!isNew && id !== scenarioId) {
     return null
   }
 
@@ -86,7 +92,7 @@ const ScenarioEditor = () => {
         <h3>Edit Scenario</h3>
         <FormContainer>
           <FormGroup controlId="scenario-name" onValidate={validateName}>
-            <FormLabel>Name</FormLabel>
+            <FormLabel required>Name</FormLabel>
             <FormControl type="text" value={name} onChange={handleNameChange}/>
             <FormGroupError/>
           </FormGroup>

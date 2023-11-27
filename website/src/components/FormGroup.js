@@ -9,9 +9,9 @@ const FormGroupContainer = styled.div``
 const FormGroup = forwardRef(({controlId, onValidate, ...props}, ref) => {
   const [error, setError] = React.useState(undefined)
 
-  const validate = useCallback((value) => {
+  const validate = useCallback((value, prevValue, force) => {
     if (typeof onValidate === 'function') {
-      const result = onValidate(value)
+      const result = onValidate(value, prevValue, force)
       if (result instanceof Promise) {
         result.then((error) => {
           setError(error)

@@ -1,4 +1,4 @@
-import React, {forwardRef, useContext, useEffect} from 'react'
+import React, {forwardRef, useCallback, useContext, useEffect} from 'react'
 import PropTypes from 'prop-types'
 import styled from '@emotion/styled'
 import FormGroupContext from './FormGroupContext.js'
@@ -43,6 +43,17 @@ const border = (props, state) => {
   return `1px solid ${shade}`
 }
 
+const focusShadowColor = (props) => {
+  const hasError = !!props.error
+  return hasError && errorColor(props) ||
+    focusColor(props)
+}
+
+const focusBoxShadow = (props) => {
+  const shade = focusShadowColor(props)[props.theme.dark ? 300 : 700]
+  return `0 0 0 0.125rem ${shade}`
+}
+
 const FormControlComponent = styled.input`
   display: block;
   width: 100%;
@@ -54,35 +65,45 @@ const FormControlComponent = styled.input`
   background-color: ${backgroundColor};
   border: ${border};
   border-radius: 0.5rem;
-  transition: border-color 0.125s ease-in-out;
+  transition: border-color 0.125s ease-in-out, box-shadow 0.125s ease-in-out;
 
   ::placeholder {
     color: ${props => textColor(props, 'placeholder')};
   }
-  
+
   &:hover {
     border: ${props => border(props, 'hover')};
   }
-  
+
   &:focus {
     border: ${props => border(props, 'focus')};
+    box-shadow: ${focusBoxShadow};
   }
 `
 
-const FormControl = forwardRef(({id, value, ...props}, ref) => {
+const FormControl = forwardRef(({id, value, onBlur, ...props}, ref) => {
   const {controlId, error, validate} = useContext(FormGroupContext)
+
+  const [prevValue, setPrevValue] = React.useState(value)
 
   useEffect(() => {
     if (validate) {
-      validate(value)
+      validate(value, prevValue, false)
     }
+    setPrevValue(value)
   }, [value, validate])
+
+  const handleBlur = useCallback((e) => {
+    onBlur && onBlur(e)
+    validate && validate(value, prevValue, true)
+  }, [onBlur, validate, value, prevValue])
 
   return (
     <FormControlComponent
       id={id || controlId}
       value={value}
       error={error}
+      onBlur={handleBlur}
       {...props}
       ref={ref}
     />

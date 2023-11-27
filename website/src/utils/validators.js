@@ -1,5 +1,5 @@
-export const validateNotEmpty = (value) => {
-  if (typeof value === 'string' && value.trim().length === 0) {
+export const validateNotEmpty = (value, prevValue, force) => {
+  if (typeof value === 'string' && value.trim().length === 0 && (force || value !== prevValue)) {
     return 'This field is required.'
   }
 }
