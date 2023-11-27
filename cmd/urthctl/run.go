@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -59,7 +59,7 @@ func (c *RunCmd) runScenario(cmdCtx context.Context, sourceName string, script *
 
 		if artifact.Rel == "har" && c.SaveHAR {
 			filename := fmt.Sprintf("run-%v.har", sourceName)
-			if err := ioutil.WriteFile(filename, artifact.Content, 0644); err != nil {
+			if err := os.WriteFile(filename, artifact.Content, 0644); err != nil {
 				return fmt.Errorf("failed to write HAR artifact: %w", err)
 			}
 		}
@@ -70,7 +70,7 @@ func (c *RunCmd) runScenario(cmdCtx context.Context, sourceName string, script *
 
 func readContent(filename string) ([]byte, string, error) {
 	if filename == "-" {
-		content, err := ioutil.ReadAll(os.Stdin)
+		content, err := io.ReadAll(os.Stdin)
 		if err != nil {
 			return content, "", fmt.Errorf("failed to read content from STDIN: %w", err)
 		}
@@ -78,7 +78,7 @@ func readContent(filename string) ([]byte, string, error) {
 		return content, "", err
 	}
 
-	content, err := ioutil.ReadFile(filename)
+	content, err := os.ReadFile(filename)
 	return content, filepath.Ext(filename), err
 }
 

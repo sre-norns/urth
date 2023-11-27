@@ -72,3 +72,4 @@
 - Docker has `--init` flag to run init process in a container that rips zombie processes.
 - Consider Tempo (Grafana tracing solution) for tracing
 - KeyDB - better implementation of Redis for distributed compute
+- Consider using Postgres as PubSub for API server - to - worker job distribution and scheduling.

@@ -53,6 +53,8 @@ type ArtifactApi interface {
 
 	// Delete a single resource identified by a unique ID
 	Delete(ctx context.Context, id ResourceID) (bool, error)
+
+	GetContent(ctx context.Context, id ResourceID) (resource ArtifactValue, exists bool, commError error)
 }
 
 type RunResultApi interface {
@@ -647,6 +649,12 @@ func (m *artifactApiImp) Get(ctx context.Context, id ResourceID) (Artifact, bool
 	var result Artifact
 	ok, err := m.store.Get(ctx, &result, id)
 	return result, ok && result.GetID() == id && !result.IsDeleted(), err
+}
+
+func (m *artifactApiImp) GetContent(ctx context.Context, id ResourceID) (resource ArtifactValue, exists bool, commError error) {
+	var result Artifact
+	ok, err := m.store.Get(ctx, &result, id)
+	return result.ArtifactValue, ok && result.GetID() == id && !result.IsDeleted(), err
 }
 
 func (m *artifactApiImp) Create(ctx context.Context, newEntry CreateArtifactRequest) (CreatedResponse, error) {

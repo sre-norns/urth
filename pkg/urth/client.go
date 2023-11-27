@@ -208,6 +208,20 @@ func (c *RestApiClient) getResource(uri string, dest any) (bool, error) {
 	return true, json.NewDecoder(resp.Body).Decode(dest)
 }
 
+func (c *RestApiClient) getRawResource(uri string) (io.ReadCloser, bool, error) {
+	targetApi := urlForPath(c.baseUrl, uri, nil)
+	resp, err := c.get(targetApi)
+	if err != nil {
+		return nil, false, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, false, readApiError(resp)
+	}
+
+	return resp.Body, true, nil
+}
+
 func (c *RestApiClient) createResource(uri string, entry any) (CreatedResponse, error) {
 	var result CreatedResponse
 	data, err := json.Marshal(entry)
@@ -476,6 +490,17 @@ func (c *artifactApiClient) Get(ctx context.Context, id ResourceID) (Artifact, b
 	var result Artifact
 	exists, err := c.getResource(fmt.Sprintf("v1/artifacts/%v", id), &result)
 	return result, exists, err
+}
+
+func (c *artifactApiClient) GetContent(ctx context.Context, id ResourceID) (resource ArtifactValue, exists bool, err error) {
+	body, exists, err := c.getRawResource(fmt.Sprintf("v1/artifacts/%v/content", id))
+	if !exists || err != nil {
+		return
+	}
+	defer body.Close()
+	resource.Content, err = io.ReadAll(body)
+
+	return
 }
 
 func (c *artifactApiClient) Delete(ctx context.Context, id ResourceID) (bool, error) {

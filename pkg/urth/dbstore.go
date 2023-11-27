@@ -99,7 +99,7 @@ func (s *DbStore) FindResources(ctx context.Context, resources any, searchQuery 
 
 	selector, err := labels.Parse(searchQuery.Labels)
 	if err != nil {
-		return resultType, err
+		return resultType, fmt.Errorf("error parsing labels selector: %w", err)
 	}
 
 	tx, err := s.withSelector(s.startPaginatedTx(ctx, searchQuery.Pagination), selector)

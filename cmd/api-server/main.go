@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"runtime/debug"
@@ -390,7 +390,7 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 				return
 			}
 
-			data, err := ioutil.ReadAll(ctx.Request.Body)
+			data, err := io.ReadAll(ctx.Request.Body)
 			if err != nil {
 				abortWithError(ctx, http.StatusBadRequest, err)
 				return
@@ -603,7 +603,7 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 				return
 			}
 
-			resource, exists, err := srv.GetArtifactsApi().Get(ctx.Request.Context(), resourceRequest.ID)
+			resource, exists, err := srv.GetArtifactsApi().GetContent(ctx.Request.Context(), resourceRequest.ID)
 			if err != nil {
 				abortWithError(ctx, http.StatusBadRequest, err)
 				return

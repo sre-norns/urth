@@ -31,6 +31,7 @@ var appCli struct {
 	Run   RunCmd   `cmd:"" help:"Run a scenario or a script locally"`
 	Get   GetCmd   `cmd:"" help:"Get and display a managed resource(s) from the server"`
 	Apply ApplyCmd `cmd:"" help:"Apply a new configuration to a resource"`
+	Logs  getLogs  `cmd:"" help:"Show logs for a scenario run"`
 
 	Convert ConvertHar `cmd:"" help:"Convert HAR file into a .http file format"`
 }

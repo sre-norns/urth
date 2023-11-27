@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/http/httptrace"
 	"net/textproto"
@@ -154,7 +153,7 @@ func runHttpRequests(ctx context.Context, texLogger *RunLog, requests []httppars
 
 		texLogger.Logf("Response:\n%v\n", formatResponse(res))
 
-		if _, err := io.Copy(ioutil.Discard, res.Body); err != nil {
+		if _, err := io.Copy(io.Discard, res.Body); err != nil {
 			texLogger.Log("...failed while reading response body: ", err)
 		}
 		res.Body.Close()

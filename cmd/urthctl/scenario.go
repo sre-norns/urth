@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"strings"
 
 	"github.com/sre-norns/urth/pkg/urth"
 )
@@ -63,4 +66,48 @@ func fetchArtifact(ctx context.Context, id urth.ResourceID, apiServerAddress str
 	}
 
 	return resource, err
+}
+
+func fetchLogs(ctx context.Context, apiServerAddress string, id urth.ResourceID, customSelector string) (chan io.Reader, error) {
+	apiClient, err := urth.NewRestApiClient(apiServerAddress)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize API Client: %w", err)
+	}
+
+	labels := []string{}
+	if id != 0 {
+		labels = append(labels, fmt.Sprintf("%v=%v", urth.LabelScenarioRunId, id))
+	}
+
+	if !strings.Contains(customSelector, urth.LabelScenarioArtifactKind) {
+		labels = append(labels, fmt.Sprintf("%v=%v", urth.LabelScenarioArtifactKind, "log"))
+	}
+
+	if customSelector != "" {
+		labels = append(labels, customSelector)
+	}
+
+	resources, err := apiClient.GetArtifactsApi().List(ctx, urth.SearchQuery{
+		Labels: strings.Join(labels, ","),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	logStream := make(chan io.Reader)
+
+	go func() {
+		defer close(logStream)
+
+		for _, r := range resources {
+			l, ok, err := apiClient.GetArtifactsApi().GetContent(ctx, r.GetID())
+			if !ok || err != nil {
+				return
+			}
+
+			logStream <- bytes.NewReader(l.Content)
+		}
+	}()
+
+	return logStream, err
 }
