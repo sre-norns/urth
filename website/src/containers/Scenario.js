@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useCallback } from 'react';
 import PropTypes from 'prop-types'
 import styled from '@emotion/styled'
 import {useDispatch, useSelector} from 'react-redux'

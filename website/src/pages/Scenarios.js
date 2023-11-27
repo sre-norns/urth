@@ -24,11 +24,11 @@ const Scenarios = () => {
     return <ErrorInlay message={"Error fetching scenarios"} details={error.message || ""}/>
   }
 
-  if (fetching) {
+  if (!response || fetching) {
     return <SpinnerInlay/>
   }
 
-  if (!response || !Array.isArray(response.data) || !response.data.length) {
+  if (!Array.isArray(response.data) || !response.data.length) {
     return <EmptyInlay/>
   }
 
