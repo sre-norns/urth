@@ -75,7 +75,7 @@ func fetchLogs(ctx context.Context, apiServerAddress string, id urth.ResourceID,
 	}
 
 	labels := []string{}
-	if id != 0 {
+	if id != urth.InvalidResourceID {
 		labels = append(labels, fmt.Sprintf("%v=%v", urth.LabelScenarioRunId, id))
 	}
 

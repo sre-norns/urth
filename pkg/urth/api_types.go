@@ -20,13 +20,17 @@ type (
 		Labels     string `uri:"labels" form:"labels" json:"labels" yaml:"labels" xml:"labels"`
 	}
 
+	VersionQuery struct {
+		Version uint64 `uri:"version" form:"version" binding:"required"`
+	}
+
 	ResourceRequest struct {
 		ID ResourceID `uri:"id" form:"id" binding:"required"`
 	}
 
 	ScenarioRunResultsRequest struct {
 		ResourceRequest `uri:",inline" form:",inline" binding:"required"`
-		RunResultsID    ResourceID `uri:"runId" form:"runId" binding:"required"`
+		RunId           ResourceID `uri:"runId" form:"runId" binding:"required"`
 	}
 
 	ScenarioRunResultArtifactRequest struct {
@@ -89,9 +93,9 @@ type (
 	}
 
 	AuthRunRequest struct {
-		RunnerID ResourceID `form:"runnerId" json:"runnerId" yaml:"runnerId" xml:"runnerId"`
-		Timeout  time.Duration
-		Labels   wyrd.Labels `form:"labels,omitempty" json:"labels,omitempty" yaml:"labels,omitempty" xml:"labels,omitempty"`
+		RunnerID VersionedResourceId `form:"runnerId" json:"runnerId" yaml:"runnerId" xml:"runnerId"`
+		Timeout  time.Duration       `form:"timeout" json:"timeout" yaml:"timeout" xml:"timeout"`
+		Labels   wyrd.Labels         `form:"labels,omitempty" json:"labels,omitempty" yaml:"labels,omitempty" xml:"labels,omitempty"`
 		// Token    ApiToken   `form:"token" json:"token" yaml:"token" xml:"token"`
 	}
 )
@@ -114,6 +118,10 @@ func NewPaginatedResponse(data []PartialObjectMetadata, paginationInfo Paginatio
 func (r ResourceRequest) ResourceID() ResourceID {
 	return ResourceID(r.ID)
 }
+
+// func (r ResourceRequest) VersionedResourceId() VersionedResourceId {
+// 	return NewVersionedId(r.ID, r.Version)
+// }
 
 func (p *Pagination) ClampLimit(maxLimit uint) {
 	if p.Limit > maxLimit || p.Limit == 0 {

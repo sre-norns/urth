@@ -5,7 +5,6 @@ import (
 	"os/exec"
 	"runtime"
 	"runtime/debug"
-	"strconv"
 	"strings"
 	"time"
 
@@ -110,8 +109,8 @@ func (c *RunnerConfig) LabelJob(runnerId urth.VersionedResourceId, job urth.RunS
 		job.Labels,
 		c.GetEffectiveLabels(),
 		wyrd.Labels{
-			LabelRunnerId:          strconv.FormatUint(uint64(runnerId.ID), 10), // Groups all artifacts produced by the same runner
-			LabelRunnerVersionedId: runnerId.String(),                           // Groups all artifacts produced by the same version of the scenario
+			LabelRunnerId:          runnerId.ID.String(), // Groups all artifacts produced by the same runner
+			LabelRunnerVersionedId: runnerId.String(),    // Groups all artifacts produced by the same version of the scenario
 
 			urth.LabelScenarioId:          job.ScenarioID.ID.String(), // Groups all artifacts produced by the same scenario regardless of version
 			urth.LabelScenarioVersionedId: job.ScenarioID.String(),    // Groups all artifacts produced by the same version of the scenario

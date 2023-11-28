@@ -135,14 +135,14 @@ func jobFromFile(filename string, kindHint string) (*urth.ScenarioScript, error)
 
 func (c *RunCmd) Run(cfg *commandContext) error {
 	// Check that either scenarioID or files is specified but not both
-	if len(c.Files) == 0 && c.ScenarioId == 0 {
+	if len(c.Files) == 0 && c.ScenarioId == urth.InvalidResourceID {
 		return fmt.Errorf("file or scenario ID must be provided")
 	}
-	if len(c.Files) != 0 && c.ScenarioId != 0 {
+	if len(c.Files) != 0 && c.ScenarioId != urth.InvalidResourceID {
 		return fmt.Errorf("only file or scenario ID must be provided, but not both")
 	}
 
-	if c.ScenarioId != 0 {
+	if c.ScenarioId != urth.InvalidResourceID {
 		scenario, err := fetchScenario(cfg.Context, c.ScenarioId, cfg.ApiServerAddress)
 		if err != nil {
 			return err

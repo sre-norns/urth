@@ -34,12 +34,12 @@ type ScenarioApi interface {
 	Create(ctx context.Context, entry CreateScenarioRequest) (CreatedResponse, error)
 
 	// Delete a single resource identified by a unique ID
-	Delete(ctx context.Context, id ResourceID) (bool, error)
+	Delete(ctx context.Context, id VersionedResourceId) (bool, error)
 
 	// Update a single resource identified by a unique ID
-	Update(ctx context.Context, id ResourceID, entry CreateScenario) (CreatedResponse, error)
+	Update(ctx context.Context, id VersionedResourceId, entry CreateScenario) (CreatedResponse, error)
 
-	UpdateScript(ctx context.Context, id ResourceID, entry ScenarioScript) (VersionedResourceId, bool, error)
+	UpdateScript(ctx context.Context, id VersionedResourceId, entry ScenarioScript) (VersionedResourceId, bool, error)
 
 	// ClientAPI: Can it be done using filters?
 	ListRunnable(ctx context.Context, query SearchQuery) ([]Scenario, error)
@@ -52,7 +52,7 @@ type ArtifactApi interface {
 	Create(ctx context.Context, entry CreateArtifactRequest) (CreatedResponse, error)
 
 	// Delete a single resource identified by a unique ID
-	Delete(ctx context.Context, id ResourceID) (bool, error)
+	Delete(ctx context.Context, id VersionedResourceId) (bool, error)
 
 	GetContent(ctx context.Context, id ResourceID) (resource ArtifactValue, exists bool, commError error)
 }
@@ -76,7 +76,7 @@ type RunnersApi interface {
 	Create(ctx context.Context, entry CreateRunnerRequest) (CreatedResponse, error)
 
 	// Delete a single resource identified by a unique ID
-	Delete(ctx context.Context, id ResourceID) (bool, error)
+	Delete(ctx context.Context, id VersionedResourceId) (bool, error)
 
 	// Update a single resource identified by a unique ID
 	Update(ctx context.Context, id VersionedResourceId, entry CreateRunnerRequest) (CreatedResponse, error)
@@ -225,33 +225,33 @@ func (m *scenarioApiImpl) Get(ctx context.Context, id ResourceID) (Scenario, boo
 	return result, ok && result.GetID() == id && !result.IsDeleted(), err
 }
 
-func (m *scenarioApiImpl) Delete(ctx context.Context, id ResourceID) (bool, error) {
+func (m *scenarioApiImpl) Delete(ctx context.Context, id VersionedResourceId) (bool, error) {
 	return m.store.Delete(ctx, &Scenario{}, id)
 }
 
-func (m *scenarioApiImpl) UpdateScript(ctx context.Context, id ResourceID, script ScenarioScript) (VersionedResourceId, bool, error) {
+func (m *scenarioApiImpl) UpdateScript(ctx context.Context, id VersionedResourceId, script ScenarioScript) (VersionedResourceId, bool, error) {
 	var result Scenario
-	ok, err := m.store.Get(ctx, &result, id)
+	ok, err := m.store.GetWithVersion(ctx, &result, id)
 	if !ok || err != nil {
 		return result.GetVersionedID(), ok, err
 	}
 
 	result.Script = &script
-	ok, err = m.store.Update(ctx, &result, id)
+	ok, err = m.store.Update(ctx, &result, result.GetVersionedID())
 
 	return result.GetVersionedID(), ok, err
 }
 
 // FIXME: Must take versionedID?
 // TODO: Return kind!
-func (m *scenarioApiImpl) Update(ctx context.Context, id ResourceID, scenarioUpdate CreateScenario) (CreatedResponse, error) {
+func (m *scenarioApiImpl) Update(ctx context.Context, id VersionedResourceId, scenarioUpdate CreateScenario) (CreatedResponse, error) {
 	var result Scenario
 	kind, err := m.store.GuessKind(reflect.ValueOf(&result))
 	if err != nil {
 		return CreatedResponse{}, err
 	}
 
-	ok, err := m.store.Get(ctx, &result, id)
+	ok, err := m.store.GetWithVersion(ctx, &result, id)
 	if err != nil {
 		return CreatedResponse{}, err
 	}
@@ -277,7 +277,7 @@ func (m *scenarioApiImpl) Update(ctx context.Context, id ResourceID, scenarioUpd
 
 	result.IsActive = scenarioUpdate.IsActive
 
-	ok, err = m.store.Update(ctx, &result, id)
+	ok, err = m.store.Update(ctx, &result, result.GetVersionedID())
 	if !ok {
 		return CreatedResponse{}, ErrResourceVersionConflict
 	}
@@ -350,8 +350,10 @@ func (m *resultsApiImpl) Create(ctx context.Context, newEntry CreateScenarioRunR
 		return CreatedResponse{}, ErrForbidden
 	}
 
-	if newEntry.Name == "" || newEntry.Name == "manual-" { // Generate run name for scheduled runs
-		newEntry.Name = fmt.Sprintf("%v%v-v%v-%v", newEntry.Name, scenario.Name, scenario.Version, RandToken(32))
+	if newEntry.Name == "" || strings.HasPrefix(newEntry.Name, "manual-") { // Generate run name for scheduled runs
+		log.Print("manual run, prefix: ", newEntry.Name)
+		newEntry.Name = fmt.Sprintf("%v%v-v%v-%v", newEntry.Name, scenario.Name, scenario.Version, randToken(32))
+		log.Print("...generated name: ", newEntry.Name)
 	}
 
 	// Ensure labels are set correctly
@@ -388,7 +390,7 @@ func (m *resultsApiImpl) Create(ctx context.Context, newEntry CreateScenarioRunR
 	if err != nil {
 		// Well, scheduling failed. Might as well cancel it:
 		entry.Status = JobErrored
-		_, uerr := m.store.Update(ctx, &entry, ResourceID(entry.ID))
+		_, uerr := m.store.Update(ctx, &entry, entry.GetVersionedID())
 		// TODO: Update metrics!
 		if uerr != nil {
 			log.Print("embarrassing error: failed to update run DB entry after failure to schedule it: ", uerr)
@@ -406,7 +408,6 @@ func (m *resultsApiImpl) Create(ctx context.Context, newEntry CreateScenarioRunR
 
 func (m *resultsApiImpl) Auth(ctx context.Context, id VersionedResourceId, authRequest AuthRunRequest) (CreatedRunResponse, error) {
 	var entry ScenarioRunResults
-
 	ok, err := m.store.GetWithVersion(ctx, &entry, id)
 	if err != nil {
 		return CreatedRunResponse{}, ErrResourceNotFound
@@ -423,7 +424,7 @@ func (m *resultsApiImpl) Auth(ctx context.Context, id VersionedResourceId, authR
 
 	// TODO: Record expected deadline and JWT's exp claim
 	entry.Status = JobRunning
-	entry.UpdateToken = RandToken(32) // FIXME: Generate JWT with valid-until clause, to give worker a time to post
+	entry.UpdateToken = randToken(32) // FIXME: Generate JWT with valid-until clause, to give worker a time to post
 	entry.Labels = wyrd.MergeLabels(
 		entry.Labels,
 		authRequest.Labels,
@@ -434,7 +435,7 @@ func (m *resultsApiImpl) Auth(ctx context.Context, id VersionedResourceId, authR
 	)
 
 	log.Print("authorizing worker ", authRequest.RunnerID, " to execute ", entry.Name, " for at most ", authRequest.Timeout)
-	ok, err = m.store.Update(ctx, &entry, ResourceID(entry.ID))
+	ok, err = m.store.Update(ctx, &entry, entry.GetVersionedID())
 	if err != nil {
 		return CreatedRunResponse{}, err
 	}
@@ -479,7 +480,7 @@ func (m *resultsApiImpl) Update(ctx context.Context, id VersionedResourceId, tok
 	entry.Status = JobCompleted
 	entry.FinalRunResults = runResults
 
-	ok, err = m.store.Update(ctx, &entry, ResourceID(entry.ID))
+	ok, err = m.store.Update(ctx, &entry, entry.GetVersionedID())
 	if err != nil {
 		return CreatedResponse{}, err
 	}
@@ -536,7 +537,7 @@ func (m *runnersApiImpl) Create(ctx context.Context, newEntry CreateRunnerReques
 		RunnerSpec: RunnerSpec{
 			RunnerDefinition: newEntry.RunnerDefinition,
 		},
-		IdToken: RandToken(16),
+		IdToken: randToken(16),
 	}
 
 	kind, err := m.store.Create(ctx, &entry)
@@ -547,7 +548,7 @@ func (m *runnersApiImpl) Create(ctx context.Context, newEntry CreateRunnerReques
 	}, err
 }
 
-func (m *runnersApiImpl) Delete(ctx context.Context, id ResourceID) (bool, error) {
+func (m *runnersApiImpl) Delete(ctx context.Context, id VersionedResourceId) (bool, error) {
 	return m.store.Delete(ctx, &Runner{}, id)
 }
 
@@ -580,7 +581,7 @@ func (m *runnersApiImpl) Update(ctx context.Context, id VersionedResourceId, ent
 	}
 
 	// Persist changes
-	ok, err = m.store.Update(ctx, &result, id.ID)
+	ok, err = m.store.Update(ctx, &result, result.GetVersionedID())
 	if !ok {
 		return CreatedResponse{}, ErrResourceVersionConflict
 	}
@@ -609,7 +610,7 @@ func (m *runnersApiImpl) Auth(ctx context.Context, token ApiToken, entry RunnerR
 		result.Labels = entry.InstanceLabels
 	}
 
-	ok, err = m.store.Update(ctx, &result, ResourceID(result.ID))
+	ok, err = m.store.Update(ctx, &result, result.GetVersionedID())
 	if !ok {
 		return result, ErrResourceVersionConflict
 	}
@@ -671,7 +672,7 @@ func (m *artifactApiImp) Create(ctx context.Context, newEntry CreateArtifactRequ
 	}, err
 }
 
-func (m *artifactApiImp) Delete(ctx context.Context, id ResourceID) (bool, error) {
+func (m *artifactApiImp) Delete(ctx context.Context, id VersionedResourceId) (bool, error) {
 	return m.store.Delete(ctx, &Artifact{}, id)
 }
 

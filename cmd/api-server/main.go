@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"runtime/debug"
-	"strconv"
 	"strings"
 
 	"github.com/sre-norns/urth/pkg/grace"
@@ -29,6 +28,11 @@ var (
 const (
 	responseMarshalKey = "responseMarshal"
 	searchQueryKey     = "searchQuery"
+	resourceIdKey      = "resourceId"
+	versionedIdKey     = "versionedId"
+	versionInfoKey     = "versionInfoKey"
+
+	authBearerKey = "Bearer"
 )
 
 func selectAcceptedType(header http.Header) []string {
@@ -81,6 +85,36 @@ func contentTypeApi() gin.HandlerFunc {
 	}
 }
 
+func resourceIdApi() gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		var resourceRequest urth.ResourceRequest
+		if err := ctx.BindUri(&resourceRequest); err != nil {
+			abortWithError(ctx, http.StatusNotFound, err)
+			return
+		}
+
+		ctx.Set(resourceIdKey, resourceRequest)
+		ctx.Next()
+	}
+}
+
+func versionedResourceApi() gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		var versionInfo urth.VersionQuery
+		if err := ctx.ShouldBindQuery(&versionInfo); err != nil {
+			abortWithError(ctx, http.StatusBadRequest, err)
+			return
+		}
+
+		if resourceId, ok := ctx.Get(resourceIdKey); ok {
+			ctx.Set(versionedIdKey, urth.NewVersionedId(resourceId.(urth.ResourceRequest).ID, versionInfo.Version))
+		}
+
+		ctx.Set(versionInfoKey, versionInfo)
+		ctx.Next()
+	}
+}
+
 func searchableApi() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		var searchQuery urth.SearchQuery
@@ -93,7 +127,7 @@ func searchableApi() gin.HandlerFunc {
 	}
 }
 
-func authBearer(ctx *gin.Context) (urth.ApiToken, error) {
+func extractAuthBearer(ctx *gin.Context) (urth.ApiToken, error) {
 	// Get the "Authorization" header
 	authorization := ctx.Request.Header.Get("Authorization")
 	if authorization == "" {
@@ -107,6 +141,19 @@ func authBearer(ctx *gin.Context) (urth.ApiToken, error) {
 	}
 
 	return urth.ApiToken(parts[1]), nil
+}
+
+func authBearerApi() gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		token, err := extractAuthBearer(ctx)
+		if err != nil {
+			abortWithError(ctx, http.StatusUnauthorized, err)
+			return
+		}
+
+		ctx.Set(authBearerKey, token)
+		ctx.Next()
+	}
 }
 
 // TODO: JWT Auth middleware for runners!
@@ -181,18 +228,14 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 			marshalResponse(ctx, http.StatusCreated, result)
 		})
 		// Auth runner. TODO: Should it be something like `/auth/runner` ?
-		v1.PUT("/runners", contentTypeApi(), func(ctx *gin.Context) {
+		v1.PUT("/runners", contentTypeApi(), authBearerApi(), func(ctx *gin.Context) {
 			var newEntry urth.RunnerRegistration
 			if err := ctx.ShouldBind(&newEntry); err != nil {
 				abortWithError(ctx, http.StatusBadRequest, err)
 				return
 			}
 
-			token, err := authBearer(ctx)
-			if err != nil {
-				abortWithError(ctx, http.StatusUnauthorized, err)
-				return
-			}
+			token := ctx.MustGet(authBearerKey).(urth.ApiToken)
 
 			result, err := srv.GetRunnerAPI().Auth(ctx.Request.Context(), token, newEntry)
 			if err != nil {
@@ -203,14 +246,9 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 			marshalResponse(ctx, http.StatusAccepted, result)
 		})
 
-		v1.GET("/runners/:id", contentTypeApi(), func(ctx *gin.Context) {
-			var resourceRequest urth.ResourceRequest
-			if err := ctx.BindUri(&resourceRequest); err != nil {
-				abortWithError(ctx, http.StatusNotFound, err)
-				return
-			}
-
-			resource, exists, err := srv.GetRunnerAPI().Get(ctx.Request.Context(), resourceRequest.ResourceID())
+		v1.GET("/runners/:id", contentTypeApi(), resourceIdApi(), func(ctx *gin.Context) {
+			resourceId := ctx.MustGet(resourceIdKey).(urth.ResourceRequest)
+			resource, exists, err := srv.GetRunnerAPI().Get(ctx.Request.Context(), resourceId.ResourceID())
 			if err != nil {
 				abortWithError(ctx, http.StatusBadRequest, err)
 				return
@@ -224,18 +262,8 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 			marshalResponse(ctx, http.StatusOK, resource)
 		})
 
-		v1.PUT("/runners/:id", contentTypeApi(), func(ctx *gin.Context) {
-			var resourceRequest urth.ResourceRequest
-			if err := ctx.BindUri(&resourceRequest); err != nil {
-				abortWithError(ctx, http.StatusNotFound, err)
-				return
-			}
-
-			version, err := strconv.ParseUint(ctx.Query("version"), 10, 64)
-			if err != nil {
-				abortWithError(ctx, http.StatusBadRequest, fmt.Errorf("could not decode `version` value: %w", err))
-				return
-			}
+		v1.PUT("/runners/:id", contentTypeApi(), resourceIdApi(), versionedResourceApi(), func(ctx *gin.Context) {
+			versionedId := ctx.MustGet(versionedIdKey).(urth.VersionedResourceId)
 
 			var newEntry urth.CreateRunnerRequest
 			if err := ctx.ShouldBind(&newEntry); err != nil {
@@ -243,7 +271,7 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 				return
 			}
 
-			updateResponse, err := srv.GetRunnerAPI().Update(ctx.Request.Context(), urth.NewVersionedId(uint(resourceRequest.ID), version), newEntry)
+			updateResponse, err := srv.GetRunnerAPI().Update(ctx.Request.Context(), versionedId, newEntry)
 			if err != nil {
 				abortWithError(ctx, http.StatusBadRequest, err)
 				return
@@ -252,15 +280,11 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 			marshalResponse(ctx, http.StatusCreated, updateResponse)
 		})
 
-		v1.DELETE("/runners/:id", func(ctx *gin.Context) {
-			var resourceRequest urth.ResourceRequest
-			if err := ctx.BindUri(&resourceRequest); err != nil {
-				abortWithError(ctx, http.StatusNotFound, err)
-				return
-			}
+		v1.DELETE("/runners/:id", resourceIdApi(), versionedResourceApi(), func(ctx *gin.Context) {
+			versionedId := ctx.MustGet(versionedIdKey).(urth.VersionedResourceId)
 
 			// Note: Delete is silent - no error if deleting non-existing resource
-			_, err := srv.GetRunnerAPI().Delete(ctx.Request.Context(), resourceRequest.ResourceID())
+			_, err := srv.GetRunnerAPI().Delete(ctx.Request.Context(), versionedId)
 			if err != nil {
 				abortWithError(ctx, http.StatusBadRequest, err)
 				return
@@ -301,14 +325,10 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 			marshalResponse(ctx, http.StatusCreated, result)
 		})
 
-		v1.GET("/scenarios/:id", contentTypeApi(), func(ctx *gin.Context) {
-			var resourceRequest urth.ResourceRequest
-			if err := ctx.ShouldBindUri(&resourceRequest); err != nil {
-				abortWithError(ctx, http.StatusNotFound, err)
-				return
-			}
+		v1.GET("/scenarios/:id", contentTypeApi(), resourceIdApi(), func(ctx *gin.Context) {
+			resourceId := ctx.MustGet(resourceIdKey).(urth.ResourceRequest)
 
-			resource, exists, err := srv.GetScenarioAPI().Get(ctx.Request.Context(), resourceRequest.ResourceID())
+			resource, exists, err := srv.GetScenarioAPI().Get(ctx.Request.Context(), resourceId.ResourceID())
 			if err != nil {
 				abortWithError(ctx, http.StatusBadRequest, err)
 				return
@@ -322,14 +342,10 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 			marshalResponse(ctx, http.StatusOK, resource)
 		})
 
-		v1.DELETE("/scenarios/:id", func(ctx *gin.Context) {
-			var resourceRequest urth.ResourceRequest
-			if err := ctx.BindUri(&resourceRequest); err != nil {
-				abortWithError(ctx, http.StatusNotFound, err)
-				return
-			}
+		v1.DELETE("/scenarios/:id", resourceIdApi(), versionedResourceApi(), func(ctx *gin.Context) {
+			versionedId := ctx.MustGet(versionedIdKey).(urth.VersionedResourceId)
 
-			_, err := srv.GetScenarioAPI().Delete(ctx.Request.Context(), resourceRequest.ResourceID())
+			_, err := srv.GetScenarioAPI().Delete(ctx.Request.Context(), versionedId)
 			if err != nil {
 				abortWithError(ctx, http.StatusBadRequest, err)
 				return
@@ -338,12 +354,8 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 			ctx.Status(http.StatusNoContent)
 		})
 
-		v1.PUT("/scenarios/:id", contentTypeApi(), func(ctx *gin.Context) {
-			var resourceRequest urth.ResourceRequest
-			if err := ctx.BindUri(&resourceRequest); err != nil {
-				abortWithError(ctx, http.StatusNotFound, err)
-				return
-			}
+		v1.PUT("/scenarios/:id", contentTypeApi(), resourceIdApi(), versionedResourceApi(), func(ctx *gin.Context) {
+			versionedId := ctx.MustGet(versionedIdKey).(urth.VersionedResourceId)
 
 			var newEntry urth.CreateScenario
 			if err := ctx.ShouldBind(&newEntry); err != nil {
@@ -351,7 +363,7 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 				return
 			}
 
-			updateResponse, err := srv.GetScenarioAPI().Update(ctx.Request.Context(), resourceRequest.ResourceID(), newEntry)
+			updateResponse, err := srv.GetScenarioAPI().Update(ctx.Request.Context(), versionedId, newEntry)
 			if err != nil {
 				abortWithError(ctx, http.StatusBadRequest, err)
 				return
@@ -360,14 +372,10 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 			marshalResponse(ctx, http.StatusCreated, updateResponse)
 		})
 
-		v1.GET("/scenarios/:id/script", func(ctx *gin.Context) {
-			var resourceRequest urth.ResourceRequest
-			if err := ctx.BindUri(&resourceRequest); err != nil {
-				abortWithError(ctx, http.StatusNotFound, err)
-				return
-			}
+		v1.GET("/scenarios/:id/script", resourceIdApi(), func(ctx *gin.Context) {
+			resourceId := ctx.MustGet(resourceIdKey).(urth.ResourceRequest)
 
-			resource, exists, err := srv.GetScenarioAPI().Get(ctx.Request.Context(), resourceRequest.ResourceID())
+			resource, exists, err := srv.GetScenarioAPI().Get(ctx.Request.Context(), resourceId.ResourceID())
 			if err != nil {
 				abortWithError(ctx, http.StatusBadRequest, err)
 				return
@@ -383,12 +391,8 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 			ctx.Writer.Write(resource.Script.Content)
 		})
 
-		v1.PUT("/scenarios/:id/script", contentTypeApi(), func(ctx *gin.Context) {
-			var resourceRequest urth.ResourceRequest
-			if err := ctx.BindUri(&resourceRequest); err != nil {
-				abortWithError(ctx, http.StatusNotFound, err)
-				return
-			}
+		v1.PUT("/scenarios/:id/script", resourceIdApi(), contentTypeApi(), versionedResourceApi(), func(ctx *gin.Context) {
+			versionedId := ctx.MustGet(versionedIdKey).(urth.VersionedResourceId)
 
 			data, err := io.ReadAll(ctx.Request.Body)
 			if err != nil {
@@ -396,7 +400,7 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 				return
 			}
 
-			id, exists, err := srv.GetScenarioAPI().UpdateScript(ctx.Request.Context(), resourceRequest.ResourceID(), urth.ScenarioScript{
+			id, exists, err := srv.GetScenarioAPI().UpdateScript(ctx.Request.Context(), versionedId, urth.ScenarioScript{
 				Kind:    urth.GuessScenarioKind(ctx.Query("kind"), ctx.ContentType(), data),
 				Content: data,
 			})
@@ -419,15 +423,10 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 		// Scenario run results API
 		//------------
 
-		v1.GET("/scenarios/:id/results", searchableApi(), contentTypeApi(), func(ctx *gin.Context) {
-			var resourceRequest urth.ResourceRequest
-			if err := ctx.BindUri(&resourceRequest); err != nil {
-				abortWithError(ctx, http.StatusNotFound, err)
-				return
-			}
-
+		v1.GET("/scenarios/:id/results", searchableApi(), contentTypeApi(), resourceIdApi(), func(ctx *gin.Context) {
+			resourceId := ctx.MustGet(resourceIdKey).(urth.ResourceRequest)
 			searchQuery := ctx.MustGet(searchQueryKey).(urth.SearchQuery)
-			results, err := srv.GetResultsAPI(resourceRequest.ResourceID()).List(ctx.Request.Context(), searchQuery)
+			results, err := srv.GetResultsAPI(resourceId.ResourceID()).List(ctx.Request.Context(), searchQuery)
 			if err != nil {
 				abortWithError(ctx, http.StatusBadRequest, err)
 				return
@@ -435,12 +434,8 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 
 			marshalResponse(ctx, http.StatusOK, urth.NewPaginatedResponse(results, searchQuery.Pagination))
 		})
-		v1.POST("/scenarios/:id/results", contentTypeApi(), func(ctx *gin.Context) {
-			var resourceRequest urth.ResourceRequest
-			if err := ctx.BindUri(&resourceRequest); err != nil {
-				abortWithError(ctx, http.StatusNotFound, err)
-				return
-			}
+		v1.POST("/scenarios/:id/results", contentTypeApi(), resourceIdApi(), func(ctx *gin.Context) {
+			resourceId := ctx.MustGet(resourceIdKey).(urth.ResourceRequest)
 
 			var newEntry urth.CreateScenarioRunResults
 			if err := ctx.ShouldBind(&newEntry); err != nil {
@@ -448,7 +443,7 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 				return
 			}
 
-			result, err := srv.GetResultsAPI(resourceRequest.ResourceID()).Create(ctx.Request.Context(), newEntry)
+			result, err := srv.GetResultsAPI(resourceId.ResourceID()).Create(ctx.Request.Context(), newEntry)
 			if err != nil {
 				abortWithError(ctx, http.StatusBadRequest, err)
 				return
@@ -465,7 +460,7 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 				return
 			}
 
-			resource, exists, err := srv.GetResultsAPI(resourceRequest.ID).Get(ctx.Request.Context(), resourceRequest.RunResultsID)
+			resource, exists, err := srv.GetResultsAPI(resourceRequest.ID).Get(ctx.Request.Context(), resourceRequest.RunId)
 			if err != nil {
 				abortWithError(ctx, http.StatusBadRequest, err)
 				return
@@ -479,18 +474,14 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 			marshalResponse(ctx, http.StatusOK, resource)
 		})
 
-		v1.POST("/scenarios/:id/results/:runId/auth", contentTypeApi(), func(ctx *gin.Context) {
+		v1.POST("/scenarios/:id/results/:runId/auth", contentTypeApi(), versionedResourceApi(), func(ctx *gin.Context) {
 			var resourceRequest urth.ScenarioRunResultsRequest
 			if err := ctx.ShouldBindUri(&resourceRequest); err != nil {
 				abortWithError(ctx, http.StatusNotFound, err)
 				return
 			}
 
-			version, err := strconv.ParseUint(ctx.Query("version"), 10, 64)
-			if err != nil {
-				abortWithError(ctx, http.StatusBadRequest, fmt.Errorf("could not decode `version` value: %w", err))
-				return
-			}
+			versionedInfo := ctx.MustGet(versionInfoKey).(urth.VersionQuery)
 
 			var entry urth.AuthRunRequest
 			if err := ctx.ShouldBind(&entry); err != nil {
@@ -498,7 +489,7 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 				return
 			}
 
-			resource, err := srv.GetResultsAPI(resourceRequest.ID).Auth(ctx.Request.Context(), urth.NewVersionedId(uint(resourceRequest.RunResultsID), version), entry)
+			resource, err := srv.GetResultsAPI(resourceRequest.ID).Auth(ctx.Request.Context(), urth.NewVersionedId(resourceRequest.RunId, versionedInfo.Version), entry)
 			if err != nil {
 				abortWithError(ctx, http.StatusBadRequest, err)
 				return
@@ -507,24 +498,17 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 			marshalResponse(ctx, http.StatusOK, resource)
 		})
 
-		v1.PUT("/scenarios/:id/results/:runId", contentTypeApi(), func(ctx *gin.Context) {
+		v1.PUT("/scenarios/:id/results/:runId", contentTypeApi(), authBearerApi(), versionedResourceApi(), func(ctx *gin.Context) {
 			var resourceRequest urth.ScenarioRunResultsRequest
 			if err := ctx.ShouldBindUri(&resourceRequest); err != nil {
 				abortWithError(ctx, http.StatusNotFound, err)
 				return
 			}
 
-			version, err := strconv.ParseUint(ctx.Query("version"), 10, 64)
-			if err != nil {
-				abortWithError(ctx, http.StatusBadRequest, fmt.Errorf("could not decode `version` value: %w", err))
-				return
-			}
+			versionInfo := ctx.MustGet(versionInfoKey).(urth.VersionQuery)
 
-			token, err := authBearer(ctx) // FIXME: Use JWT middleware!
-			if err != nil {
-				abortWithError(ctx, http.StatusUnauthorized, err)
-				return
-			}
+			// FIXME: Should require valid JWT with exp claim validated
+			token := ctx.MustGet(authBearerKey).(urth.ApiToken)
 
 			var newEntry urth.FinalRunResults
 			if err := ctx.ShouldBind(&newEntry); err != nil {
@@ -532,7 +516,7 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 				return
 			}
 
-			resource, err := srv.GetResultsAPI(resourceRequest.ID).Update(ctx.Request.Context(), urth.NewVersionedId(uint(resourceRequest.RunResultsID), version), urth.ApiToken(token), newEntry)
+			resource, err := srv.GetResultsAPI(resourceRequest.ID).Update(ctx.Request.Context(), urth.NewVersionedId(resourceRequest.RunId, versionInfo.Version), urth.ApiToken(token), newEntry)
 			if err != nil {
 				abortWithError(ctx, http.StatusBadRequest, err)
 				return
@@ -574,14 +558,9 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 			marshalResponse(ctx, http.StatusCreated, result)
 		})
 
-		v1.GET("/artifacts/:id", contentTypeApi(), func(ctx *gin.Context) {
-			var resourceRequest urth.ResourceRequest
-			if err := ctx.ShouldBindUri(&resourceRequest); err != nil {
-				abortWithError(ctx, http.StatusNotFound, err)
-				return
-			}
-
-			resource, exists, err := srv.GetArtifactsApi().Get(ctx.Request.Context(), resourceRequest.ID)
+		v1.GET("/artifacts/:id", contentTypeApi(), resourceIdApi(), func(ctx *gin.Context) {
+			resourceId := ctx.MustGet(resourceIdKey).(urth.ResourceRequest)
+			resource, exists, err := srv.GetArtifactsApi().Get(ctx.Request.Context(), resourceId.ID)
 			if err != nil {
 				abortWithError(ctx, http.StatusBadRequest, err)
 				return
@@ -596,14 +575,9 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 			resource.Content = nil
 			marshalResponse(ctx, http.StatusOK, resource)
 		})
-		v1.GET("/artifacts/:id/content", contentTypeApi(), func(ctx *gin.Context) {
-			var resourceRequest urth.ResourceRequest
-			if err := ctx.ShouldBindUri(&resourceRequest); err != nil {
-				abortWithError(ctx, http.StatusNotFound, err)
-				return
-			}
-
-			resource, exists, err := srv.GetArtifactsApi().GetContent(ctx.Request.Context(), resourceRequest.ID)
+		v1.GET("/artifacts/:id/content", contentTypeApi(), resourceIdApi(), func(ctx *gin.Context) {
+			resourceId := ctx.MustGet(resourceIdKey).(urth.ResourceRequest)
+			resource, exists, err := srv.GetArtifactsApi().GetContent(ctx.Request.Context(), resourceId.ID)
 			if err != nil {
 				abortWithError(ctx, http.StatusBadRequest, err)
 				return
@@ -618,14 +592,10 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 			ctx.Writer.Header().Set("Content-Type", resource.MimeType)
 			ctx.Writer.Write(resource.Content)
 		})
-		v1.DELETE("/artifacts/:id", func(ctx *gin.Context) {
-			var resourceRequest urth.ResourceRequest
-			if err := ctx.BindUri(&resourceRequest); err != nil {
-				abortWithError(ctx, http.StatusNotFound, err)
-				return
-			}
+		v1.DELETE("/artifacts/:id", resourceIdApi(), versionedResourceApi(), func(ctx *gin.Context) {
+			versionedId := ctx.MustGet(versionedIdKey).(urth.VersionedResourceId)
 
-			_, err := srv.GetArtifactsApi().Delete(ctx.Request.Context(), resourceRequest.ResourceID())
+			_, err := srv.GetArtifactsApi().Delete(ctx.Request.Context(), versionedId)
 			if err != nil {
 				abortWithError(ctx, http.StatusBadRequest, err)
 				return

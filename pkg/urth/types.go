@@ -14,6 +14,13 @@ import (
 // Type to represent an ID of a resource
 type ResourceID uint
 
+const InvalidResourceID ResourceID = 0
+
+func (r ResourceID) String() string {
+	return strconv.FormatInt(int64(r), 10)
+	// return string(r)
+}
+
 // ApiToken is opaque datum used for auth purposes
 type ApiToken string
 
@@ -22,15 +29,11 @@ type VersionedResourceId struct {
 	Version uint64     `form:"version" json:"version" yaml:"version" xml:"version"`
 }
 
-func NewVersionedId(id uint, version uint64) VersionedResourceId {
+func NewVersionedId(id ResourceID, version uint64) VersionedResourceId {
 	return VersionedResourceId{
-		ID:      ResourceID(id),
+		ID:      id,
 		Version: version,
 	}
-}
-
-func (r ResourceID) String() string {
-	return strconv.FormatInt(int64(r), 10)
 }
 
 func (r VersionedResourceId) String() string {
@@ -60,7 +63,7 @@ type ResourceMeta struct {
 	Version uint64 `form:"version" json:"version" yaml:"version" xml:"version" gorm:"default:1"`
 
 	// Name is a human readable name of the resource used for display in UI
-	Name string `form:"name" json:"name" yaml:"name" xml:"name"  binding:"required"`
+	Name string `form:"name" json:"name" yaml:"name" xml:"name"  binding:"required" gorm:"uniqueIndex"`
 
 	Attributes datatypes.JSON `form:"-" json:"-" yaml:"-" xml:"-"`
 
@@ -78,7 +81,7 @@ func (meta *ResourceMeta) IsDeleted() bool {
 }
 
 func (meta *ResourceMeta) GetVersionedID() VersionedResourceId {
-	return NewVersionedId(meta.ID, meta.Version)
+	return NewVersionedId(ResourceID(meta.ID), meta.Version)
 }
 
 // PartialObjectMetadata is a common information about a managed resource without details of that resource.

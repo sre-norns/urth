@@ -56,7 +56,7 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 	// Authorize this worker to pick up this job:
 	log.Print("jobID: ", runID, " requesting authorization to execute")
 	runAuth, err := resultsApiClient.Auth(ctx, job.RunID, urth.AuthRunRequest{
-		RunnerID: urth.ResourceID(w.identity.ID),
+		RunnerID: w.identity.GetVersionedID(),
 		Timeout:  timeout,
 		Labels: wyrd.MergeLabels(
 			w.LabelJob(w.identity.GetVersionedID(), job),

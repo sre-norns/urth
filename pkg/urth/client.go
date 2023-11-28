@@ -136,12 +136,13 @@ func (c *RestApiClient) put(apiUrl *url.URL, extraHeaders http.Header, body io.R
 	return c.putWithAuth(apiUrl, "", extraHeaders, body)
 }
 
-func (c *RestApiClient) delete(apiUrl *url.URL) (*http.Response, error) {
+func (c *RestApiClient) delete(apiUrl *url.URL, version string) (*http.Response, error) {
 	request, err := http.NewRequest("DELETE", apiUrl.String(), nil)
 	if err != nil {
 		return nil, err
 	}
 	request.Header.Add("Accept", "application/json")
+	request.Header.Add("If-Match", version)
 
 	return c.httpClient.Do(request)
 }
@@ -161,9 +162,13 @@ func readApiError(resp *http.Response) error {
 	return fmt.Errorf(resp.Status)
 }
 
-func (c *RestApiClient) deleteResource(uri string) (bool, error) {
-	targetApi := urlForPath(c.baseUrl, uri, nil)
-	resp, err := c.delete(targetApi)
+func (c *RestApiClient) deleteResource(uri string, version uint64) (bool, error) {
+	strVersion := strconv.FormatUint(version, 10)
+	queryParams := url.Values{}
+	queryParams.Set("version", strVersion)
+
+	targetApi := urlForPath(c.baseUrl, uri, queryParams)
+	resp, err := c.delete(targetApi, strVersion)
 	if err != nil {
 		return false, err
 	}
@@ -306,8 +311,8 @@ func (c *RunnersApiClient) Create(ctx context.Context, newEntry CreateRunnerRequ
 	return c.createResource("v1/runners", &newEntry)
 }
 
-func (c *RunnersApiClient) Delete(ctx context.Context, id ResourceID) (bool, error) {
-	return c.deleteResource(fmt.Sprintf("v1/runners/%v", id))
+func (c *RunnersApiClient) Delete(ctx context.Context, id VersionedResourceId) (bool, error) {
+	return c.deleteResource(fmt.Sprintf("v1/runners/%v", id.ID), id.Version)
 }
 
 func (c *RunnersApiClient) Update(ctx context.Context, id VersionedResourceId, entry CreateRunnerRequest) (CreatedResponse, error) {
@@ -318,7 +323,7 @@ func (c *RunnersApiClient) Update(ctx context.Context, id VersionedResourceId, e
 	}
 
 	queryParams := url.Values{}
-	queryParams.Set("version", strconv.FormatInt(int64(id.Version), 10))
+	queryParams.Set("version", strconv.FormatUint(id.Version, 10))
 
 	targetApi := urlForPath(c.baseUrl, fmt.Sprintf("v1/runners/%v", id), queryParams)
 	resp, err := c.put(targetApi,
@@ -416,7 +421,7 @@ func (c *RunResultApiRestClient) Auth(ctx context.Context, id VersionedResourceI
 	}
 
 	queryParams := url.Values{}
-	queryParams.Set("version", strconv.FormatInt(int64(id.Version), 10))
+	queryParams.Set("version", strconv.FormatUint(id.Version, 10))
 
 	targetApi := urlForPath(c.baseUrl, fmt.Sprintf("v1/scenarios/%v/results/%v/auth", c.ScenarioId, id.ID), queryParams)
 	resp, err := c.post(targetApi,
@@ -447,7 +452,7 @@ func (c *RunResultApiRestClient) Update(ctx context.Context, id VersionedResourc
 	}
 
 	queryParams := url.Values{}
-	queryParams.Set("version", strconv.FormatInt(int64(id.Version), 10))
+	queryParams.Set("version", strconv.FormatUint(id.Version, 10))
 
 	targetApi := urlForPath(c.baseUrl, fmt.Sprintf("v1/scenarios/%v/results/%v", c.ScenarioId, id.ID), queryParams)
 	resp, err := c.put(targetApi,
@@ -503,8 +508,8 @@ func (c *artifactApiClient) GetContent(ctx context.Context, id ResourceID) (reso
 	return
 }
 
-func (c *artifactApiClient) Delete(ctx context.Context, id ResourceID) (bool, error) {
-	return c.deleteResource(fmt.Sprintf("v1/artifacts/%v", id))
+func (c *artifactApiClient) Delete(ctx context.Context, id VersionedResourceId) (bool, error) {
+	return c.deleteResource(fmt.Sprintf("v1/artifacts/%v", id.ID), id.Version)
 }
 
 // --------
@@ -530,12 +535,12 @@ func (c *scenariosApiClient) Create(ctx context.Context, scenario CreateScenario
 }
 
 // Delete a single resource identified by a unique ID
-func (c *scenariosApiClient) Delete(ctx context.Context, id ResourceID) (bool, error) {
-	return c.deleteResource(fmt.Sprintf("v1/scenarios/%v", id))
+func (c *scenariosApiClient) Delete(ctx context.Context, id VersionedResourceId) (bool, error) {
+	return c.deleteResource(fmt.Sprintf("v1/scenarios/%v", id.ID), id.Version)
 }
 
 // Update a single resource identified by a unique ID
-func (c *scenariosApiClient) Update(ctx context.Context, id ResourceID, scenario CreateScenario) (CreatedResponse, error) {
+func (c *scenariosApiClient) Update(ctx context.Context, id VersionedResourceId, scenario CreateScenario) (CreatedResponse, error) {
 	return CreatedResponse{}, nil
 }
 
@@ -544,7 +549,7 @@ func (c *scenariosApiClient) ListRunnable(ctx context.Context, query SearchQuery
 	return nil, nil
 }
 
-func (c *scenariosApiClient) UpdateScript(ctx context.Context, id ResourceID, script ScenarioScript) (VersionedResourceId, bool, error) {
+func (c *scenariosApiClient) UpdateScript(ctx context.Context, id VersionedResourceId, script ScenarioScript) (VersionedResourceId, bool, error) {
 	return VersionedResourceId{}, false, nil
 }
 

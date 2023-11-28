@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"reflect"
 
 	"github.com/sre-norns/urth/pkg/wyrd"
@@ -71,16 +70,19 @@ func (s *DbStore) GetByToken(ctx context.Context, dest any, token ApiToken) (boo
 	return tx.RowsAffected == 1, tx.Error
 }
 
-func (s *DbStore) Update(ctx context.Context, value any, id ResourceID) (bool, error) {
-	tx := s.db.WithContext(ctx).Save(value)
+func (s *DbStore) Update(ctx context.Context, value any, id VersionedResourceId) (bool, error) {
+	tx := s.db.WithContext(ctx).Where("version = ?", id.Version).Save(value)
 	if errors.Is(tx.Error, gorm.ErrRecordNotFound) {
 		return false, nil
 	}
 	return tx.RowsAffected == 1, tx.Error
 }
 
-func (s *DbStore) Delete(ctx context.Context, value any, id ResourceID) (bool, error) {
-	tx := s.db.WithContext(ctx).Delete(value, id)
+func (s *DbStore) Delete(ctx context.Context, value any, id VersionedResourceId) (bool, error) {
+	tx := s.db.WithContext(ctx).Where("version = ?", id.Version).Delete(value, id.ID)
+	if errors.Is(tx.Error, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
 	return tx.RowsAffected == 1, tx.Error
 }
 
@@ -107,7 +109,7 @@ func (s *DbStore) FindResources(ctx context.Context, resources any, searchQuery 
 		return resultType, err
 	}
 
-	rtx := tx.Find(resources)
+	rtx := tx.Order("created_at").Find(resources)
 	if rtx.Error != nil {
 		return resultType, rtx.Error
 	}
@@ -174,12 +176,12 @@ func (s *DbStore) withSelector(tx *gorm.DB, selector labels.Selector) (*gorm.DB,
 		}
 	}
 
-	log.Print("[DEBUG] SQL: ", tx.ToSQL(func(tx *gorm.DB) *gorm.DB {
-		for _, c := range qs {
-			tx = tx.Where(c)
-		}
-		return tx.Find(&[]Scenario{})
-	}))
+	// log.Print("[DEBUG] SQL: ", tx.ToSQL(func(tx *gorm.DB) *gorm.DB {
+	// 	for _, c := range qs {
+	// 		tx = tx.Where(c)
+	// 	}
+	// 	return tx.Find(&[]Scenario{})
+	// }))
 
 	for _, c := range qs {
 		tx = tx.Where(c)
