@@ -8,6 +8,7 @@ import (
 	"runtime/debug"
 	"strings"
 
+	"github.com/sre-norns/urth/pkg/dbstore"
 	"github.com/sre-norns/urth/pkg/grace"
 	"github.com/sre-norns/urth/pkg/redqueue"
 	"github.com/sre-norns/urth/pkg/urth"
@@ -669,7 +670,7 @@ func main() {
 	}
 
 	// Init service
-	store := urth.NewDbStore(db)
+	store := dbstore.NewDbStore(db)
 	// scheduler, err := gqueue.NewScheduler(context.TODO(), "test-local-321", "prob-request")
 	scheduler, err := redqueue.NewScheduler(context.TODO(), "localhost:6379")
 	if err != nil {

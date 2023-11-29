@@ -80,7 +80,7 @@
 ## TODOs:
 [X] Fix API to accept `version` query param
 [X] Add `create` command to urthctl
-[] Move dbstore => separate module!
+[X] Move dbstore => separate module!
 [] Move runners implementation => separate modules with registration on import!
 [] Remove MIME guessing code out of `pkg/urth`
 [] Move `script` out of `CreateScenario` => `Scenario`

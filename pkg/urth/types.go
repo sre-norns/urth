@@ -262,3 +262,9 @@ type ScenarioRunResults struct {
 
 	UpdateToken ApiToken `uri:"-" form:"-" json:"-" yaml:"-" xml:"-"`
 }
+
+// GORM hook to auto-increment resource version on each save
+func (meta *ResourceMeta) BeforeSave(tx *gorm.DB) (err error) {
+	meta.Version += 1
+	return
+}

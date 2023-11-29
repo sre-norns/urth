@@ -1,4 +1,4 @@
-package urth
+package dbstore
 
 import (
 	"fmt"

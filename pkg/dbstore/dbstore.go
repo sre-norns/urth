@@ -1,4 +1,4 @@
-package urth
+package dbstore
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/sre-norns/urth/pkg/urth"
 	"gorm.io/gorm"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/selection"
@@ -29,13 +30,13 @@ type DbStore struct {
 	db *gorm.DB
 }
 
-func NewDbStore(db *gorm.DB) Store {
+func NewDbStore(db *gorm.DB) urth.Store {
 	return &DbStore{
 		db: db,
 	}
 }
 
-func (s *DbStore) Create(ctx context.Context, value any) (TypeMeta, error) {
+func (s *DbStore) Create(ctx context.Context, value any) (urth.TypeMeta, error) {
 	kind, err := s.GuessKind(reflect.ValueOf(value))
 	if err != nil {
 		return kind, err
@@ -44,7 +45,7 @@ func (s *DbStore) Create(ctx context.Context, value any) (TypeMeta, error) {
 	return kind, s.db.WithContext(ctx).Create(value).Error
 }
 
-func (s *DbStore) Get(ctx context.Context, dest any, id ResourceID) (bool, error) {
+func (s *DbStore) Get(ctx context.Context, dest any, id urth.ResourceID) (bool, error) {
 	tx := s.db.WithContext(ctx).First(dest, id)
 	if errors.Is(tx.Error, gorm.ErrRecordNotFound) {
 		return false, nil
@@ -52,7 +53,7 @@ func (s *DbStore) Get(ctx context.Context, dest any, id ResourceID) (bool, error
 	return tx.RowsAffected == 1, tx.Error
 }
 
-func (s *DbStore) GetWithVersion(ctx context.Context, dest any, id VersionedResourceId) (bool, error) {
+func (s *DbStore) GetWithVersion(ctx context.Context, dest any, id urth.VersionedResourceId) (bool, error) {
 	tx := s.db.WithContext(ctx).Where("version = ?", id.Version).First(dest, id)
 	if errors.Is(tx.Error, gorm.ErrRecordNotFound) {
 		return false, nil
@@ -60,7 +61,7 @@ func (s *DbStore) GetWithVersion(ctx context.Context, dest any, id VersionedReso
 	return tx.RowsAffected == 1, tx.Error
 }
 
-func (s *DbStore) GetByToken(ctx context.Context, dest any, token ApiToken) (bool, error) {
+func (s *DbStore) GetByToken(ctx context.Context, dest any, token urth.ApiToken) (bool, error) {
 	tx := s.db.WithContext(ctx).Where("id_token = ?", token).First(dest)
 	if errors.Is(tx.Error, gorm.ErrRecordNotFound) {
 		return false, nil
@@ -68,7 +69,7 @@ func (s *DbStore) GetByToken(ctx context.Context, dest any, token ApiToken) (boo
 	return tx.RowsAffected == 1, tx.Error
 }
 
-func (s *DbStore) Update(ctx context.Context, value any, id VersionedResourceId) (bool, error) {
+func (s *DbStore) Update(ctx context.Context, value any, id urth.VersionedResourceId) (bool, error) {
 	tx := s.db.WithContext(ctx).Where("version = ?", id.Version).Save(value)
 	if errors.Is(tx.Error, gorm.ErrRecordNotFound) {
 		return false, nil
@@ -76,7 +77,7 @@ func (s *DbStore) Update(ctx context.Context, value any, id VersionedResourceId)
 	return tx.RowsAffected == 1, tx.Error
 }
 
-func (s *DbStore) Delete(ctx context.Context, value any, id VersionedResourceId) (bool, error) {
+func (s *DbStore) Delete(ctx context.Context, value any, id urth.VersionedResourceId) (bool, error) {
 	tx := s.db.WithContext(ctx).Where("version = ?", id.Version).Delete(value, id.ID)
 	if errors.Is(tx.Error, gorm.ErrRecordNotFound) {
 		return false, nil
@@ -84,18 +85,18 @@ func (s *DbStore) Delete(ctx context.Context, value any, id VersionedResourceId)
 	return tx.RowsAffected == 1, tx.Error
 }
 
-func (s *DbStore) GuessKind(value reflect.Value) (TypeMeta, error) {
+func (s *DbStore) GuessKind(value reflect.Value) (urth.TypeMeta, error) {
 	kind, err := guessDbTable(s.db, value.Interface())
 
-	return TypeMeta{Kind: kind}, err
+	return urth.TypeMeta{Kind: kind}, err
 }
 
-func (s *DbStore) startPaginatedTx(ctx context.Context, pagination Pagination) *gorm.DB {
+func (s *DbStore) startPaginatedTx(ctx context.Context, pagination urth.Pagination) *gorm.DB {
 	return s.db.WithContext(ctx).Offset(int(pagination.Offset)).Limit(int(pagination.Limit))
 }
 
-func (s *DbStore) FindResources(ctx context.Context, resources any, searchQuery SearchQuery) (TypeMeta, error) {
-	var resultType TypeMeta
+func (s *DbStore) FindResources(ctx context.Context, resources any, searchQuery urth.SearchQuery) (urth.TypeMeta, error) {
+	var resultType urth.TypeMeta
 
 	selector, err := labels.Parse(searchQuery.Labels)
 	if err != nil {
@@ -121,10 +122,6 @@ func (s *DbStore) FindResources(ctx context.Context, resources any, searchQuery 
 	}
 
 	return resultType, nil
-}
-
-func (s *DbStore) FindInto(ctx context.Context, model any, into any, pagination Pagination) error {
-	return s.startPaginatedTx(ctx, pagination).Model(model).Group("key").Group("value").Find(into).Error
 }
 
 func (s *DbStore) withSelector(tx *gorm.DB, selector labels.Selector) (*gorm.DB, error) {
@@ -190,19 +187,4 @@ func (s *DbStore) withSelector(tx *gorm.DB, selector labels.Selector) (*gorm.DB,
 	}
 
 	return tx, nil
-}
-
-// func (meta *ResourceMeta) AfterFind(tx *gorm.DB) (err error) {
-// 	if meta.Attributes == nil {
-// 		meta.Labels = wyrd.Labels{}
-// 		return nil
-// 	}
-
-// 	return json.Unmarshal(meta.Attributes, &meta.Labels)
-// }
-
-func (meta *ResourceMeta) BeforeSave(tx *gorm.DB) (err error) {
-	meta.Version += 1
-	// meta.Attributes, err = json.Marshal(meta.Labels)
-	return
 }

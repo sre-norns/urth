@@ -14,7 +14,6 @@ type Store interface {
 	GetByToken(ctx context.Context, value any, token ApiToken) (bool, error)
 	GetWithVersion(ctx context.Context, dest any, id VersionedResourceId) (bool, error)
 	FindResources(ctx context.Context, dest any, searchQuery SearchQuery) (TypeMeta, error)
-	FindInto(ctx context.Context, model, into any, pagination Pagination) error
 
 	GuessKind(value reflect.Value) (TypeMeta, error)
 }
