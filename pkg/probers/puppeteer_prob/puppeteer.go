@@ -1,4 +1,4 @@
-package runner
+package puppeteer_prob
 
 import (
 	"context"
@@ -7,8 +7,19 @@ import (
 	"os/exec"
 	"path"
 
+	"github.com/sre-norns/urth/pkg/runner"
 	"github.com/sre-norns/urth/pkg/urth"
 )
+
+const (
+	Kind           urth.ScenarioKind = "puppeteer"
+	ScriptMimeType                   = "text/javascript"
+)
+
+func init() {
+	// Ignore double registration error
+	_ = runner.RegisterRunnerKind(Kind, RunScript)
+}
 
 func setupNodeDir(dir string) error {
 	cmd := exec.Command("npm", "init", "-y")
@@ -40,9 +51,17 @@ func SetupRunEnv(workDir string) error {
 	return nil
 }
 
-func runPuppeteerScript(ctx context.Context, scriptContent []byte, options RunOptions) (urth.FinalRunResults, []urth.ArtifactValue, error) {
-	texLogger := RunLog{}
+func RunScript(ctx context.Context, scriptContent []byte, options runner.RunOptions) (urth.FinalRunResults, []urth.ArtifactValue, error) {
+	texLogger := runner.RunLog{}
 	texLogger.Log("Running puppeteer script")
+
+	// TODO: Check that working directory exists and writable!
+	if err := SetupRunEnv(options.Puppeteer.WorkingDirectory); err != nil {
+		err = fmt.Errorf("failed to initialize work directory: %w", err)
+		texLogger.Log(err)
+
+		return urth.NewRunResults(urth.RunFinishedError), texLogger.Package(), nil
+	}
 
 	workDir, err := os.MkdirTemp(options.Puppeteer.WorkingDirectory, options.Puppeteer.TempDirPrefix)
 	if err != nil {

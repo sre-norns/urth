@@ -5,7 +5,7 @@ import (
 	"os"
 
 	httpparser "github.com/sre-norns/urth/pkg/http-parser"
-	"github.com/sre-norns/urth/pkg/runner"
+	"github.com/sre-norns/urth/pkg/probers/har_prob"
 )
 
 type ConvertHar struct {
@@ -38,12 +38,12 @@ func (c *ConvertHar) Run(cfg *commandContext) error {
 			defer file.Close()
 		}
 
-		harLog, err := runner.UnmarshalHAR(file)
+		harLog, err := har_prob.UnmarshalHAR(file)
 		if err != nil {
 			return fmt.Errorf("failed to deserialize HAR file: %w", err)
 		}
 
-		requests, err := runner.ConvertHarToHttpTester(harLog.Log.Entries)
+		requests, err := har_prob.ConvertHarToHttpTester(harLog.Log.Entries)
 		if err != nil {
 			return fmt.Errorf("failed to convert HAR: %w", err)
 		}

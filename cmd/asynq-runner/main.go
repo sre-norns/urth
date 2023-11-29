@@ -14,6 +14,12 @@ import (
 	"github.com/sre-norns/urth/pkg/runner"
 	"github.com/sre-norns/urth/pkg/urth"
 	"github.com/sre-norns/urth/pkg/wyrd"
+
+	_ "github.com/sre-norns/urth/pkg/probers/har_prob"
+	_ "github.com/sre-norns/urth/pkg/probers/http_prob"
+	_ "github.com/sre-norns/urth/pkg/probers/puppeteer_prob"
+	_ "github.com/sre-norns/urth/pkg/probers/pypuppeteer_prob"
+	_ "github.com/sre-norns/urth/pkg/probers/tcp_prob"
 )
 
 type WorkerConfig struct {
@@ -164,9 +170,6 @@ func main() {
 	}
 
 	defaultConfig.apiClient = apiClient
-
-	// TODO: Check that working directory exists and writable!
-	grace.ExitOrLog(runner.SetupRunEnv(defaultConfig.WorkingDirectory))
 
 	// Create a new task's mux instance.
 	mux := asynq.NewServeMux()

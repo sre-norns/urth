@@ -11,9 +11,15 @@ import (
 	"strings"
 	"time"
 
+	"gopkg.in/yaml.v3"
+
+	"github.com/sre-norns/urth/pkg/probers/har_prob"
+	"github.com/sre-norns/urth/pkg/probers/http_prob"
+	"github.com/sre-norns/urth/pkg/probers/puppeteer_prob"
+	"github.com/sre-norns/urth/pkg/probers/pypuppeteer_prob"
+	"github.com/sre-norns/urth/pkg/probers/tcp_prob"
 	"github.com/sre-norns/urth/pkg/runner"
 	"github.com/sre-norns/urth/pkg/urth"
-	"gopkg.in/yaml.v3"
 )
 
 type RunCmd struct {
@@ -53,7 +59,7 @@ func (c *RunCmd) runScenario(cmdCtx context.Context, sourceName string, script *
 	}
 	log.Printf("script finished: %q", runResult.Result)
 
-	// Process artifacts produced by the local run
+	// Process artifacts produced by the local run - no uploading
 	for _, artifact := range artifacts {
 		log.Print("artifact: ", artifact.Rel)
 
@@ -111,15 +117,15 @@ func jobFromFile(filename string, kindHint string) (*urth.ScenarioScript, error)
 	} else {
 		switch ext {
 		case ".js", ".mjs":
-			kind = urth.PuppeteerKind
+			kind = puppeteer_prob.Kind
 		case ".py":
-			kind = urth.PyPuppeteerKind
+			kind = pypuppeteer_prob.Kind
 		case ".tcp":
-			kind = urth.TcpPortCheckKind
+			kind = tcp_prob.Kind
 		case ".http", ".rest":
-			kind = urth.HttpGetKind
+			kind = http_prob.Kind
 		case ".har":
-			kind = urth.HarKind
+			kind = har_prob.Kind
 		}
 	}
 

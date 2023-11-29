@@ -1,4 +1,4 @@
-package runner
+package tcp_prob
 
 import (
 	"context"
@@ -6,11 +6,22 @@ import (
 	"net"
 	"strings"
 
+	"github.com/sre-norns/urth/pkg/runner"
 	"github.com/sre-norns/urth/pkg/urth"
 )
 
-func runTcpPortScript(ctx context.Context, scriptContent []byte, options RunOptions) (urth.FinalRunResults, []urth.ArtifactValue, error) {
-	var runLog RunLog
+const (
+	Kind           urth.ScenarioKind = "tcp"
+	ScriptMimeType                   = "text/plain"
+)
+
+func init() {
+	_ = runner.RegisterRunnerKind(Kind, RunScript)
+}
+
+func RunScript(ctx context.Context, scriptContent []byte, options runner.RunOptions) (urth.FinalRunResults, []urth.ArtifactValue, error) {
+	var runLog runner.RunLog
+
 	runLog.Log("fondling TCP port")
 	host, port, err := net.SplitHostPort(strings.TrimSpace(string(scriptContent)))
 

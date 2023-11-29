@@ -34,13 +34,7 @@ type RunOptions struct {
 
 type ScriptRunner func(context.Context, []byte, RunOptions) (urth.FinalRunResults, []urth.ArtifactValue, error)
 
-var kindRunnerMap = map[urth.ScenarioKind]ScriptRunner{
-	urth.TcpPortCheckKind: runTcpPortScript,
-	urth.HttpGetKind:      runHttpRequestScript,
-	urth.HarKind:          runHarScript,
-	urth.PuppeteerKind:    runPuppeteerScript,
-	urth.PyPuppeteerKind:  runPyPuppeteerScript,
-}
+var kindRunnerMap = map[urth.ScenarioKind]ScriptRunner{}
 
 func RegisterRunnerKind(kind urth.ScenarioKind, runner ScriptRunner) error {
 	kindRunnerMap[kind] = runner

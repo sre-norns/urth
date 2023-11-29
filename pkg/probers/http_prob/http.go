@@ -1,4 +1,4 @@
-package runner
+package http_prob
 
 import (
 	"bytes"
@@ -14,10 +14,21 @@ import (
 	"time"
 
 	httpparser "github.com/sre-norns/urth/pkg/http-parser"
+	"github.com/sre-norns/urth/pkg/runner"
 	"github.com/sre-norns/urth/pkg/urth"
 
 	"github.com/google/martian/har"
 )
+
+const (
+	Kind           urth.ScenarioKind = "http"
+	ScriptMimeType                   = "application/http"
+)
+
+func init() {
+	// Ignore double registration error
+	_ = runner.RegisterRunnerKind(Kind, RunScript)
+}
 
 type httpRequestTracer struct {
 	tracer *httptrace.ClientTrace
@@ -36,7 +47,7 @@ type httpRequestTracer struct {
 	timeResponseReceived time.Time
 }
 
-func NewHttpRequestTracer(texLogger *RunLog) *httpRequestTracer {
+func newHttpRequestTracer(texLogger *runner.RunLog) *httpRequestTracer {
 	result := &httpRequestTracer{}
 
 	tracer := &httptrace.ClientTrace{
@@ -122,14 +133,14 @@ func formatResponse(resp *http.Response) string {
 	return result.String()
 }
 
-func runHttpRequests(ctx context.Context, texLogger *RunLog, requests []httpparser.TestRequest, options RunOptions) (urth.FinalRunResults, []urth.ArtifactValue, error) {
+func RunHttpRequests(ctx context.Context, texLogger *runner.RunLog, requests []httpparser.TestRequest, options runner.RunOptions) (urth.FinalRunResults, []urth.ArtifactValue, error) {
 	harLogger := har.NewLogger()
 	harLogger.SetOption(har.BodyLogging(options.Http.CaptureResponseBody))
 	harLogger.SetOption(har.PostDataLogging(options.Http.CaptureRequestBody))
 
 	outcome := urth.RunFinishedSuccess
 	client := http.Client{}
-	tracer := NewHttpRequestTracer(texLogger)
+	tracer := newHttpRequestTracer(texLogger)
 
 	for i, req := range requests {
 		id := fmt.Sprintf("%d", i)
@@ -185,8 +196,8 @@ func runHttpRequests(ctx context.Context, texLogger *RunLog, requests []httppars
 		}, nil
 }
 
-func runHttpRequestScript(ctx context.Context, scriptContent []byte, options RunOptions) (urth.FinalRunResults, []urth.ArtifactValue, error) {
-	texLogger := RunLog{}
+func RunScript(ctx context.Context, scriptContent []byte, options runner.RunOptions) (urth.FinalRunResults, []urth.ArtifactValue, error) {
+	texLogger := runner.RunLog{}
 
 	texLogger.Log("fondling HTTP")
 	requests, err := httpparser.Parse(bytes.NewReader(scriptContent))
@@ -195,5 +206,5 @@ func runHttpRequestScript(ctx context.Context, scriptContent []byte, options Run
 		return urth.NewRunResults(urth.RunFinishedError), texLogger.Package(), nil
 	}
 
-	return runHttpRequests(ctx, &texLogger, requests, options)
+	return RunHttpRequests(ctx, &texLogger, requests, options)
 }

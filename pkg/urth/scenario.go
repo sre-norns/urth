@@ -4,14 +4,6 @@ import "net/http"
 
 type ScenarioKind string
 
-const (
-	TcpPortCheckKind ScenarioKind = "tcp"
-	HttpGetKind      ScenarioKind = "http/get"
-	HarKind          ScenarioKind = "http/har"
-	PuppeteerKind    ScenarioKind = "puppeteer/javascript"
-	PyPuppeteerKind  ScenarioKind = "puppeteer/python"
-)
-
 // Well-know labels for scenarios
 const (
 	LabelScenarioId          = "scenario.id"
@@ -23,13 +15,7 @@ const (
 	LabelScenarioRunMessageId = "run.messageId"
 )
 
-var kindToMimeMap = map[ScenarioKind]string{
-	TcpPortCheckKind: "text/plain",
-	HttpGetKind:      "application/http",
-	HarKind:          "application/json",
-	PuppeteerKind:    "text/javascript",
-	PyPuppeteerKind:  "text/x-python",
-}
+var kindToMimeMap = map[ScenarioKind]string{}
 
 func ScriptKindToMimeType(kind ScenarioKind) string {
 	mtype, known := kindToMimeMap[kind]
@@ -47,15 +33,15 @@ func contentTypeToKind(contentType string) (ScenarioKind, bool) {
 		}
 	}
 
-	return PyPuppeteerKind, false
+	return "", false
 }
 
 func GuessScenarioKind(hint string, contentType string, data []byte) ScenarioKind {
 	if hint != "" {
-		for k := range kindToMimeMap {
-			if k == ScenarioKind(hint) {
-				return k
-			}
+		h := ScenarioKind(hint)
+		_, exists := kindToMimeMap[h]
+		if exists {
+			return h
 		}
 	}
 
