@@ -31,13 +31,13 @@ type ReadableResourceApi[T interface{}] interface {
 type ScenarioApi interface {
 	ReadableResourceApi[Scenario]
 
-	Create(ctx context.Context, entry CreateScenarioRequest) (CreatedResponse, error)
+	Create(ctx context.Context, entry ResourceManifest) (CreatedResponse, error)
 
 	// Delete a single resource identified by a unique ID
 	Delete(ctx context.Context, id VersionedResourceId) (bool, error)
 
 	// Update a single resource identified by a unique ID
-	Update(ctx context.Context, id VersionedResourceId, entry CreateScenario) (CreatedResponse, error)
+	Update(ctx context.Context, id VersionedResourceId, entry ResourceManifest) (CreatedResponse, error)
 
 	UpdateScript(ctx context.Context, id VersionedResourceId, entry ScenarioScript) (VersionedResourceId, bool, error)
 
@@ -49,7 +49,7 @@ type ArtifactApi interface {
 	ReadableResourceApi[Artifact]
 
 	// FIXME: Only authorized runner are allowed to create artifacts
-	Create(ctx context.Context, entry CreateArtifactRequest) (CreatedResponse, error)
+	Create(ctx context.Context, entry ResourceManifest) (CreatedResponse, error)
 
 	// Delete a single resource identified by a unique ID
 	Delete(ctx context.Context, id VersionedResourceId) (bool, error)
@@ -60,7 +60,7 @@ type ArtifactApi interface {
 type RunResultApi interface {
 	ReadableResourceApi[ScenarioRunResults]
 
-	Create(ctx context.Context, entry CreateScenarioRunResults) (CreatedResponse, error)
+	Create(ctx context.Context, entry ResourceManifest) (CreatedResponse, error)
 
 	Auth(ctx context.Context, runID VersionedResourceId, authRequest AuthRunRequest) (CreatedRunResponse, error)
 
@@ -73,13 +73,13 @@ type RunnersApi interface {
 	ReadableResourceApi[Runner]
 
 	// Client request to create a new 'slot' for a runner
-	Create(ctx context.Context, entry CreateRunnerRequest) (CreatedResponse, error)
+	Create(ctx context.Context, entry ResourceManifest) (CreatedResponse, error)
 
 	// Delete a single resource identified by a unique ID
 	Delete(ctx context.Context, id VersionedResourceId) (bool, error)
 
 	// Update a single resource identified by a unique ID
-	Update(ctx context.Context, id VersionedResourceId, entry CreateRunnerRequest) (CreatedResponse, error)
+	Update(ctx context.Context, id VersionedResourceId, entry ResourceManifest) (CreatedResponse, error)
 
 	// Authenticate a worker and receive Identity from the server
 	Auth(ctx context.Context, token ApiToken, entry RunnerRegistration) (Runner, error)
@@ -205,10 +205,10 @@ func (m *scenarioApiImpl) List(ctx context.Context, query SearchQuery) ([]Partia
 	return results, nil
 }
 
-func (m *scenarioApiImpl) Create(ctx context.Context, newEntry CreateScenarioRequest) (CreatedResponse, error) {
+func (m *scenarioApiImpl) Create(ctx context.Context, newEntry ResourceManifest) (CreatedResponse, error) {
 	entry := Scenario{
-		ResourceMeta:   newEntry.Metadata(),
-		CreateScenario: newEntry.CreateScenario,
+		ResourceMeta:   newEntry.GetMetadata(),
+		CreateScenario: *newEntry.Spec.(*CreateScenario),
 	}
 
 	kind, err := m.store.Create(ctx, &entry)
@@ -242,9 +242,7 @@ func (m *scenarioApiImpl) UpdateScript(ctx context.Context, id VersionedResource
 	return result.GetVersionedID(), ok, err
 }
 
-// FIXME: Must take versionedID?
-// TODO: Return kind!
-func (m *scenarioApiImpl) Update(ctx context.Context, id VersionedResourceId, scenarioUpdate CreateScenario) (CreatedResponse, error) {
+func (m *scenarioApiImpl) Update(ctx context.Context, id VersionedResourceId, entry ResourceManifest) (CreatedResponse, error) {
 	var result Scenario
 	kind, err := m.store.GuessKind(reflect.ValueOf(&result))
 	if err != nil {
@@ -259,23 +257,21 @@ func (m *scenarioApiImpl) Update(ctx context.Context, id VersionedResourceId, sc
 		return CreatedResponse{}, ErrResourceNotFound
 	}
 
-	// // TODO: Update other fields!
-	// if len(scenario.Requirements.MatchLabels) > 0 {
-	// 	resource.Requirements.MatchLabels = scenario.Requirements.MatchLabels
-	// }
-	// if len(scenario.Requirements.MatchSelector) > 0 {
-	// 	resource.Requirements.MatchSelector = scenario.Requirements.MatchSelector
-	// }
-
-	if scenarioUpdate.RunSchedule != "" {
-		result.RunSchedule = scenarioUpdate.RunSchedule
+	// Identity check
+	if result.Name != entry.Metadata.Name {
+		return CreatedResponse{}, ErrResourceNotFound
 	}
 
-	if scenarioUpdate.Script.Kind != "" {
-		result.Script = scenarioUpdate.Script
-	}
+	result.Labels = entry.Metadata.Labels
+	currentScript := result.Script
+	newScenario := *entry.Spec.(*CreateScenario)
 
-	result.IsActive = scenarioUpdate.IsActive
+	// Ensure that manifest without a script section does not accidentally deletes a script
+	// TODO: A better way to move .script out of `CreateScenario` and into `Scenario` directly
+	if newScenario.Script == nil && currentScript != nil {
+		newScenario.Script = currentScript
+	}
+	result.CreateScenario = newScenario
 
 	ok, err = m.store.Update(ctx, &result, result.GetVersionedID())
 	if !ok {
@@ -332,9 +328,9 @@ func (m *resultsApiImpl) List(ctx context.Context, searchQuery SearchQuery) ([]P
 	return results, nil
 }
 
-func (m *resultsApiImpl) Create(ctx context.Context, newEntry CreateScenarioRunResults) (CreatedResponse, error) {
+func (m *resultsApiImpl) Create(ctx context.Context, newEntry ResourceManifest) (CreatedResponse, error) {
 	scenarioIdLabelValue := m.scenarioId.String()
-	if v, ok := newEntry.Labels[LabelScenarioId]; ok && v != scenarioIdLabelValue {
+	if v, ok := newEntry.Metadata.Labels[LabelScenarioId]; ok && v != scenarioIdLabelValue {
 		return CreatedResponse{}, fmt.Errorf("invalid scenario ID for the given results entry")
 	}
 
@@ -350,34 +346,35 @@ func (m *resultsApiImpl) Create(ctx context.Context, newEntry CreateScenarioRunR
 		return CreatedResponse{}, ErrForbidden
 	}
 
-	if newEntry.Name == "" || strings.HasPrefix(newEntry.Name, "manual-") { // Generate run name for scheduled runs
-		log.Print("manual run, prefix: ", newEntry.Name)
-		newEntry.Name = fmt.Sprintf("%v%v-v%v-%v", newEntry.Name, scenario.Name, scenario.Version, randToken(32))
-		log.Print("...generated name: ", newEntry.Name)
+	if newEntry.Metadata.Name == "" || strings.HasPrefix(newEntry.Metadata.Name, "manual-") { // Generate run name for scheduled runs
+		log.Print("manual run, prefix: ", newEntry.Metadata.Name)
+		newEntry.Metadata.Name = fmt.Sprintf("%v%v-v%v-%v", newEntry.Metadata.Name, scenario.Name, scenario.Version, randToken(32))
+		log.Print("...generated name: ", newEntry.Metadata.Name)
 	}
 
 	// Ensure labels are set correctly
-	newEntry.Labels = wyrd.MergeLabels(
+	newEntry.Metadata.Labels = wyrd.MergeLabels(
 		scenario.Labels,
-		newEntry.Labels,
+		newEntry.Metadata.Labels,
 		wyrd.Labels{
 			LabelScenarioId: scenarioIdLabelValue,
 		},
 	)
 
+	spec := newEntry.Spec.(*InitialScenarioRunResults)
 	// Ensure timestamp is set:
-	if newEntry.TimeStarted == nil {
+	if spec.TimeStarted == nil {
 		now := time.Now()
-		newEntry.TimeStarted = &now
+		spec.TimeStarted = &now
 	}
 
 	// TODO: Validate that request is from an authentic worker that is allowed to take jobs!
 
 	entry := ScenarioRunResults{
-		ResourceMeta: newEntry.Metadata(),
+		ResourceMeta: newEntry.GetMetadata(),
 		ScenarioRunResultSpec: ScenarioRunResultSpec{
 			Status:                    JobPending, // Ensure initial status is set
-			InitialScenarioRunResults: newEntry.InitialScenarioRunResults,
+			InitialScenarioRunResults: *spec,
 		},
 	}
 
@@ -531,11 +528,11 @@ func (m *runnersApiImpl) Get(ctx context.Context, id ResourceID) (Runner, bool, 
 	return result, ok && result.GetID() == id && !result.IsDeleted(), err
 }
 
-func (m *runnersApiImpl) Create(ctx context.Context, newEntry CreateRunnerRequest) (CreatedResponse, error) {
+func (m *runnersApiImpl) Create(ctx context.Context, newEntry ResourceManifest) (CreatedResponse, error) {
 	entry := Runner{
-		ResourceMeta: newEntry.Metadata(),
+		ResourceMeta: newEntry.GetMetadata(),
 		RunnerSpec: RunnerSpec{
-			RunnerDefinition: newEntry.RunnerDefinition,
+			RunnerDefinition: *newEntry.Spec.(*RunnerDefinition),
 		},
 		IdToken: randToken(16),
 	}
@@ -552,7 +549,7 @@ func (m *runnersApiImpl) Delete(ctx context.Context, id VersionedResourceId) (bo
 	return m.store.Delete(ctx, &Runner{}, id)
 }
 
-func (m *runnersApiImpl) Update(ctx context.Context, id VersionedResourceId, entry CreateRunnerRequest) (CreatedResponse, error) {
+func (m *runnersApiImpl) Update(ctx context.Context, id VersionedResourceId, entry ResourceManifest) (CreatedResponse, error) {
 	var result Runner
 	kind, err := m.store.GuessKind(reflect.ValueOf(&result))
 	if err != nil {
@@ -567,18 +564,13 @@ func (m *runnersApiImpl) Update(ctx context.Context, id VersionedResourceId, ent
 		return CreatedResponse{}, ErrResourceVersionConflict
 	}
 
-	result.IsActive = entry.IsActive
-
-	if entry.Description != "" {
-		result.Description = entry.Description
+	// Identity check
+	if result.Name != entry.Metadata.Name {
+		return CreatedResponse{}, ErrResourceNotFound
 	}
 
-	if len(entry.Requirements.MatchLabels) > 0 {
-		result.Requirements.MatchLabels = entry.Requirements.MatchLabels
-	}
-	if len(entry.Requirements.MatchSelector) > 0 {
-		result.Requirements.MatchSelector = entry.Requirements.MatchSelector
-	}
+	result.Labels = entry.Metadata.Labels
+	result.RunnerDefinition = *entry.Spec.(*RunnerDefinition)
 
 	// Persist changes
 	ok, err = m.store.Update(ctx, &result, result.GetVersionedID())
@@ -658,10 +650,10 @@ func (m *artifactApiImp) GetContent(ctx context.Context, id ResourceID) (resourc
 	return result.ArtifactValue, ok && result.GetID() == id && !result.IsDeleted(), err
 }
 
-func (m *artifactApiImp) Create(ctx context.Context, newEntry CreateArtifactRequest) (CreatedResponse, error) {
+func (m *artifactApiImp) Create(ctx context.Context, newEntry ResourceManifest) (CreatedResponse, error) {
 	entry := Artifact{
-		ResourceMeta:  newEntry.Metadata(),
-		ArtifactValue: newEntry.ArtifactValue,
+		ResourceMeta:  newEntry.GetMetadata(),
+		ArtifactValue: *newEntry.Spec.(*ArtifactValue),
 	}
 
 	kind, err := m.store.Create(ctx, &entry)

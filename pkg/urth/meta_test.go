@@ -18,20 +18,20 @@ func TestResourceManifest_Unmarshaling(t *testing.T) {
 		"unknown_kind": {
 			expectError: true,
 			given: []byte(`
-			kind: jumper
-			metadata:
-			  name: X-y-z
-			spec:
-			  description: Awesome
-			  active: true
-			  requirements:
-				MatchLabels:
-				  - os: linux
-			`),
+kind: jumper
+metadata:
+	name: X-y-z
+spec:
+	description: Awesome
+	active: true
+	requirements:
+	MatchLabels:
+		- os: linux
+`),
 		},
 		"runner": {
 			given: []byte(`
-kind: runner
+kind: runners
 metadata:
   name: nginx-demo
 spec:
@@ -43,7 +43,7 @@ spec:
 `),
 			expect: ResourceManifest{
 				TypeMeta: TypeMeta{
-					Kind: "runner",
+					Kind: "runners",
 				},
 				Metadata: ObjectMeta{
 					Name: "nginx-demo",
@@ -59,25 +59,43 @@ spec:
 				},
 			},
 		},
+
+		// requirements:
+		// matchLabels:
+		//   os: "linux"
+		// matchSelector:
+		//  - Key: "owner"
+		//    Op: "in"
+		//    Values:
+		// 	- "allowed"
+		// 	- "trusted"
+
 		"scenario": {
 			given: []byte(`
 apiVersion: v1
-kind: scenario
+kind: scenarios
 metadata:
- name: simple-web-prober
- labels:
-  app: web-prob
-  function: front-end
+  name: simple-web-prober
+  labels:
+    app: web-prob
+    function: front-end
 spec:
- active: true
- schedule: "* * * * *"
- script:
-   kind: application/javascript
+  description: "Awesome"
+  active: true
+  schedule: "* * * * *"
+  script:
+    kind: "http/get"
+  requirements:
+    matchLabels:
+      os: "linux"
+    matchSelector:
+      - { key: "owner", operator: "in",  values: ["trusted", "allowed"] }
+      - { key: "env", operator: "notIn",  values: ["dev", "testing"] }
 `),
 			expect: ResourceManifest{
 				TypeMeta: TypeMeta{
 					APIVersion: "v1",
-					Kind:       "scenario",
+					Kind:       "scenarios",
 				},
 				Metadata: ObjectMeta{
 					Name: "simple-web-prober",
@@ -89,15 +107,52 @@ spec:
 				Spec: &CreateScenario{
 					IsActive:    true,
 					RunSchedule: "* * * * *",
-					// Description: "Awesome",
+					Description: "Awesome",
 					Script: &ScenarioScript{
-						Kind: "application/javascript",
+						Kind: "http/get",
 					},
-					// Requirements: wyrd.LabelSelector{
-					// 	MatchLabels: wyrd.Labels{
-					// 		"os": "linux",
-					// 	},
-					// },
+					Requirements: wyrd.LabelSelector{
+						MatchSelector: []wyrd.Selector{
+							{Key: "owner", Op: "in", Values: []string{"trusted", "allowed"}},
+							{Key: "env", Op: "notIn", Values: []string{"dev", "testing"}},
+						},
+						MatchLabels: wyrd.Labels{
+							"os": "linux",
+						},
+					},
+				},
+			},
+		},
+
+		"artifact": {
+			given: []byte(`
+apiVersion: v1
+kind: artifacts
+metadata:
+ name: artifact-example
+ labels:
+  scenario: xyz-script
+  function: front-end
+spec:
+ rel: "har"
+ mimeType: "data"
+`),
+			expect: ResourceManifest{
+				TypeMeta: TypeMeta{
+					APIVersion: "v1",
+					Kind:       "artifacts",
+				},
+				Metadata: ObjectMeta{
+					Name: "artifact-example",
+					Labels: wyrd.Labels{
+						"scenario": "xyz-script",
+						"function": "front-end",
+					},
+				},
+				Spec: &ArtifactValue{
+					Rel:      "har",
+					MimeType: "data",
+					Content:  nil,
 				},
 			},
 		},

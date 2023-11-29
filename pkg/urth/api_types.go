@@ -50,36 +50,6 @@ type (
 		Message string
 	}
 
-	CreateResourceMeta struct {
-		// Name is a human readable name of the resource used for display in UI
-		Name string `form:"name" json:"name" yaml:"name" xml:"name"  binding:"required"`
-
-		// Labels is map of string keys and values that can be used to organize and categorize
-		// (scope and select) resources.
-		Labels wyrd.Labels `form:"labels,omitempty" json:"labels,omitempty" yaml:"labels,omitempty" xml:"labels,omitempty"`
-	}
-
-	CreateScenarioRequest struct {
-		CreateResourceMeta `uri:",inline" form:",inline" json:",inline" yaml:",inline" `
-		CreateScenario     `uri:",inline" form:",inline" json:",inline" yaml:",inline" `
-	}
-
-	CreateRunnerRequest struct {
-		CreateResourceMeta `uri:",inline" form:",inline" json:",inline" yaml:",inline" `
-		RunnerDefinition   `uri:",inline" form:",inline" json:",inline" yaml:",inline" `
-	}
-
-	CreateScenarioRunResults struct {
-		CreateResourceMeta        `uri:",inline" form:",inline" json:",inline" yaml:",inline" `
-		InitialScenarioRunResults `uri:",inline" form:",inline" json:",inline" yaml:",inline" `
-	}
-
-	CreateArtifactRequest struct {
-		CreateResourceMeta   `uri:",inline" form:",inline" json:",inline" yaml:",inline" `
-		ScenarioRunResultsID ResourceID `form:"scenarioRunId" json:"scenarioRunId" yaml:"scenarioRunId" xml:"scenarioRunId"`
-		ArtifactValue        `uri:",inline" form:",inline" json:",inline" yaml:",inline" `
-	}
-
 	CreatedResponse struct {
 		// Gives us kind info
 		TypeMeta `json:",inline" yaml:",inline"`
@@ -115,24 +85,9 @@ func NewPaginatedResponse(data []PartialObjectMetadata, paginationInfo Paginatio
 	}
 }
 
-func (r ResourceRequest) ResourceID() ResourceID {
-	return ResourceID(r.ID)
-}
-
-// func (r ResourceRequest) VersionedResourceId() VersionedResourceId {
-// 	return NewVersionedId(r.ID, r.Version)
-// }
-
 func (p *Pagination) ClampLimit(maxLimit uint) {
 	if p.Limit > maxLimit || p.Limit == 0 {
 		p.Limit = maxLimit
-	}
-}
-
-func (m *CreateResourceMeta) Metadata() ResourceMeta {
-	return ResourceMeta{
-		Name:   m.Name,
-		Labels: m.Labels,
 	}
 }
 

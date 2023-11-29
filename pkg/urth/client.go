@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"path"
 	"strconv"
+	"strings"
 )
 
 type RestApiClient struct {
@@ -17,7 +18,7 @@ type RestApiClient struct {
 	httpClient *http.Client
 }
 
-func NewRestApiClient(baseUrl string) (Service, error) {
+func NewRestApiClient(baseUrl string) (*RestApiClient, error) {
 	url, err := url.Parse(baseUrl)
 
 	return &RestApiClient{
@@ -74,6 +75,31 @@ func (c *RestApiClient) ApplyObjectDefinition(ctx context.Context, spec Resource
 	}
 
 	defer resp.Body.Close()
+
+	err = json.NewDecoder(resp.Body).Decode(&result)
+	return result, err
+}
+
+func (c *RestApiClient) CreateFromManifest(ctx context.Context, manifest ResourceManifest) (CreatedResponse, error) {
+	var result CreatedResponse
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		return result, err
+	}
+
+	// queryParams := url.Values{}
+	// queryParams.Set("name", spec.Metadata.Name)
+
+	targetApi := apiUrlForPath(c.baseUrl, manifest.TypeMeta, "", nil)
+	resp, err := c.post(targetApi, bytes.NewReader(data))
+	if err != nil {
+		return result, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return result, readApiError(resp)
+	}
 
 	err = json.NewDecoder(resp.Body).Decode(&result)
 	return result, err
@@ -149,11 +175,14 @@ func (c *RestApiClient) delete(apiUrl *url.URL, version string) (*http.Response,
 
 func readApiError(resp *http.Response) error {
 	if resp.StatusCode >= 400 && resp.StatusCode < 500 {
-		var errorResponse ErrorResponse
-		err := json.NewDecoder(resp.Body).Decode(&errorResponse)
+		errorResponse := &ErrorResponse{
+			Code:    resp.StatusCode,
+			Message: resp.Status,
+		}
+		err := json.NewDecoder(resp.Body).Decode(errorResponse)
 		if err != nil {
 			// Failed to unmarshal error message, fallback to HTTP status code
-			return fmt.Errorf(resp.Status)
+			return errorResponse
 		}
 
 		return fmt.Errorf(errorResponse.Message)
@@ -250,7 +279,9 @@ func (c *RestApiClient) createResource(uri string, entry any) (CreatedResponse, 
 }
 
 func apiUrlForPath(baseUrl *url.URL, typeInfo TypeMeta, element string, query url.Values) *url.URL {
-	return urlForPath(baseUrl, path.Join(typeInfo.APIVersion, typeInfo.Kind, element), query)
+	collection := strings.ToLower(typeInfo.Kind)
+	// TODO: Make plural
+	return urlForPath(baseUrl, path.Join(typeInfo.APIVersion, collection, element), query)
 }
 
 func urlForPath(baseUrl *url.URL, apiPath string, query url.Values) *url.URL {
@@ -307,7 +338,7 @@ func (c *RunnersApiClient) Get(ctx context.Context, id ResourceID) (resource Run
 	return result, exists, err
 }
 
-func (c *RunnersApiClient) Create(ctx context.Context, newEntry CreateRunnerRequest) (CreatedResponse, error) {
+func (c *RunnersApiClient) Create(ctx context.Context, newEntry ResourceManifest) (CreatedResponse, error) {
 	return c.createResource("v1/runners", &newEntry)
 }
 
@@ -315,7 +346,7 @@ func (c *RunnersApiClient) Delete(ctx context.Context, id VersionedResourceId) (
 	return c.deleteResource(fmt.Sprintf("v1/runners/%v", id.ID), id.Version)
 }
 
-func (c *RunnersApiClient) Update(ctx context.Context, id VersionedResourceId, entry CreateRunnerRequest) (CreatedResponse, error) {
+func (c *RunnersApiClient) Update(ctx context.Context, id VersionedResourceId, entry ResourceManifest) (CreatedResponse, error) {
 	var result CreatedResponse
 	data, err := json.Marshal(entry)
 	if err != nil {
@@ -391,26 +422,8 @@ func (c *RunResultApiRestClient) Get(ctx context.Context, id ResourceID) (Scenar
 	return result, exists, err
 }
 
-func (c *RunResultApiRestClient) Create(ctx context.Context, runResults CreateScenarioRunResults) (CreatedResponse, error) {
-	var result CreatedResponse
-	data, err := json.Marshal(runResults)
-	if err != nil {
-		return result, err
-	}
-
-	targetApi := urlForPath(c.baseUrl, fmt.Sprintf("v1/scenarios/%v/results", c.ScenarioId), nil)
-	resp, err := c.post(targetApi, bytes.NewReader(data))
-	if err != nil {
-		return result, err
-	}
-
-	defer resp.Body.Close()
-	if (resp.StatusCode != http.StatusCreated) && (resp.StatusCode != http.StatusAccepted) && resp.StatusCode != http.StatusOK {
-		return result, readApiError(resp)
-	}
-
-	err = json.NewDecoder(resp.Body).Decode(&result)
-	return result, err
+func (c *RunResultApiRestClient) Create(ctx context.Context, newEntry ResourceManifest) (CreatedResponse, error) {
+	return c.createResource(fmt.Sprintf("v1/scenarios/%v/results", c.ScenarioId), &newEntry)
 }
 
 func (c *RunResultApiRestClient) Auth(ctx context.Context, id VersionedResourceId, authRequest AuthRunRequest) (CreatedRunResponse, error) {
@@ -487,7 +500,7 @@ func (c *artifactApiClient) List(ctx context.Context, searchQuery SearchQuery) (
 	return c.listResources("v1/artifacts", searchQuery)
 }
 
-func (c *artifactApiClient) Create(ctx context.Context, entry CreateArtifactRequest) (CreatedResponse, error) {
+func (c *artifactApiClient) Create(ctx context.Context, entry ResourceManifest) (CreatedResponse, error) {
 	return c.createResource("v1/artifacts", &entry)
 }
 
@@ -530,7 +543,7 @@ func (c *scenariosApiClient) Get(ctx context.Context, id ResourceID) (Scenario, 
 	return result, exists, err
 }
 
-func (c *scenariosApiClient) Create(ctx context.Context, scenario CreateScenarioRequest) (CreatedResponse, error) {
+func (c *scenariosApiClient) Create(ctx context.Context, scenario ResourceManifest) (CreatedResponse, error) {
 	return c.createResource("v1/scenarios", &scenario)
 }
 
@@ -540,7 +553,7 @@ func (c *scenariosApiClient) Delete(ctx context.Context, id VersionedResourceId)
 }
 
 // Update a single resource identified by a unique ID
-func (c *scenariosApiClient) Update(ctx context.Context, id VersionedResourceId, scenario CreateScenario) (CreatedResponse, error) {
+func (c *scenariosApiClient) Update(ctx context.Context, id VersionedResourceId, scenario ResourceManifest) (CreatedResponse, error) {
 	return CreatedResponse{}, nil
 }
 

@@ -25,11 +25,14 @@
 [] Validate labels names!
 [] Labels returned by a worked for a job-results / artifacts must be immutable
 [] Add API to find workers give a set of labels and requirements - to enable better UX where user can see how many probers will qualify for a given set of labels.
-[] A run results object with an update time-limited JWT token must be created when a job is scheduled. Worker can only update, within a time alloted, an already `pending` run. 
+[X] A run results object with an update time-limited JWT token must be created when a job is scheduled. Worker can only update, within a time alloted, an already `pending` run. 
 [] Restore labels API: Extract labels from JSON field
 [] Create API must return metadata for a newly created object as `names` may be generated.
 [X] For `Create` API set `Location` header to point to a newly created resource as per rest best practice
 [] All non-GET request must require authentication!
+[] API to create artifacts must only accept valid auth-tokens from workers that authorized to run a scenario
+[] Artifacts should expire and be removed in accordance with retention policy, unless `pinned`
+
 
 ## CLI tooling
 [x] `urthctl` - support reading scenario / script from stdin
@@ -73,3 +76,12 @@
 - Consider Tempo (Grafana tracing solution) for tracing
 - KeyDB - better implementation of Redis for distributed compute
 - Consider using Postgres as PubSub for API server - to - worker job distribution and scheduling.
+
+## TODOs:
+[X] Fix API to accept `version` query param
+[X] Add `create` command to urthctl
+[] Move dbstore => separate module!
+[] Move runners implementation => separate modules with registration on import!
+[] Remove MIME guessing code out of `pkg/urth`
+[] Move `script` out of `CreateScenario` => `Scenario`
+[] Use proper types for Script marshaling

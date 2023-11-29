@@ -115,8 +115,6 @@ func (c *RunnerConfig) LabelJob(runnerId urth.VersionedResourceId, job urth.RunS
 			urth.LabelScenarioId:          job.ScenarioID.ID.String(), // Groups all artifacts produced by the same scenario regardless of version
 			urth.LabelScenarioVersionedId: job.ScenarioID.String(),    // Groups all artifacts produced by the same version of the scenario
 			urth.LabelScenarioKind:        string(job.Script.Kind),    // Groups all artifacts produced by the type of script: TCP probe, HTTP probe, etc.
-
-			urth.LabelScenarioRunId: job.RunID.ID.String(), // Groups all artifacts produced in the same run
 		},
 	)
 }

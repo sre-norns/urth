@@ -10,7 +10,7 @@ import (
 	"github.com/sre-norns/urth/pkg/urth"
 )
 
-const TaskType = "scenario:run"
+const TaskType = urth.RunScenarioTopicName
 
 func UnmarshalJob(msg *asynq.Task) (urth.RunScenarioJob, error) {
 	return urth.UnmarshalJobYAML(msg.Payload())

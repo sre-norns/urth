@@ -7,7 +7,6 @@ import (
 
 	"github.com/sre-norns/urth/pkg/wyrd"
 
-	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
@@ -65,11 +64,9 @@ type ResourceMeta struct {
 	// Name is a human readable name of the resource used for display in UI
 	Name string `form:"name" json:"name" yaml:"name" xml:"name"  binding:"required" gorm:"uniqueIndex"`
 
-	Attributes datatypes.JSON `form:"-" json:"-" yaml:"-" xml:"-"`
-
 	// Labels is map of string keys and values that can be used to organize and categorize
 	// (scope and select) resources.
-	Labels wyrd.Labels `form:"labels,omitempty" json:"labels,omitempty" yaml:"labels,omitempty" xml:"labels,omitempty" gorm:"-"`
+	Labels wyrd.Labels `form:"labels,omitempty" json:"labels,omitempty" yaml:"labels,omitempty" xml:"labels,omitempty" gorm:"serializer:json"`
 }
 
 func (meta *ResourceMeta) GetID() ResourceID {
@@ -102,7 +99,7 @@ type RunnerDefinition struct {
 	Description string `form:"description" json:"description,omitempty" yaml:"description,omitempty" xml:"description,omitempty"`
 
 	// Requirements are optional to select sub-set of jobs this worker capable of taking
-	Requirements wyrd.LabelSelector `form:"requirements" json:"requirements,omitempty" yaml:"requirements,omitempty" xml:"requirements" gorm:"-"`
+	Requirements wyrd.LabelSelector `form:"requirements" json:"requirements,omitempty" yaml:"requirements,omitempty" xml:"requirements" gorm:"serializer:json"`
 
 	// IsActive is true if this worker is permitted to take on jobs
 	IsActive bool `form:"active" json:"active" yaml:"active" xml:"active"`
@@ -113,7 +110,7 @@ type RunnerRegistration struct {
 	// IsOnline is this runner is online and accepts jobs or is currently processing one
 	IsOnline bool `form:"online" json:"online" yaml:"online" xml:"online" binding:"required"`
 
-	InstanceLabels wyrd.Labels `form:"runner_labels,omitempty" json:"runner_labels,omitempty" yaml:"runner_labels,omitempty" xml:"runner_labels,omitempty" gorm:"-"`
+	InstanceLabels wyrd.Labels `form:"runner_labels,omitempty" json:"runner_labels,omitempty" yaml:"runner_labels,omitempty" xml:"runner_labels,omitempty" gorm:"serializer:json"`
 }
 
 type RunnerSpec struct {
@@ -150,7 +147,7 @@ type CreateScenario struct {
 	Description string `form:"description" json:"description,omitempty" yaml:"description,omitempty" xml:"description"`
 
 	// Requirements are optional to select sub-set of runners that are qualified to perform the script.
-	Requirements wyrd.LabelSelector `form:"requirements" json:"requirements,omitempty" yaml:"requirements,omitempty" xml:"requirements" gorm:"-"`
+	Requirements wyrd.LabelSelector `form:"requirements" json:"requirements,omitempty" yaml:"requirements,omitempty" xml:"requirements" gorm:"serializer:json"`
 
 	// A schedule to run the script
 	RunSchedule CronSchedule `form:"schedule" json:"schedule,omitempty" yaml:"schedule,omitempty" xml:"schedule"`

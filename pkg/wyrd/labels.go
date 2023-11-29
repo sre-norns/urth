@@ -29,16 +29,16 @@ func MergeLabels(labl ...Labels) Labels {
 }
 
 type Selector struct {
-	Key    string
-	Op     string
-	Values []string
+	Key    string   `json:"key,omitempty" yaml:"key,omitempty" `
+	Op     string   `json:"operator,omitempty" yaml:"operator,omitempty" `
+	Values []string `json:"values,omitempty" yaml:"values,omitempty" `
 }
 
 // LabelSelector is a part of model that holds label-based requirements for on other resources
 type LabelSelector struct {
 	MatchLabels Labels `json:"matchLabels,omitempty" yaml:"matchLabels,omitempty" `
 
-	MatchSelector []Selector `json:",omitempty" yaml:",omitempty" `
+	MatchSelector []Selector `json:"matchSelector,omitempty" yaml:"matchSelector,omitempty" `
 }
 
 // func (ls LabelSelector) Match(labels Labels) bool {

@@ -2,12 +2,10 @@ package urth
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
 
-	"github.com/sre-norns/urth/pkg/wyrd"
 	"gorm.io/gorm"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/selection"
@@ -143,34 +141,38 @@ func (s *DbStore) withSelector(tx *gorm.DB, selector labels.Selector) (*gorm.DB,
 			if !ok {
 				return nil, ErrNoRequirementsValueProvided
 			}
-			qs = append(qs, JSONQuery("attributes").Equals(value, req.Key()))
+			qs = append(qs, JSONQuery("labels").Equals(value, req.Key()))
 		case selection.NotEquals:
 			value, ok := req.Values().PopAny()
 			if !ok {
 				return nil, ErrNoRequirementsValueProvided
 			}
-			qs = append(qs, JSONQuery("attributes").NotEquals(value, req.Key()))
+			// not-equals means it exists but value not equal
+			qs = append(qs,
+				JSONQuery("labels").HasKey(req.Key()),
+				JSONQuery("labels").NotEquals(value, req.Key()),
+			)
 		case selection.GreaterThan:
 			value, ok := req.Values().PopAny()
 			if !ok {
 				return nil, ErrNoRequirementsValueProvided
 			}
-			qs = append(qs, JSONQuery("attributes").GreaterThan(value, req.Key()))
+			qs = append(qs, JSONQuery("labels").GreaterThan(value, req.Key()))
 		case selection.LessThan:
 			value, ok := req.Values().PopAny()
 			if !ok {
 				return nil, ErrNoRequirementsValueProvided
 			}
-			qs = append(qs, JSONQuery("attributes").LessThan(value, req.Key()))
+			qs = append(qs, JSONQuery("labels").LessThan(value, req.Key()))
 
 		case selection.In:
-			qs = append(qs, JSONQuery("attributes").KeyIn(req.Key(), req.Values().UnsortedList()...))
+			qs = append(qs, JSONQuery("labels").KeyIn(req.Key(), req.Values().UnsortedList()...))
 		case selection.NotIn:
-			qs = append(qs, JSONQuery("attributes").KeyNotIn(req.Key(), req.Values().UnsortedList()...))
+			qs = append(qs, JSONQuery("labels").KeyNotIn(req.Key(), req.Values().UnsortedList()...))
 		case selection.Exists:
-			qs = append(qs, JSONQuery("attributes").HasKey(req.Key()))
+			qs = append(qs, JSONQuery("labels").HasKey(req.Key()))
 		case selection.DoesNotExist:
-			qs = append(qs, JSONQuery("attributes").HasNoKey(req.Key()))
+			qs = append(qs, JSONQuery("labels").HasNoKey(req.Key()))
 		default:
 			return tx, fmt.Errorf("%w: `%v`", ErrUnexpectedSelectorOperator, req.Operator())
 		}
@@ -190,17 +192,17 @@ func (s *DbStore) withSelector(tx *gorm.DB, selector labels.Selector) (*gorm.DB,
 	return tx, nil
 }
 
-func (meta *ResourceMeta) AfterFind(tx *gorm.DB) (err error) {
-	if meta.Attributes == nil {
-		meta.Labels = wyrd.Labels{}
-		return nil
-	}
+// func (meta *ResourceMeta) AfterFind(tx *gorm.DB) (err error) {
+// 	if meta.Attributes == nil {
+// 		meta.Labels = wyrd.Labels{}
+// 		return nil
+// 	}
 
-	return json.Unmarshal(meta.Attributes, &meta.Labels)
-}
+// 	return json.Unmarshal(meta.Attributes, &meta.Labels)
+// }
 
 func (meta *ResourceMeta) BeforeSave(tx *gorm.DB) (err error) {
 	meta.Version += 1
-	meta.Attributes, err = json.Marshal(meta.Labels)
+	// meta.Attributes, err = json.Marshal(meta.Labels)
 	return
 }

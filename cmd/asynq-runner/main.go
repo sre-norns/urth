@@ -22,7 +22,6 @@ type WorkerConfig struct {
 	RedisAddress           string        `help:"Redis server address:port to connect to" default:"localhost:6379"`
 	ApiRegistrationTimeout time.Duration `help:"Maximum time alloted for this worker to register with API server" default:"1m"`
 
-	// isDone    bool
 	apiClient urth.Service
 
 	identity urth.Runner
@@ -102,8 +101,9 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 		artifact := a
 		wg.Go(func() error {
 			// TODO: Must include run Auth Token
-			_, err := artifactsApiClient.Create(ctx, urth.CreateArtifactRequest{
-				CreateResourceMeta: urth.CreateResourceMeta{
+			_, err := artifactsApiClient.Create(ctx, urth.ResourceManifest{
+				// TypeMeta: urth.TypeMeta{},
+				Metadata: urth.ObjectMeta{
 					Name: fmt.Sprintf("%v.%v", runID, artifact.Rel),
 					Labels: wyrd.MergeLabels(
 						w.LabelJob(w.identity.GetVersionedID(), job),
@@ -114,8 +114,7 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 						},
 					),
 				},
-				ScenarioRunResultsID: job.ScenarioID.ID,
-				ArtifactValue:        artifact,
+				Spec: artifact,
 			})
 
 			if err != nil {
@@ -188,7 +187,7 @@ func main() {
 		appCtx.FatalIfErrorf(err)
 		return
 	}
-	log.Print("Registered with API server as: ", defaultConfig.identity.Name, "Id:", defaultConfig.identity.GetVersionedID())
+	log.Print("Registered with API server as: ", defaultConfig.identity.Name, "Id: ", defaultConfig.identity.GetVersionedID())
 
 	// Create and configuring Redis connection.
 	redisConnection := asynq.RedisClientOpt{

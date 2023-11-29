@@ -54,8 +54,14 @@ curl -X POST 'http://localhost:8080/api/v1/runners'  \
 
 
 
-## Using `urhctl` (WIP)
+## Using `urhctl`
+
+Create a scenario using manifest file:
 ```bash
-go run ./cmd/urthctl apply ./examples/scenario.yml
+go run ./cmd/urthctl create ./examples/scenario.yml
+```
+Create a worker using manifest file:
+```bash
+go run ./cmd/urthctl create ./examples/worker.yml
 ```
 
