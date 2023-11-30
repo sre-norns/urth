@@ -33,7 +33,18 @@ test:
 api-server:
 	go build ./cmd/api-server
 
+asynq-runner:
+	go build ./cmd/asynq-runner
+
+urthctl:
+	go build ./cmd/urthctl
+
 $(website-dist):
 	cd website && npm run build
 
-build: api-server $(website-dist)
+build: api-server $(website-dist) asynq-runner
+
+.PHONY: clean
+clean:
+	rm ./api-server ./asynq-runner ./urthctl
+	rm -rd $(website-dist)
