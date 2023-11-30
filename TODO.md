@@ -64,7 +64,7 @@
 [] New prober: Fuzzer to guess HTTP urls or understands swagger?
 [] New prober: Dataset checker!
 [X] New runner: HAR executor - replay HAR files using WEB Request runner
-[] When worked reports Node version, parse version string to `node.major` and `node.minor` to enable `<>` comparison using label selectors
+[X] When worked reports Node version, parse version string to `node.major` and `node.minor` to enable `<>` comparison using label selectors
 [] Script should be typed by `kind`: TCP, DNS and similar infra probers have well defined fields. 
 
 

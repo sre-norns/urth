@@ -1,5 +1,7 @@
 # Makefile is handcrafted to automate repetitive tasks
 
+website-dist = website/dist
+
 .PHONY: run-api-server
 run-api-server: # Start API server
 	@go run ./cmd/api-server
@@ -26,3 +28,12 @@ run-redis-podman: # Start redis using podman container
 .PHONY: test
 test:
 	@go test ./...
+
+
+api-server:
+	go build ./cmd/api-server
+
+$(website-dist):
+	cd website && npm run build
+
+build: api-server $(website-dist)

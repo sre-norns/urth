@@ -22,3 +22,5 @@ go.work
 
 test.db
 .DS_Store
+
+website/dist
