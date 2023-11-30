@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptrace"
 	"net/textproto"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -21,13 +22,23 @@ import (
 )
 
 const (
-	Kind           urth.ScenarioKind = "http"
-	ScriptMimeType                   = "application/http"
+	Kind           = urth.ScenarioKind("http")
+	ScriptMimeType = "application/http"
 )
 
 func init() {
+	moduleVersion := "(unknown)"
+	bi, ok := debug.ReadBuildInfo()
+	if ok {
+		moduleVersion = bi.Main.Version
+	}
+
 	// Ignore double registration error
-	_ = runner.RegisterRunnerKind(Kind, RunScript)
+	_ = runner.RegisterProbKind(Kind, runner.ProbRegistration{
+		RunFunc:     RunScript,
+		ContentType: ScriptMimeType,
+		Version:     moduleVersion,
+	})
 }
 
 type httpRequestTracer struct {

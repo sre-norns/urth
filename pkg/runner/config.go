@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"fmt"
 	"log"
 	"os/exec"
 	"runtime"
@@ -100,11 +101,28 @@ func NewDefaultConfig() RunnerConfig {
 			GetRuntimeLabels(),
 			GetNodeRuntimeLabels(),
 			GetPythonRuntimeLabels(),
+			ProberAsLabels(),
 		),
 	}
 }
 
+func kindAsLabel(kind urth.ScenarioKind) string {
+	return fmt.Sprintf("runner.prob.%v", kind)
+}
+
+// Expose loaded probers as Labels
+func ProberAsLabels() wyrd.Labels {
+	probs := ListProbs()
+	result := make(wyrd.Labels, len(probs))
+	for kind, prob := range probs {
+		result[kindAsLabel(kind)] = prob.Version
+	}
+
+	return result
+}
+
 func (c *RunnerConfig) LabelJob(runnerId urth.VersionedResourceId, job urth.RunScenarioJob) wyrd.Labels {
+
 	return wyrd.MergeLabels(
 		job.Labels,
 		c.GetEffectiveLabels(),

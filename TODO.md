@@ -65,7 +65,7 @@
 [] New prober: Dataset checker!
 [X] New runner: HAR executor - replay HAR files using WEB Request runner
 [X] When worked reports Node version, parse version string to `node.major` and `node.minor` to enable `<>` comparison using label selectors
-[] Script should be typed by `kind`: TCP, DNS and similar infra probers have well defined fields. 
+[] Script should be typed by `kind`: TCP, DNS and similar **infra** probers have well defined fields. 
 
 
 [] Allow for script config / encrypted variables. Consider gocloud: secrets API
@@ -86,4 +86,5 @@
 [] Remove MIME guessing code out of `pkg/urth`
 [] Move `script` out of `CreateScenario` => `Scenario`
 [] Use proper types for Script marshaling
+[] runner/log.go must implement `go/logger` interface!
 [] Serialize job into msgpack!

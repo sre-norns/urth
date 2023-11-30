@@ -3,6 +3,7 @@ package har_prob
 import (
 	"bytes"
 	"context"
+	"runtime/debug"
 
 	"github.com/sre-norns/urth/pkg/probers/http_prob"
 	"github.com/sre-norns/urth/pkg/runner"
@@ -10,13 +11,23 @@ import (
 )
 
 const (
-	Kind           urth.ScenarioKind = "har"
-	ScriptMimeType                   = "application/json"
+	Kind           = urth.ScenarioKind("har")
+	ScriptMimeType = "application/json"
 )
 
 func init() {
+	moduleVersion := "(unknown)"
+	bi, ok := debug.ReadBuildInfo()
+	if ok {
+		moduleVersion = bi.Main.Version
+	}
+
 	// Ignore double registration error
-	_ = runner.RegisterRunnerKind(Kind, RunScript)
+	_ = runner.RegisterProbKind(Kind, runner.ProbRegistration{
+		RunFunc:     RunScript,
+		ContentType: ScriptMimeType,
+		Version:     moduleVersion,
+	})
 }
 
 func RunScript(ctx context.Context, scriptContent []byte, options runner.RunOptions) (urth.FinalRunResults, []urth.ArtifactValue, error) {

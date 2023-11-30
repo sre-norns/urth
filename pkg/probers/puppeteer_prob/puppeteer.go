@@ -6,19 +6,30 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"runtime/debug"
 
 	"github.com/sre-norns/urth/pkg/runner"
 	"github.com/sre-norns/urth/pkg/urth"
 )
 
 const (
-	Kind           urth.ScenarioKind = "puppeteer"
-	ScriptMimeType                   = "text/javascript"
+	Kind           = urth.ScenarioKind("puppeteer")
+	ScriptMimeType = "text/javascript"
 )
 
 func init() {
+	moduleVersion := "(unknown)"
+	bi, ok := debug.ReadBuildInfo()
+	if ok {
+		moduleVersion = bi.Main.Version
+	}
+
 	// Ignore double registration error
-	_ = runner.RegisterRunnerKind(Kind, RunScript)
+	_ = runner.RegisterProbKind(Kind, runner.ProbRegistration{
+		RunFunc:     RunScript,
+		ContentType: ScriptMimeType,
+		Version:     moduleVersion,
+	})
 }
 
 func setupNodeDir(dir string) error {
