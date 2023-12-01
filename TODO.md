@@ -29,7 +29,7 @@
 [] Restore labels API: Extract labels from JSON field
 [] Create API must return metadata for a newly created object as `names` may be generated.
 [X] For `Create` API set `Location` header to point to a newly created resource as per rest best practice
-[] All non-GET request must require authentication!
+[] All non-GET request should require authentication!
 [] API to create artifacts must only accept valid auth-tokens from workers that authorized to run a scenario
 [] Artifacts should expire and be removed in accordance with retention policy, unless `pinned`
 
@@ -88,3 +88,8 @@
 [] Use proper types for Script marshaling
 [] runner/log.go must implement `go/logger` interface!
 [] Serialize job into msgpack!
+[] Ensure DB constraints: Each Scenario ->* Result -> * Artifacts
+[] Use staw / S3 for artifacts storage!
+[] Separate `Runner` -> `Worker (Slot)` + `Worker Instance` object
+[] Ensure that `Worker Instance` login session expires.
+[] All tokens must be treated as passwords: stored securely salted and hashed

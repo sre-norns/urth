@@ -40,10 +40,10 @@ func fetchScenario(ctx context.Context, id urth.ResourceID, apiServerAddress str
 	return resource, err
 }
 
-func fetchResults(ctx context.Context, scenarioId, id urth.ResourceID, apiServerAddress string) (urth.ScenarioRunResults, error) {
+func fetchResults(ctx context.Context, scenarioId, id urth.ResourceID, apiServerAddress string) (urth.Result, error) {
 	apiClient, err := urth.NewRestApiClient(apiServerAddress)
 	if err != nil {
-		return urth.ScenarioRunResults{}, fmt.Errorf("failed to initialize API Client: %w", err)
+		return urth.Result{}, fmt.Errorf("failed to initialize API Client: %w", err)
 	}
 
 	resource, ok, err := apiClient.GetResultsAPI(scenarioId).Get(ctx, id)

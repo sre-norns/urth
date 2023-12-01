@@ -144,7 +144,7 @@ func formatResponse(resp *http.Response) string {
 	return result.String()
 }
 
-func RunHttpRequests(ctx context.Context, texLogger *runner.RunLog, requests []httpparser.TestRequest, options runner.RunOptions) (urth.FinalRunResults, []urth.ArtifactValue, error) {
+func RunHttpRequests(ctx context.Context, texLogger *runner.RunLog, requests []httpparser.TestRequest, options runner.RunOptions) (urth.FinalRunResults, []urth.ArtifactSpec, error) {
 	harLogger := har.NewLogger()
 	harLogger.SetOption(har.BodyLogging(options.Http.CaptureResponseBody))
 	harLogger.SetOption(har.PostDataLogging(options.Http.CaptureRequestBody))
@@ -197,7 +197,7 @@ func RunHttpRequests(ctx context.Context, texLogger *runner.RunLog, requests []h
 	}
 
 	return urth.NewRunResults(outcome),
-		[]urth.ArtifactValue{
+		[]urth.ArtifactSpec{
 			texLogger.ToArtifact(),
 			{
 				Rel:      "har",
@@ -207,7 +207,7 @@ func RunHttpRequests(ctx context.Context, texLogger *runner.RunLog, requests []h
 		}, nil
 }
 
-func RunScript(ctx context.Context, scriptContent []byte, options runner.RunOptions) (urth.FinalRunResults, []urth.ArtifactValue, error) {
+func RunScript(ctx context.Context, scriptContent []byte, options runner.RunOptions) (urth.FinalRunResults, []urth.ArtifactSpec, error) {
 	texLogger := runner.RunLog{}
 
 	texLogger.Log("fondling HTTP")

@@ -30,7 +30,7 @@ func init() {
 	})
 }
 
-func RunScript(ctx context.Context, scriptContent []byte, options runner.RunOptions) (urth.FinalRunResults, []urth.ArtifactValue, error) {
+func RunScript(ctx context.Context, scriptContent []byte, options runner.RunOptions) (urth.FinalRunResults, []urth.ArtifactSpec, error) {
 	texLogger := runner.RunLog{}
 	texLogger.Log("replaying HAR file")
 

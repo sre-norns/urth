@@ -416,8 +416,8 @@ func (c *RunResultApiRestClient) List(ctx context.Context, searchQuery SearchQue
 // Get a single resource given its unique ID,
 // Returns a resource if it exists, false, if resource doesn't exists
 // error if there was communication error with the storage
-func (c *RunResultApiRestClient) Get(ctx context.Context, id ResourceID) (ScenarioRunResults, bool, error) {
-	var result ScenarioRunResults
+func (c *RunResultApiRestClient) Get(ctx context.Context, id ResourceID) (Result, bool, error) {
+	var result Result
 	exists, err := c.getResource(fmt.Sprintf("v1/scenarios/%v/results/%v", c.ScenarioId, id), &result)
 	return result, exists, err
 }
@@ -510,7 +510,7 @@ func (c *artifactApiClient) Get(ctx context.Context, id ResourceID) (Artifact, b
 	return result, exists, err
 }
 
-func (c *artifactApiClient) GetContent(ctx context.Context, id ResourceID) (resource ArtifactValue, exists bool, err error) {
+func (c *artifactApiClient) GetContent(ctx context.Context, id ResourceID) (resource ArtifactSpec, exists bool, err error) {
 	body, exists, err := c.getRawResource(fmt.Sprintf("v1/artifacts/%v/content", id))
 	if !exists || err != nil {
 		return

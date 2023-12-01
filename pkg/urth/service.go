@@ -54,11 +54,11 @@ type ArtifactApi interface {
 	// Delete a single resource identified by a unique ID
 	Delete(ctx context.Context, id VersionedResourceId) (bool, error)
 
-	GetContent(ctx context.Context, id ResourceID) (resource ArtifactValue, exists bool, commError error)
+	GetContent(ctx context.Context, id ResourceID) (resource ArtifactSpec, exists bool, commError error)
 }
 
 type RunResultApi interface {
-	ReadableResourceApi[ScenarioRunResults]
+	ReadableResourceApi[Result]
 
 	Create(ctx context.Context, entry ResourceManifest) (CreatedResponse, error)
 
@@ -198,7 +198,7 @@ func (m *scenarioApiImpl) List(ctx context.Context, query SearchQuery) ([]Partia
 		results = append(results, PartialObjectMetadata{
 			TypeMeta:     kind,
 			ResourceMeta: sc.ResourceMeta,
-			Spec:         sc.CreateScenario,
+			Spec:         sc.ScenarioSpec,
 		})
 	}
 
@@ -207,8 +207,8 @@ func (m *scenarioApiImpl) List(ctx context.Context, query SearchQuery) ([]Partia
 
 func (m *scenarioApiImpl) Create(ctx context.Context, newEntry ResourceManifest) (CreatedResponse, error) {
 	entry := Scenario{
-		ResourceMeta:   newEntry.GetMetadata(),
-		CreateScenario: *newEntry.Spec.(*CreateScenario),
+		ResourceMeta: newEntry.GetMetadata(),
+		ScenarioSpec: *newEntry.Spec.(*ScenarioSpec),
 	}
 
 	kind, err := m.store.Create(ctx, &entry)
@@ -264,14 +264,14 @@ func (m *scenarioApiImpl) Update(ctx context.Context, id VersionedResourceId, en
 
 	result.Labels = entry.Metadata.Labels
 	currentScript := result.Script
-	newScenario := *entry.Spec.(*CreateScenario)
+	newScenario := *entry.Spec.(*ScenarioSpec)
 
 	// Ensure that manifest without a script section does not accidentally deletes a script
 	// TODO: A better way to move .script out of `CreateScenario` and into `Scenario` directly
 	if newScenario.Script == nil && currentScript != nil {
 		newScenario.Script = currentScript
 	}
-	result.CreateScenario = newScenario
+	result.ScenarioSpec = newScenario
 
 	ok, err = m.store.Update(ctx, &result, result.GetVersionedID())
 	if !ok {
@@ -288,7 +288,7 @@ func (m *scenarioApiImpl) Update(ctx context.Context, id VersionedResourceId, en
 /// Scenarios run results
 //------------------------------
 
-func (s *resultsApiImpl) scheduleRun(ctx context.Context, run ScenarioRunResults, scenario Scenario) (RunId, error) {
+func (s *resultsApiImpl) scheduleRun(ctx context.Context, runResult Result, scenario Scenario) (RunId, error) {
 	if s.scheduler == nil {
 		return InvalidRunId, nil
 	}
@@ -299,11 +299,11 @@ func (s *resultsApiImpl) scheduleRun(ctx context.Context, run ScenarioRunResults
 	// }
 
 	log.Printf("Scheduling scenario: %v (active=%t)", scenario.GetVersionedID(), scenario.IsActive)
-	return s.scheduler.Schedule(ctx, scenarioToRunnable(run, scenario))
+	return s.scheduler.Schedule(ctx, scenarioToRunnable(runResult, scenario))
 }
 
 func (m *resultsApiImpl) List(ctx context.Context, searchQuery SearchQuery) ([]PartialObjectMetadata, error) {
-	var resources []ScenarioRunResults
+	var resources []Result
 
 	if searchQuery.Labels == "" {
 		searchQuery.Labels = fmt.Sprintf("%v=%v", LabelScenarioId, m.scenarioId)
@@ -321,7 +321,7 @@ func (m *resultsApiImpl) List(ctx context.Context, searchQuery SearchQuery) ([]P
 		results = append(results, PartialObjectMetadata{
 			TypeMeta:     kind,
 			ResourceMeta: sc.ResourceMeta,
-			Spec:         sc.ScenarioRunResultSpec,
+			Spec:         sc.ResultSpec,
 		})
 	}
 
@@ -361,7 +361,7 @@ func (m *resultsApiImpl) Create(ctx context.Context, newEntry ResourceManifest) 
 		},
 	)
 
-	spec := newEntry.Spec.(*InitialScenarioRunResults)
+	spec := newEntry.Spec.(*InitialRunResults)
 	// Ensure timestamp is set:
 	if spec.TimeStarted == nil {
 		now := time.Now()
@@ -370,11 +370,11 @@ func (m *resultsApiImpl) Create(ctx context.Context, newEntry ResourceManifest) 
 
 	// TODO: Validate that request is from an authentic worker that is allowed to take jobs!
 
-	entry := ScenarioRunResults{
+	entry := Result{
 		ResourceMeta: newEntry.GetMetadata(),
-		ScenarioRunResultSpec: ScenarioRunResultSpec{
-			Status:                    JobPending, // Ensure initial status is set
-			InitialScenarioRunResults: *spec,
+		ResultSpec: ResultSpec{
+			Status:            JobPending, // Ensure initial status is set
+			InitialRunResults: *spec,
 		},
 	}
 
@@ -404,7 +404,7 @@ func (m *resultsApiImpl) Create(ctx context.Context, newEntry ResourceManifest) 
 }
 
 func (m *resultsApiImpl) Auth(ctx context.Context, id VersionedResourceId, authRequest AuthRunRequest) (CreatedRunResponse, error) {
-	var entry ScenarioRunResults
+	var entry Result
 	ok, err := m.store.GetWithVersion(ctx, &entry, id)
 	if err != nil {
 		return CreatedRunResponse{}, ErrResourceNotFound
@@ -449,7 +449,7 @@ func (m *resultsApiImpl) Auth(ctx context.Context, id VersionedResourceId, authR
 }
 
 func (m *resultsApiImpl) Update(ctx context.Context, id VersionedResourceId, token ApiToken, runResults FinalRunResults) (CreatedResponse, error) {
-	var entry ScenarioRunResults
+	var entry Result
 
 	if runResults.TimeEnded == nil {
 		now := time.Now()
@@ -491,8 +491,8 @@ func (m *resultsApiImpl) Update(ctx context.Context, id VersionedResourceId, tok
 	}, err
 }
 
-func (m *resultsApiImpl) Get(ctx context.Context, id ResourceID) (ScenarioRunResults, bool, error) {
-	var result ScenarioRunResults
+func (m *resultsApiImpl) Get(ctx context.Context, id ResourceID) (Result, bool, error) {
+	var result Result
 	ok, err := m.store.Get(ctx, &result, id)
 	return result, ok && result.GetID() == id && !result.IsDeleted(), err
 }
@@ -627,11 +627,11 @@ func (m *artifactApiImp) List(ctx context.Context, query SearchQuery) ([]Partial
 	results := make([]PartialObjectMetadata, 0, len(resources))
 	for _, sc := range resources {
 		// Note: Do not return artifact value when listing
-		sc.ArtifactValue.Content = nil
+		sc.ArtifactSpec.Content = nil
 		results = append(results, PartialObjectMetadata{
 			TypeMeta:     kind,
 			ResourceMeta: sc.ResourceMeta,
-			Spec:         sc.ArtifactValue,
+			Spec:         sc.ArtifactSpec,
 		})
 	}
 
@@ -644,16 +644,16 @@ func (m *artifactApiImp) Get(ctx context.Context, id ResourceID) (Artifact, bool
 	return result, ok && result.GetID() == id && !result.IsDeleted(), err
 }
 
-func (m *artifactApiImp) GetContent(ctx context.Context, id ResourceID) (resource ArtifactValue, exists bool, commError error) {
+func (m *artifactApiImp) GetContent(ctx context.Context, id ResourceID) (resource ArtifactSpec, exists bool, commError error) {
 	var result Artifact
 	ok, err := m.store.Get(ctx, &result, id)
-	return result.ArtifactValue, ok && result.GetID() == id && !result.IsDeleted(), err
+	return result.ArtifactSpec, ok && result.GetID() == id && !result.IsDeleted(), err
 }
 
 func (m *artifactApiImp) Create(ctx context.Context, newEntry ResourceManifest) (CreatedResponse, error) {
 	entry := Artifact{
-		ResourceMeta:  newEntry.GetMetadata(),
-		ArtifactValue: *newEntry.Spec.(*ArtifactValue),
+		ResourceMeta: newEntry.GetMetadata(),
+		ArtifactSpec: *newEntry.Spec.(*ArtifactSpec),
 	}
 
 	kind, err := m.store.Create(ctx, &entry)

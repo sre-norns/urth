@@ -456,7 +456,7 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 			}
 
 			marshalResponse(ctx, http.StatusCreated, urth.CreatedResponse{
-				TypeMeta:            urth.TypeMeta{Kind: "scenarios"}, // FIXME: Kind is incorrect, but our client doesn't cares
+				TypeMeta:            urth.TypeMeta{Kind: "scenarios"},
 				VersionedResourceId: id,
 			})
 		})
@@ -478,7 +478,7 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 
 			marshalResponse(ctx, http.StatusOK, urth.NewPaginatedResponse(results, searchQuery.Pagination))
 		})
-		v1.POST("/scenarios/:id/results", contentTypeApi(), resourceIdApi(), manifestApi("scenario_run_results"), func(ctx *gin.Context) {
+		v1.POST("/scenarios/:id/results", contentTypeApi(), resourceIdApi(), manifestApi("results"), func(ctx *gin.Context) {
 			resourceId := ctx.MustGet(resourceIdKey).(urth.ResourceRequest)
 			newEntry := ctx.MustGet(resourceManifestKey).(urth.ResourceManifest)
 
@@ -663,7 +663,7 @@ func main() {
 	if err = db.AutoMigrate(
 		&urth.Scenario{},
 		&urth.Runner{},
-		&urth.ScenarioRunResults{},
+		&urth.Result{},
 		&urth.Artifact{},
 	); err != nil {
 		panic(fmt.Sprintf("DB migration failed: %v", err))

@@ -26,14 +26,14 @@ func (l *RunLog) Logf(format string, v ...any) {
 	l.Log(fmt.Sprintf(format, v...))
 }
 
-func (l *RunLog) ToArtifact() urth.ArtifactValue {
-	return urth.ArtifactValue{
+func (l *RunLog) ToArtifact() urth.ArtifactSpec {
+	return urth.ArtifactSpec{
 		Rel:      "log",
 		MimeType: "text/plain",
 		Content:  []byte(l.content.String()),
 	}
 }
 
-func (l *RunLog) Package() []urth.ArtifactValue {
-	return []urth.ArtifactValue{l.ToArtifact()}
+func (l *RunLog) Package() []urth.ArtifactSpec {
+	return []urth.ArtifactSpec{l.ToArtifact()}
 }

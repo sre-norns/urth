@@ -104,7 +104,7 @@ spec:
 						"function": "front-end",
 					},
 				},
-				Spec: &CreateScenario{
+				Spec: &ScenarioSpec{
 					IsActive:    true,
 					RunSchedule: "* * * * *",
 					Description: "Awesome",
@@ -149,7 +149,7 @@ spec:
 						"function": "front-end",
 					},
 				},
-				Spec: &ArtifactValue{
+				Spec: &ArtifactSpec{
 					Rel:      "har",
 					MimeType: "data",
 					Content:  nil,

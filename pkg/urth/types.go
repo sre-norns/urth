@@ -142,7 +142,7 @@ type ScenarioScript struct {
 	Content []byte `form:"content" json:"content,omitempty" yaml:"content,omitempty" xml:"content"`
 }
 
-type CreateScenario struct {
+type ScenarioSpec struct {
 	// Description is a human readable text to describe the scenario
 	Description string `form:"description" json:"description,omitempty" yaml:"description,omitempty" xml:"description"`
 
@@ -161,8 +161,7 @@ type CreateScenario struct {
 
 type Scenario struct {
 	ResourceMeta `json:",inline" yaml:",inline"`
-
-	CreateScenario `json:",inline" yaml:",inline"`
+	ScenarioSpec `json:",inline" yaml:",inline"`
 }
 
 type JobStatus string
@@ -188,8 +187,8 @@ const (
 	RunFinishedTimeout  RunStatus = "timeout"
 )
 
-type ArtifactValue struct {
-	// If set, point in time when artifact will expire
+type ArtifactSpec struct {
+	// ExpireTime is a point in time after which the artifact can be removed by the system. If nil - artifact is 'pinned' and will not be purged, unless manually deleted.
 	ExpireTime *time.Time `form:"expire_time,omitempty" json:"expire_time,omitempty" yaml:"expire_time,omitempty" xml:"expire_time,omitempty" time_format:"unix" gorm:"type:TIMESTAMP NULL"`
 
 	// Relation type: log / HAR / etc? Determines how content is consumed by clients
@@ -207,7 +206,7 @@ type ArtifactValue struct {
 type Artifact struct {
 	ResourceMeta `json:",inline" yaml:",inline"`
 
-	ArtifactValue `json:",inline" yaml:",inline"`
+	ArtifactSpec `json:",inline" yaml:",inline"`
 }
 
 // Final results of the script run
@@ -242,23 +241,24 @@ func NewRunResults(runResult RunStatus, options ...RunResultOption) FinalRunResu
 }
 
 // CreateScenarioRunResults is info that runner reports about a running job
-type InitialScenarioRunResults struct {
+type InitialRunResults struct {
 	// Timestamp when a job has been picked-up by a worked
 	TimeStarted *time.Time `form:"start_time" json:"start_time" yaml:"start_time" xml:"start_time" gorm:"type:TIMESTAMP NULL"`
 }
 
-type ScenarioRunResultSpec struct {
-	InitialScenarioRunResults `json:",inline" yaml:",inline"`
-	FinalRunResults           `json:",inline" yaml:",inline"`
+type ResultSpec struct {
+	InitialRunResults `json:",inline" yaml:",inline"`
+
+	FinalRunResults `json:",inline" yaml:",inline"`
 
 	Status JobStatus `form:"status" json:"status" yaml:"status" xml:"status"  binding:"required"`
 }
 
-// ScenarioRunResults results of a single execution of a given scenario
-type ScenarioRunResults struct {
+// Results results of a single execution of a given scenario
+type Result struct {
 	ResourceMeta `json:",inline" yaml:",inline"`
 
-	ScenarioRunResultSpec `json:",inline" yaml:",inline"`
+	ResultSpec `json:",inline" yaml:",inline"`
 
 	UpdateToken ApiToken `uri:"-" form:"-" json:"-" yaml:"-" xml:"-"`
 }
@@ -267,4 +267,19 @@ type ScenarioRunResults struct {
 func (meta *ResourceMeta) BeforeSave(tx *gorm.DB) (err error) {
 	meta.Version += 1
 	return
+}
+
+func init() {
+	if err := RegisterKind("scenarios", &ScenarioSpec{}); err != nil {
+		panic(err)
+	}
+	if err := RegisterKind("runners", &RunnerDefinition{}); err != nil {
+		panic(err)
+	}
+	if err := RegisterKind("results", &InitialRunResults{}); err != nil {
+		panic(err)
+	}
+	if err := RegisterKind("artifacts", &ArtifactSpec{}); err != nil {
+		panic(err)
+	}
 }

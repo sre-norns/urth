@@ -30,7 +30,7 @@ func init() {
 	})
 }
 
-func RunScript(ctx context.Context, scriptContent []byte, options runner.RunOptions) (urth.FinalRunResults, []urth.ArtifactValue, error) {
+func RunScript(ctx context.Context, scriptContent []byte, options runner.RunOptions) (urth.FinalRunResults, []urth.ArtifactSpec, error) {
 	log.Print("FIXME: PyPuppeteer scenarios are not implemented....yet")
 
 	return urth.NewRunResults(urth.RunFinishedError), nil, fmt.Errorf("not implemented yet")

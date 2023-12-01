@@ -62,7 +62,7 @@ func SetupRunEnv(workDir string) error {
 	return nil
 }
 
-func RunScript(ctx context.Context, scriptContent []byte, options runner.RunOptions) (urth.FinalRunResults, []urth.ArtifactValue, error) {
+func RunScript(ctx context.Context, scriptContent []byte, options runner.RunOptions) (urth.FinalRunResults, []urth.ArtifactSpec, error) {
 	texLogger := runner.RunLog{}
 	texLogger.Log("Running puppeteer script")
 
@@ -126,5 +126,5 @@ func RunScript(ctx context.Context, scriptContent []byte, options runner.RunOpti
 		runResult = urth.RunFinishedError
 	}
 
-	return urth.NewRunResults(runResult), []urth.ArtifactValue{texLogger.ToArtifact()}, nil
+	return urth.NewRunResults(runResult), []urth.ArtifactSpec{texLogger.ToArtifact()}, nil
 }

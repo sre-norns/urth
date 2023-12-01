@@ -5,7 +5,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// RunScenarioJob represents a job enqueued for to be picked by a qualified worker
+// RunScenarioJob represents a to be picked by a qualified worker
 type RunScenarioJob struct {
 	// Name of the scenario that produced this job
 	Name string `form:"name,omitempty" json:"name,omitempty" yaml:"name,omitempty" xml:"name,omitempty" `
@@ -29,11 +29,11 @@ type RunScenarioJob struct {
 	IsKeepDirectory bool `form:"keepDir" json:"keepDir" yaml:"keepDir" xml:"keepDir" `
 
 	// Version and ID of the run to update results to
-	RunID   VersionedResourceId
-	RunName string
+	RunID   VersionedResourceId `json:"runId" yaml:"runId"`
+	RunName string              `json:"runName" yaml:"runName"`
 }
 
-func scenarioToRunnable(run ScenarioRunResults, scenario Scenario) RunScenarioJob {
+func scenarioToRunnable(run Result, scenario Scenario) RunScenarioJob {
 	return RunScenarioJob{
 		Name: scenario.Name,
 

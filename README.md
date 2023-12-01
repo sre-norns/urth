@@ -1,6 +1,9 @@
 # Urth
 Probing as a Service
 
+---
+![Build status](https://github.com/sre-norns/urth/actions/workflows/go.yml/badge.svg)
+
 # What?
 This project provides a platform to run scripts that monitor infrastructure, devices, and services.
 
@@ -26,6 +29,13 @@ Third party components required to run the service:
 > podman run -p 6379:6379 redis
 ```
 
+## (Dev) using `Procfile`
+You can use tools like [foreman](https://github.com/ddollar/foreman) or its clones ([goreman](https://github.com/mattn/goreman), [honcho](https://github.com/nickstenning/honcho), [etc](https://github.com/ddollar/foreman#ports)) to run all application component in one go:
+```bash
+> goreman -b 8080 start 
+```
+
+## Running individual components
 ### Running API server locally
 This is a Go-lang project and as such can be run directly using GO
 ```bash
@@ -67,11 +77,26 @@ Most repeatable operations to run local deployment are automated using simple [M
 ```
 
 
-# Runner
-Runners responsibility is to wait for a task to execute a test. Details of the test depend on the job that were picked.
-Not all tasks can be picked up by any runner. Runner have _capabilities_ expressed as `labels`. Each job has requirements.
-When requirements match runner's _capabilities_ than it can take a job.
+# Architecture (How is supposed to work)
+Entire system consist of the following main components:
+* API server - responsible for management of all resources and giving jobs to workers. Production deployment is expected to run multiple replicas for reliability.
+* Worker - a process located at a vantage point, from which a test should be performed. 
+* Job queue - a mechanism for API server to post jobs for workers.
+* Web UI - React web application to interact with the system: see existing resources and create new ones.
 
-## Lifecycle
-A new runner must be registered with `API server` first to create a `slot`. This includes generation of an API token that can be used by a `runner` to 
-identify itself and talk to the `API server`.
+## API Server
+API server manges all entities modeled by the system:
+ * scenarios - object that users create and schedule to run
+ * Workers - registration details and permissions to perform jobs.
+ * Results - a record of jobs performed.
+ * Artifacts - data produced by a worked in the course of performing a job.
+
+## Worker
+Worker's responsibility is to perform a job assigned by the API server. It waits for a job in the job queue and when one becomes available it picks it up at attempts to perform it. Details of the job depend on the job that were picked.
+Not all tasks can be picked up by any runner. Runner have _capabilities_ expressed as `labels` and each job has a  set of requirements that a worker must satisfy in order to perform it.
+When requirements match workers's _capabilities_ than it can take and perform a job.
+
+### Lifecycle
+A new worker must first be registered with the `API server` by creating a _slot_. Creation of such _slot_ generates token that a `worker` instance must present to the `API server` issuer as part of initial configuration process. Presentation of a valid token notifies `API server` that a worker is ready to pick up jobs. After successful authorization, a worker joins a job queue and awaits.
+When a job is available, worker picks it up notifies `API server` that it picked the job. This constitutes authorization of a particular instance of a worker to the API server for a specific job. At this point (WIP) API server will check that worker is indeed authorized to perform the job in question and if successful will issue a short-living token that must be used by the worker to post results back to the API server. Token life-time is chosen by the server to be approximately the maximum allowed run-duration of the task + some buffer time to account communication delays. This mechanism is designed to prevent workers from replaying jobs or posting already existing job results after restart and restore. 
+

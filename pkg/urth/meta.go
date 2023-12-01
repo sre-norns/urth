@@ -3,10 +3,33 @@ package urth
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 
 	"github.com/sre-norns/urth/pkg/wyrd"
 	"gopkg.in/yaml.v3"
 )
+
+var metaRegistry = map[string]reflect.Type{}
+
+func RegisterKind(kind string, proto any) error {
+	// FIXME: Ensure that t - is a pointer to a type!
+	t := reflect.ValueOf(proto)
+	if t.Kind() != reflect.Pointer || !t.CanInterface() {
+		return fmt.Errorf("pointer expected")
+	}
+
+	metaRegistry[kind] = t.Elem().Type()
+	return nil
+}
+
+func InstanceOf(kind string) (any, error) {
+	t, known := metaRegistry[kind]
+	if !known {
+		return nil, fmt.Errorf("unknown kind %q", kind)
+	}
+
+	return reflect.New(t).Interface(), nil
+}
 
 // TypeMeta describe individual objects returned by API
 type TypeMeta struct {
@@ -70,17 +93,9 @@ func (s *ResourceManifest) UnmarshalJSON(data []byte) error {
 	s.TypeMeta = aux.TypeMeta
 	s.Metadata = aux.Metadata
 
-	switch s.Kind {
-	case "scenarios":
-		s.Spec = &CreateScenario{}
-	case "runners":
-		s.Spec = &RunnerDefinition{}
-	case "scenario_run_results":
-		s.Spec = &InitialScenarioRunResults{}
-	case "artifacts":
-		s.Spec = &ArtifactValue{}
-	default:
-		return fmt.Errorf("unknown kind %q", s.Kind)
+	s.Spec, err = InstanceOf(s.Kind)
+	if err != nil {
+		return err
 	}
 
 	if len(aux.Spec) == 0 { // No spec to parse
@@ -102,7 +117,7 @@ func (u *ResourceManifest) MarshalYAML() (interface{}, error) {
 	}, nil
 }
 
-func (s *ResourceManifest) UnmarshalYAML(n *yaml.Node) error {
+func (s *ResourceManifest) UnmarshalYAML(n *yaml.Node) (err error) {
 	type S ResourceManifest
 	type T struct {
 		*S   `yaml:",inline"`
@@ -114,18 +129,9 @@ func (s *ResourceManifest) UnmarshalYAML(n *yaml.Node) error {
 		return err
 	}
 
-	// FIXME: Should be a map with registered Kinds
-	switch s.Kind {
-	case "scenarios":
-		s.Spec = &CreateScenario{}
-	case "runners":
-		s.Spec = &RunnerDefinition{}
-	case "scenario_run_results":
-		s.Spec = &InitialScenarioRunResults{}
-	case "artifacts":
-		s.Spec = &ArtifactValue{}
-	default:
-		return fmt.Errorf("unknown kind %q", s.Kind)
+	s.Spec, err = InstanceOf(s.Kind)
+	if err != nil {
+		return
 	}
 
 	return obj.Spec.Decode(s.Spec)

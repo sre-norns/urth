@@ -36,7 +36,7 @@ type RunOptions struct {
 	Har       HarOptions
 }
 
-type ScriptRunner func(context.Context, []byte, RunOptions) (urth.FinalRunResults, []urth.ArtifactValue, error)
+type ScriptRunner func(context.Context, []byte, RunOptions) (urth.FinalRunResults, []urth.ArtifactSpec, error)
 
 type ProbRegistration struct {
 	// Sem-version of the prober module loaded
@@ -81,7 +81,7 @@ func ListProbs() map[urth.ScenarioKind]ProbRegistration {
 }
 
 // Execute a single scenario
-func Play(ctx context.Context, script *urth.ScenarioScript, options RunOptions) (urth.FinalRunResults, []urth.ArtifactValue, error) {
+func Play(ctx context.Context, script *urth.ScenarioScript, options RunOptions) (urth.FinalRunResults, []urth.ArtifactSpec, error) {
 	if script == nil {
 		return urth.NewRunResults(urth.RunFinishedError), nil, fmt.Errorf("no script to run")
 	}
