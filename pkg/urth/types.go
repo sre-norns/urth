@@ -269,17 +269,24 @@ func (meta *ResourceMeta) BeforeSave(tx *gorm.DB) (err error) {
 	return
 }
 
+const (
+	KindScenario Kind = "scenarios"
+	KindRunner   Kind = "runners"
+	KindResult   Kind = "results"
+	KindArtifact Kind = "artifacts"
+)
+
 func init() {
-	if err := RegisterKind("scenarios", &ScenarioSpec{}); err != nil {
+	if err := RegisterKind(KindScenario, &ScenarioSpec{}); err != nil {
 		panic(err)
 	}
-	if err := RegisterKind("runners", &RunnerDefinition{}); err != nil {
+	if err := RegisterKind(KindRunner, &RunnerDefinition{}); err != nil {
 		panic(err)
 	}
-	if err := RegisterKind("results", &InitialRunResults{}); err != nil {
+	if err := RegisterKind(KindResult, &InitialRunResults{}); err != nil {
 		panic(err)
 	}
-	if err := RegisterKind("artifacts", &ArtifactSpec{}); err != nil {
+	if err := RegisterKind(KindArtifact, &ArtifactSpec{}); err != nil {
 		panic(err)
 	}
 }

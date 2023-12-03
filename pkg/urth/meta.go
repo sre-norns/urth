@@ -9,32 +9,54 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var metaRegistry = map[string]reflect.Type{}
+var (
+	ErrUnknownKind = fmt.Errorf("unknown kind")
+)
 
-func RegisterKind(kind string, proto any) error {
-	// FIXME: Ensure that t - is a pointer to a type!
+type Kind string
+
+var metaKindRegistry = map[Kind]reflect.Type{}
+
+func RegisterKind(kind Kind, proto any) error {
 	t := reflect.ValueOf(proto)
 	if t.Kind() != reflect.Pointer || !t.CanInterface() {
 		return fmt.Errorf("pointer expected")
 	}
 
-	metaRegistry[kind] = t.Elem().Type()
+	metaKindRegistry[kind] = t.Elem().Type()
 	return nil
 }
 
-func InstanceOf(kind string) (any, error) {
-	t, known := metaRegistry[kind]
+func InstanceOf(kind Kind) (any, error) {
+	t, known := metaKindRegistry[kind]
 	if !known {
-		return nil, fmt.Errorf("unknown kind %q", kind)
+		return nil, fmt.Errorf("%w: %q", ErrUnknownKind, kind)
 	}
 
 	return reflect.New(t).Interface(), nil
 }
 
+func KindOf(maybeManifest any) (result Kind, known bool) {
+	value := reflect.ValueOf(maybeManifest)
+	if value.Kind() != reflect.Pointer || !value.CanInterface() {
+		return
+	}
+
+	t := value.Elem().Type()
+	// Linear scan over map to find key with value equals give: not that terrible when the map is small
+	for kind, v := range metaKindRegistry {
+		if v == t {
+			return kind, true
+		}
+	}
+
+	return
+}
+
 // TypeMeta describe individual objects returned by API
 type TypeMeta struct {
 	APIVersion string `json:"apiVersion,omitempty" yaml:"apiVersion,omitempty"`
-	Kind       string `json:"kind,omitempty" yaml:"kind,omitempty" binding:"required"`
+	Kind       Kind   `json:"kind,omitempty" yaml:"kind,omitempty" binding:"required"`
 }
 
 type ObjectMeta struct {

@@ -279,7 +279,7 @@ func (c *RestApiClient) createResource(uri string, entry any) (CreatedResponse, 
 }
 
 func apiUrlForPath(baseUrl *url.URL, typeInfo TypeMeta, element string, query url.Values) *url.URL {
-	collection := strings.ToLower(typeInfo.Kind)
+	collection := strings.ToLower(string(typeInfo.Kind))
 	// TODO: Make plural
 	return urlForPath(baseUrl, path.Join(typeInfo.APIVersion, collection, element), query)
 }
@@ -562,8 +562,8 @@ func (c *scenariosApiClient) ListRunnable(ctx context.Context, query SearchQuery
 	return nil, nil
 }
 
-func (c *scenariosApiClient) UpdateScript(ctx context.Context, id VersionedResourceId, script ScenarioScript) (VersionedResourceId, bool, error) {
-	return VersionedResourceId{}, false, nil
+func (c *scenariosApiClient) UpdateScript(ctx context.Context, id VersionedResourceId, script ScenarioScript) (CreatedResponse, bool, error) {
+	return CreatedResponse{}, false, nil
 }
 
 // --------

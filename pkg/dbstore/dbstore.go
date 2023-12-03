@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
 
 	"github.com/sre-norns/urth/pkg/urth"
 	"gorm.io/gorm"
@@ -17,15 +16,6 @@ var (
 	ErrNoRequirementsValueProvided = fmt.Errorf("no value for a requirement is provided")
 )
 
-func guessDbTable(db *gorm.DB, value any) (string, error) {
-	stmt := &gorm.Statement{DB: db}
-	if err := stmt.Parse(value); err != nil {
-		return "", err
-	}
-
-	return stmt.Schema.Table, nil
-}
-
 type DbStore struct {
 	db *gorm.DB
 }
@@ -36,13 +26,8 @@ func NewDbStore(db *gorm.DB) urth.Store {
 	}
 }
 
-func (s *DbStore) Create(ctx context.Context, value any) (urth.TypeMeta, error) {
-	kind, err := s.GuessKind(reflect.ValueOf(value))
-	if err != nil {
-		return kind, err
-	}
-
-	return kind, s.db.WithContext(ctx).Create(value).Error
+func (s *DbStore) Create(ctx context.Context, value any) (bool, error) {
+	return true, s.db.WithContext(ctx).Create(value).Error
 }
 
 func (s *DbStore) Get(ctx context.Context, dest any, id urth.ResourceID) (bool, error) {
@@ -85,43 +70,27 @@ func (s *DbStore) Delete(ctx context.Context, value any, id urth.VersionedResour
 	return tx.RowsAffected == 1, tx.Error
 }
 
-func (s *DbStore) GuessKind(value reflect.Value) (urth.TypeMeta, error) {
-	kind, err := guessDbTable(s.db, value.Interface())
-
-	return urth.TypeMeta{Kind: kind}, err
-}
-
 func (s *DbStore) startPaginatedTx(ctx context.Context, pagination urth.Pagination) *gorm.DB {
 	return s.db.WithContext(ctx).Offset(int(pagination.Offset)).Limit(int(pagination.Limit))
 }
 
-func (s *DbStore) FindResources(ctx context.Context, resources any, searchQuery urth.SearchQuery) (urth.TypeMeta, error) {
-	var resultType urth.TypeMeta
-
+func (s *DbStore) FindResources(ctx context.Context, resources any, searchQuery urth.SearchQuery) (uint, error) {
 	selector, err := labels.Parse(searchQuery.Labels)
 	if err != nil {
-		return resultType, fmt.Errorf("error parsing labels selector: %w", err)
+		return 0, fmt.Errorf("error parsing labels selector: %w", err)
 	}
 
 	tx, err := s.withSelector(s.startPaginatedTx(ctx, searchQuery.Pagination), selector)
 	if err != nil {
-		return resultType, err
+		return 0, err
 	}
 
 	rtx := tx.Order("created_at").Find(resources)
 	if rtx.Error != nil {
-		return resultType, rtx.Error
+		return 0, rtx.Error
 	}
 
-	t := reflect.ValueOf(resources).Elem()
-	if (t.Kind() == reflect.Slice || t.Kind() == reflect.Array) && t.Len() > 0 {
-		resultType, err = s.GuessKind(reflect.Zero(t.Type()))
-		if err != nil {
-			return resultType, err
-		}
-	}
-
-	return resultType, nil
+	return uint(rtx.RowsAffected), nil
 }
 
 func (s *DbStore) withSelector(tx *gorm.DB, selector labels.Selector) (*gorm.DB, error) {

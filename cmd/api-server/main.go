@@ -185,7 +185,7 @@ func bindingFor(method, contentType string) binding.Binding {
 	}
 }
 
-func manifestApi(kind string) gin.HandlerFunc {
+func manifestApi(kind urth.Kind) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		manifest := urth.ResourceManifest{
 			TypeMeta: urth.TypeMeta{
@@ -284,7 +284,7 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 			marshalResponse(ctx, http.StatusOK, urth.NewPaginatedResponse(results, searchQuery.Pagination))
 		})
 
-		v1.POST("/runners", contentTypeApi(), manifestApi("runners"), func(ctx *gin.Context) {
+		v1.POST("/runners", contentTypeApi(), manifestApi(urth.KindRunner), func(ctx *gin.Context) {
 			newEntry := ctx.MustGet(resourceManifestKey).(urth.ResourceManifest)
 			result, err := srv.GetRunnerAPI().Create(ctx.Request.Context(), newEntry)
 			if err != nil {
@@ -311,7 +311,7 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 			marshalResponse(ctx, http.StatusOK, resource)
 		})
 
-		v1.PUT("/runners/:id", contentTypeApi(), resourceIdApi(), versionedResourceApi(), manifestApi("runners"), func(ctx *gin.Context) {
+		v1.PUT("/runners/:id", contentTypeApi(), resourceIdApi(), versionedResourceApi(), manifestApi(urth.KindRunner), func(ctx *gin.Context) {
 			versionedId := ctx.MustGet(versionedIdKey).(urth.VersionedResourceId)
 			newEntry := ctx.MustGet(resourceManifestKey).(urth.ResourceManifest)
 
@@ -356,7 +356,7 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 			marshalResponse(ctx, http.StatusOK, urth.NewPaginatedResponse(results, searchQuery.Pagination))
 		})
 
-		v1.POST("/scenarios", contentTypeApi(), manifestApi("scenarios"), func(ctx *gin.Context) {
+		v1.POST("/scenarios", contentTypeApi(), manifestApi(urth.KindScenario), func(ctx *gin.Context) {
 			newEntry := ctx.MustGet(resourceManifestKey).(urth.ResourceManifest)
 			result, err := srv.GetScenarioAPI().Create(ctx.Request.Context(), newEntry)
 			if err != nil {
@@ -401,7 +401,7 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 			ctx.Status(http.StatusNoContent)
 		})
 
-		v1.PUT("/scenarios/:id", contentTypeApi(), resourceIdApi(), versionedResourceApi(), manifestApi("scenarios"), func(ctx *gin.Context) {
+		v1.PUT("/scenarios/:id", contentTypeApi(), resourceIdApi(), versionedResourceApi(), manifestApi(urth.KindScenario), func(ctx *gin.Context) {
 			versionedId := ctx.MustGet(versionedIdKey).(urth.VersionedResourceId)
 			newEntry := ctx.MustGet(resourceManifestKey).(urth.ResourceManifest)
 
@@ -442,7 +442,7 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 				return
 			}
 
-			id, exists, err := srv.GetScenarioAPI().UpdateScript(ctx.Request.Context(), versionedId, urth.ScenarioScript{
+			result, exists, err := srv.GetScenarioAPI().UpdateScript(ctx.Request.Context(), versionedId, urth.ScenarioScript{
 				Kind:    urth.GuessScenarioKind(ctx.Query("kind"), ctx.ContentType(), data),
 				Content: data,
 			})
@@ -455,10 +455,7 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 				return
 			}
 
-			marshalResponse(ctx, http.StatusCreated, urth.CreatedResponse{
-				TypeMeta:            urth.TypeMeta{Kind: "scenarios"},
-				VersionedResourceId: id,
-			})
+			marshalResponse(ctx, http.StatusCreated, result)
 		})
 
 		// DELETE script ? => UpdateScript("")
@@ -478,7 +475,7 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 
 			marshalResponse(ctx, http.StatusOK, urth.NewPaginatedResponse(results, searchQuery.Pagination))
 		})
-		v1.POST("/scenarios/:id/results", contentTypeApi(), resourceIdApi(), manifestApi("results"), func(ctx *gin.Context) {
+		v1.POST("/scenarios/:id/results", contentTypeApi(), resourceIdApi(), manifestApi(urth.KindResult), func(ctx *gin.Context) {
 			resourceId := ctx.MustGet(resourceIdKey).(urth.ResourceRequest)
 			newEntry := ctx.MustGet(resourceManifestKey).(urth.ResourceManifest)
 
@@ -581,7 +578,7 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 		})
 
 		// FIXME: Require valid worker auth / JWT
-		v1.POST("/artifacts", contentTypeApi() /*authBearerApi(),*/, manifestApi("artifacts"), func(ctx *gin.Context) {
+		v1.POST("/artifacts", contentTypeApi() /*authBearerApi(),*/, manifestApi(urth.KindArtifact), func(ctx *gin.Context) {
 			newEntry := ctx.MustGet(resourceManifestKey).(urth.ResourceManifest)
 
 			// Considers streaming data to a blob storage

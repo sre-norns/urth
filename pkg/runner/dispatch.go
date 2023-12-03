@@ -39,14 +39,17 @@ type RunOptions struct {
 type ScriptRunner func(context.Context, []byte, RunOptions) (urth.FinalRunResults, []urth.ArtifactSpec, error)
 
 type ProbRegistration struct {
+	// Function to execute a script
+	RunFunc ScriptRunner
+
 	// Sem-version of the prober module loaded
 	Version string
 
 	// Mime type of the script.
 	ContentType string
 
-	// Function to execute a script
-	RunFunc ScriptRunner
+	// Types of artifacts this prob is expected to produce
+	Produce []string
 }
 
 // Registrar of Probing modules

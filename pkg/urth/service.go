@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"reflect"
 	"strings"
 	"time"
 
@@ -39,7 +38,7 @@ type ScenarioApi interface {
 	// Update a single resource identified by a unique ID
 	Update(ctx context.Context, id VersionedResourceId, entry ResourceManifest) (CreatedResponse, error)
 
-	UpdateScript(ctx context.Context, id VersionedResourceId, entry ScenarioScript) (VersionedResourceId, bool, error)
+	UpdateScript(ctx context.Context, id VersionedResourceId, entry ScenarioScript) (CreatedResponse, bool, error)
 
 	// ClientAPI: Can it be done using filters?
 	ListRunnable(ctx context.Context, query SearchQuery) ([]Scenario, error)
@@ -186,7 +185,12 @@ func (m *scenarioApiImpl) ListRunnable(ctx context.Context, query SearchQuery) (
 
 func (m *scenarioApiImpl) List(ctx context.Context, query SearchQuery) ([]PartialObjectMetadata, error) {
 	var resources []Scenario
-	kind, err := m.store.FindResources(ctx, &resources, query)
+	kind, ok := KindOf(&ScenarioSpec{})
+	if !ok {
+		return nil, ErrUnknownKind
+	}
+
+	_, err := m.store.FindResources(ctx, &resources, query)
 	if err != nil {
 		return nil, err
 	}
@@ -196,7 +200,7 @@ func (m *scenarioApiImpl) List(ctx context.Context, query SearchQuery) ([]Partia
 		// TODO: Script should be moved into a separate table, that way we won't have to filter it out here
 		sc.Script = nil
 		results = append(results, PartialObjectMetadata{
-			TypeMeta:     kind,
+			TypeMeta:     TypeMeta{Kind: kind},
 			ResourceMeta: sc.ResourceMeta,
 			Spec:         sc.ScenarioSpec,
 		})
@@ -210,11 +214,15 @@ func (m *scenarioApiImpl) Create(ctx context.Context, newEntry ResourceManifest)
 		ResourceMeta: newEntry.GetMetadata(),
 		ScenarioSpec: *newEntry.Spec.(*ScenarioSpec),
 	}
+	kind, ok := KindOf(&entry.ScenarioSpec)
+	if !ok {
+		return CreatedResponse{}, ErrUnknownKind
+	}
 
-	kind, err := m.store.Create(ctx, &entry)
+	_, err := m.store.Create(ctx, &entry)
 
 	return CreatedResponse{
-		TypeMeta:            kind,
+		TypeMeta:            TypeMeta{Kind: kind},
 		VersionedResourceId: entry.GetVersionedID(),
 	}, err
 }
@@ -229,26 +237,29 @@ func (m *scenarioApiImpl) Delete(ctx context.Context, id VersionedResourceId) (b
 	return m.store.Delete(ctx, &Scenario{}, id)
 }
 
-func (m *scenarioApiImpl) UpdateScript(ctx context.Context, id VersionedResourceId, script ScenarioScript) (VersionedResourceId, bool, error) {
+func (m *scenarioApiImpl) UpdateScript(ctx context.Context, id VersionedResourceId, script ScenarioScript) (CreatedResponse, bool, error) {
 	var result Scenario
+	kind, ok := KindOf(&result.ScenarioSpec)
+	if !ok {
+		return CreatedResponse{}, false, ErrUnknownKind
+	}
+
 	ok, err := m.store.GetWithVersion(ctx, &result, id)
 	if !ok || err != nil {
-		return result.GetVersionedID(), ok, err
+		return CreatedResponse{}, ok, err
 	}
 
 	result.Script = &script
 	ok, err = m.store.Update(ctx, &result, result.GetVersionedID())
 
-	return result.GetVersionedID(), ok, err
+	return CreatedResponse{
+		TypeMeta:            TypeMeta{Kind: kind},
+		VersionedResourceId: result.GetVersionedID(),
+	}, ok, err
 }
 
 func (m *scenarioApiImpl) Update(ctx context.Context, id VersionedResourceId, entry ResourceManifest) (CreatedResponse, error) {
 	var result Scenario
-	kind, err := m.store.GuessKind(reflect.ValueOf(&result))
-	if err != nil {
-		return CreatedResponse{}, err
-	}
-
 	ok, err := m.store.GetWithVersion(ctx, &result, id)
 	if err != nil {
 		return CreatedResponse{}, err
@@ -279,7 +290,7 @@ func (m *scenarioApiImpl) Update(ctx context.Context, id VersionedResourceId, en
 	}
 
 	return CreatedResponse{
-		TypeMeta:            kind,
+		TypeMeta:            entry.TypeMeta,
 		VersionedResourceId: result.GetVersionedID(),
 	}, err
 }
@@ -304,6 +315,10 @@ func (s *resultsApiImpl) scheduleRun(ctx context.Context, runResult Result, scen
 
 func (m *resultsApiImpl) List(ctx context.Context, searchQuery SearchQuery) ([]PartialObjectMetadata, error) {
 	var resources []Result
+	kind, ok := KindOf(&InitialRunResults{})
+	if !ok {
+		return nil, ErrUnknownKind
+	}
 
 	if searchQuery.Labels == "" {
 		searchQuery.Labels = fmt.Sprintf("%v=%v", LabelScenarioId, m.scenarioId)
@@ -311,7 +326,7 @@ func (m *resultsApiImpl) List(ctx context.Context, searchQuery SearchQuery) ([]P
 		searchQuery.Labels = fmt.Sprintf("%v=%v,%v", LabelScenarioId, m.scenarioId, searchQuery.Labels)
 	}
 
-	kind, err := m.store.FindResources(ctx, &resources, searchQuery)
+	_, err := m.store.FindResources(ctx, &resources, searchQuery)
 	if err != nil {
 		return nil, err
 	}
@@ -319,7 +334,7 @@ func (m *resultsApiImpl) List(ctx context.Context, searchQuery SearchQuery) ([]P
 	results := make([]PartialObjectMetadata, 0, len(resources))
 	for _, sc := range resources {
 		results = append(results, PartialObjectMetadata{
-			TypeMeta:     kind,
+			TypeMeta:     TypeMeta{Kind: kind},
 			ResourceMeta: sc.ResourceMeta,
 			Spec:         sc.ResultSpec,
 		})
@@ -378,7 +393,12 @@ func (m *resultsApiImpl) Create(ctx context.Context, newEntry ResourceManifest) 
 		},
 	}
 
-	kind, err := m.store.Create(ctx, &entry)
+	kind, ok := KindOf(&entry.InitialRunResults)
+	if !ok {
+		return CreatedResponse{}, ErrUnknownKind
+	}
+
+	_, err = m.store.Create(ctx, &entry)
 	if err != nil {
 		return CreatedResponse{}, err
 	}
@@ -398,7 +418,7 @@ func (m *resultsApiImpl) Create(ctx context.Context, newEntry ResourceManifest) 
 	}
 
 	return CreatedResponse{
-		TypeMeta:            kind,
+		TypeMeta:            TypeMeta{Kind: kind},
 		VersionedResourceId: entry.GetVersionedID(),
 	}, err
 }
@@ -450,15 +470,9 @@ func (m *resultsApiImpl) Auth(ctx context.Context, id VersionedResourceId, authR
 
 func (m *resultsApiImpl) Update(ctx context.Context, id VersionedResourceId, token ApiToken, runResults FinalRunResults) (CreatedResponse, error) {
 	var entry Result
-
-	if runResults.TimeEnded == nil {
-		now := time.Now()
-		runResults.TimeEnded = &now
-	}
-
-	kind, err := m.store.GuessKind(reflect.ValueOf(&entry))
-	if err != nil {
-		return CreatedResponse{}, err
+	kind, ok := KindOf(&entry.InitialRunResults)
+	if !ok {
+		return CreatedResponse{}, ErrUnknownKind
 	}
 
 	ok, err := m.store.GetWithVersion(ctx, &entry, id)
@@ -474,6 +488,11 @@ func (m *resultsApiImpl) Update(ctx context.Context, id VersionedResourceId, tok
 		return CreatedResponse{}, ErrResourceUnauthorized
 	}
 
+	if runResults.TimeEnded == nil {
+		now := time.Now()
+		runResults.TimeEnded = &now
+	}
+
 	entry.Status = JobCompleted
 	entry.FinalRunResults = runResults
 
@@ -486,7 +505,7 @@ func (m *resultsApiImpl) Update(ctx context.Context, id VersionedResourceId, tok
 	}
 
 	return CreatedResponse{
-		TypeMeta:            kind,
+		TypeMeta:            TypeMeta{Kind: kind},
 		VersionedResourceId: entry.GetVersionedID(),
 	}, err
 }
@@ -502,7 +521,12 @@ func (m *resultsApiImpl) Get(ctx context.Context, id ResourceID) (Result, bool, 
 //------------------------------
 func (m *runnersApiImpl) List(ctx context.Context, searchQuery SearchQuery) ([]PartialObjectMetadata, error) {
 	var resources []Runner
-	kind, err := m.store.FindResources(ctx, &resources, searchQuery)
+	kind, ok := KindOf(&RunnerDefinition{})
+	if !ok {
+		return nil, ErrUnknownKind
+	}
+
+	_, err := m.store.FindResources(ctx, &resources, searchQuery)
 	if err != nil {
 		return nil, err
 	}
@@ -513,7 +537,7 @@ func (m *runnersApiImpl) List(ctx context.Context, searchQuery SearchQuery) ([]P
 		sc.IdToken = ""
 		// sc.
 		results = append(results, PartialObjectMetadata{
-			TypeMeta:     kind,
+			TypeMeta:     TypeMeta{Kind: kind},
 			ResourceMeta: sc.ResourceMeta,
 			Spec:         sc.RunnerSpec,
 		})
@@ -537,10 +561,15 @@ func (m *runnersApiImpl) Create(ctx context.Context, newEntry ResourceManifest) 
 		IdToken: randToken(16),
 	}
 
-	kind, err := m.store.Create(ctx, &entry)
+	kind, ok := KindOf(&entry.RunnerDefinition)
+	if !ok {
+		return CreatedResponse{}, ErrUnknownKind
+	}
+
+	_, err := m.store.Create(ctx, &entry)
 
 	return CreatedResponse{
-		TypeMeta:            kind,
+		TypeMeta:            TypeMeta{Kind: kind},
 		VersionedResourceId: entry.GetVersionedID(),
 	}, err
 }
@@ -551,11 +580,6 @@ func (m *runnersApiImpl) Delete(ctx context.Context, id VersionedResourceId) (bo
 
 func (m *runnersApiImpl) Update(ctx context.Context, id VersionedResourceId, entry ResourceManifest) (CreatedResponse, error) {
 	var result Runner
-	kind, err := m.store.GuessKind(reflect.ValueOf(&result))
-	if err != nil {
-		return CreatedResponse{}, err
-	}
-
 	ok, err := m.store.GetWithVersion(ctx, &result, id)
 	if err != nil {
 		return CreatedResponse{}, err
@@ -579,7 +603,7 @@ func (m *runnersApiImpl) Update(ctx context.Context, id VersionedResourceId, ent
 	}
 
 	return CreatedResponse{
-		TypeMeta:            kind,
+		TypeMeta:            entry.TypeMeta,
 		VersionedResourceId: result.GetVersionedID(),
 	}, err
 }
@@ -619,7 +643,12 @@ type artifactApiImp struct {
 
 func (m *artifactApiImp) List(ctx context.Context, query SearchQuery) ([]PartialObjectMetadata, error) {
 	var resources []Artifact
-	kind, err := m.store.FindResources(ctx, &resources, query)
+	kind, ok := KindOf(&ArtifactSpec{})
+	if !ok {
+		return nil, ErrUnknownKind
+	}
+
+	_, err := m.store.FindResources(ctx, &resources, query)
 	if err != nil {
 		return nil, err
 	}
@@ -629,7 +658,7 @@ func (m *artifactApiImp) List(ctx context.Context, query SearchQuery) ([]Partial
 		// Note: Do not return artifact value when listing
 		sc.ArtifactSpec.Content = nil
 		results = append(results, PartialObjectMetadata{
-			TypeMeta:     kind,
+			TypeMeta:     TypeMeta{Kind: kind},
 			ResourceMeta: sc.ResourceMeta,
 			Spec:         sc.ArtifactSpec,
 		})
@@ -656,10 +685,15 @@ func (m *artifactApiImp) Create(ctx context.Context, newEntry ResourceManifest) 
 		ArtifactSpec: *newEntry.Spec.(*ArtifactSpec),
 	}
 
-	kind, err := m.store.Create(ctx, &entry)
+	kind, ok := KindOf(&entry.ArtifactSpec)
+	if !ok {
+		return CreatedResponse{}, ErrUnknownKind
+	}
+
+	_, err := m.store.Create(ctx, &entry)
 
 	return CreatedResponse{
-		TypeMeta:            kind,
+		TypeMeta:            TypeMeta{Kind: kind},
 		VersionedResourceId: entry.GetVersionedID(),
 	}, err
 }

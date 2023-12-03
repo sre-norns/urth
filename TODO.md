@@ -10,7 +10,7 @@
 # Feature:
 [] Enable *scheduler* to actually USE scenario schedules field
 [] (MAYBE) Script should be stored compressed / (zlib?)
-[] Ensure that only Scenarios with non-empty script are schedulable / ready
+[X] Ensure that only Scenarios with non-empty script are schedulable / ready
 [x] Use kong for CLI flags and config handling
 [?] Expose option for headless chrome remote debug?
 [] Search for config files using xdg! lib and standard
@@ -46,7 +46,7 @@
 [] HAR viewer should offer an option to diff with previous runs!!
 [] Web Request runner: if response contains headers about the TRACE-ID, produce an artifact with a link to a trace viewer (configurable for installation)
 [] If a request return spanID - add a link to View Trace in <Jager> or <Tempo>
-[] UX - 'run now' button must be locked until post request returns with an ID of message posted into the run Queue.
+[X] UX - 'run now' button must be locked until post request returns with an ID of message posted into the run Queue.
 [X] A RUN must be in `pending` state when a message been posted into the queue but before being picked up by a worker.
 [] For manual runs - trigger identity of the who triggered the run as job labels, such that all jobs triggered by a given user can be found!
 
@@ -66,9 +66,9 @@
 [X] New runner: HAR executor - replay HAR files using WEB Request runner
 [X] When worked reports Node version, parse version string to `node.major` and `node.minor` to enable `<>` comparison using label selectors
 [] Script should be typed by `kind`: TCP, DNS and similar **infra** probers have well defined fields. 
+[] Split artifact registration (produces upload token) and artifact content upload - use different APIs
 
-
-[] Allow for script config / encrypted variables. Consider gocloud: secrets API
+[] Allow for script config / encrypted variables. Consider gocloud/locked box: secrets API. Review github security considerations for custom workers
 [] Support authentication for HTTP and Puppeteer scenarios
 
 
@@ -87,9 +87,11 @@
 [] Move `script` out of `CreateScenario` => `Scenario`
 [] Use proper types for Script marshaling
 [] runner/log.go must implement `go/logger` interface!
-[] Serialize job into msgpack!
+[] Serialize `job` into msgpack!
 [] Ensure DB constraints: Each Scenario ->* Result -> * Artifacts
 [] Use staw / S3 for artifacts storage!
 [] Separate `Runner` -> `Worker (Slot)` + `Worker Instance` object
 [] Ensure that `Worker Instance` login session expires.
 [] All tokens must be treated as passwords: stored securely salted and hashed
+[] OTel instrument server and worker
+[] HAR prob should produce HAR files as output.
