@@ -37,6 +37,10 @@ func RegisterKind(kind Kind, proto any) error {
 	return nil
 }
 
+func UnregisterKind(kind Kind) {
+	delete(metaKindRegistry, kind)
+}
+
 func InstanceOf(kind Kind) (any, error) {
 	t, known := metaKindRegistry[kind]
 	if !known {
@@ -74,7 +78,7 @@ type ObjectMeta struct {
 	UUID ResourceID `json:"uid,omitempty" yaml:"uid,omitempty"`
 
 	// Name is a unique human-readable identifier of a resource
-	Name string `json:"name" yaml:"name"`
+	Name string `json:"name" yaml:"name" binding:"required" gorm:"uniqueIndex"`
 
 	// Labels is map of string keys and values that can be used to organize and categorize
 	// (scope and select) resources.
@@ -87,11 +91,11 @@ type ResourceManifest struct {
 	Spec     interface{} `json:"-" yaml:"-"`
 }
 
-func (u *ResourceManifest) MarshalJSON() ([]byte, error) {
+func (u ResourceManifest) MarshalJSON() ([]byte, error) {
 	return json.Marshal(&struct {
 		TypeMeta `json:",inline"`
 		Metadata ObjectMeta  `json:"metadata"`
-		Spec     interface{} // needed to strip any json tags
+		Spec     interface{} `json:"spec,omitempty"` // needed to strip any json tags
 	}{
 		TypeMeta: u.TypeMeta,
 		Metadata: u.Metadata,

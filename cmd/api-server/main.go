@@ -198,6 +198,9 @@ func manifestApi(kind wyrd.Kind) gin.HandlerFunc {
 			return
 		}
 
+		// d, _ := json.MarshalIndent(manifest, "", "  ")
+		// os.Stdout.Write(d)
+
 		if manifest.Kind == "" {
 			manifest.Kind = kind
 		} else if manifest.Kind != kind { // validate that API request is for correct manifest type:

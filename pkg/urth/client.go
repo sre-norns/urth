@@ -30,7 +30,7 @@ func NewRestApiClient(baseUrl string) (*RestApiClient, error) {
 }
 
 func (c *RestApiClient) GetRunnerAPI() RunnersApi {
-	return &RunnersApiClient{
+	return &runnersApiClient{
 		RestApiClient: *c,
 	}
 }
@@ -42,7 +42,7 @@ func (c *RestApiClient) GetScenarioAPI() ScenarioApi {
 }
 
 func (c *RestApiClient) GetResultsAPI(id wyrd.ResourceID) RunResultApi {
-	return &RunResultApiRestClient{
+	return &resultsApiRestClient{
 		RestApiClient: *c,
 		ScenarioId:    id,
 	}
@@ -60,30 +60,28 @@ func (c *RestApiClient) GetArtifactsApi() ArtifactApi {
 	}
 }
 
-func (c *RestApiClient) ApplyObjectDefinition(ctx context.Context, spec wyrd.ResourceManifest) (CreatedResponse, error) {
-	var result CreatedResponse
-	data, err := json.Marshal(spec)
-	if err != nil {
-		return result, err
-	}
+// func (c *RestApiClient) ApplyObjectDefinition(ctx context.Context, spec wyrd.ResourceManifest) (result PartialObjectMetadata, err error) {
+// 	data, err := json.Marshal(spec)
+// 	if err != nil {
+// 		return
+// 	}
 
-	// queryParams := url.Values{}
-	// queryParams.Set("name", spec.Metadata.Name)
+// 	// queryParams := url.Values{}
+// 	// queryParams.Set("name", spec.Metadata.Name)
 
-	targetApi := apiUrlForPath(c.baseUrl, spec.TypeMeta, spec.Metadata.Name, nil)
-	resp, err := c.post(targetApi, bytes.NewReader(data))
-	if err != nil {
-		return result, err
-	}
+// 	targetApi := apiUrlForPath(c.baseUrl, spec.TypeMeta, spec.Metadata.Name, nil)
+// 	resp, err := c.post(targetApi, bytes.NewReader(data))
+// 	if err != nil {
+// 		return result, err
+// 	}
 
-	defer resp.Body.Close()
+// 	defer resp.Body.Close()
 
-	err = json.NewDecoder(resp.Body).Decode(&result)
-	return result, err
-}
+// 	err = json.NewDecoder(resp.Body).Decode(&result)
+// 	return result, err
+// }
 
-func (c *RestApiClient) CreateFromManifest(ctx context.Context, manifest wyrd.ResourceManifest) (CreatedResponse, error) {
-	var result CreatedResponse
+func (c *RestApiClient) CreateFromManifest(ctx context.Context, manifest wyrd.ResourceManifest) (result PartialObjectMetadata, err error) {
 	data, err := json.Marshal(manifest)
 	if err != nil {
 		return result, err
@@ -95,16 +93,16 @@ func (c *RestApiClient) CreateFromManifest(ctx context.Context, manifest wyrd.Re
 	targetApi := apiUrlForPath(c.baseUrl, manifest.TypeMeta, "", nil)
 	resp, err := c.post(targetApi, bytes.NewReader(data))
 	if err != nil {
-		return result, err
+		return
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusCreated {
 		return result, readApiError(resp)
 	}
 
 	err = json.NewDecoder(resp.Body).Decode(&result)
-	return result, err
+	return
 }
 
 // func (c *RestApiClient) ScheduleScenarioRun(ctx context.Context, id ResourceID, request CreateScenarioManualRunRequest) (ManualRunRequestResponse, bool, error) {
@@ -258,17 +256,16 @@ func (c *RestApiClient) getRawResource(uri string) (io.ReadCloser, bool, error) 
 	return resp.Body, true, nil
 }
 
-func (c *RestApiClient) createResource(uri string, entry any) (CreatedResponse, error) {
-	var result CreatedResponse
+func (c *RestApiClient) createResource(uri string, entry any) (result PartialObjectMetadata, err error) {
 	data, err := json.Marshal(entry)
 	if err != nil {
-		return result, err
+		return
 	}
 
 	targetApi := urlForPath(c.baseUrl, uri, nil)
 	resp, err := c.post(targetApi, bytes.NewReader(data))
 	if err != nil {
-		return result, err
+		return
 	}
 	defer resp.Body.Close()
 
@@ -277,7 +274,7 @@ func (c *RestApiClient) createResource(uri string, entry any) (CreatedResponse, 
 	}
 
 	err = json.NewDecoder(resp.Body).Decode(&result)
-	return result, err
+	return
 }
 
 func apiUrlForPath(baseUrl *url.URL, typeInfo wyrd.TypeMeta, element string, query url.Values) *url.URL {
@@ -322,36 +319,35 @@ func searchToQuery(searchQuery SearchQuery) url.Values {
 // Runners API
 // --------
 
-type RunnersApiClient struct {
+type runnersApiClient struct {
 	RestApiClient
 }
 
 // List all resources matching given search query
-func (c *RunnersApiClient) List(ctx context.Context, searchQuery SearchQuery) ([]PartialObjectMetadata, error) {
+func (c *runnersApiClient) List(ctx context.Context, searchQuery SearchQuery) ([]PartialObjectMetadata, error) {
 	return c.listResources("v1/runners", searchQuery)
 }
 
 // Get a single resource given its unique ID,
 // Returns a resource if it exists, false, if resource doesn't exists
 // error if there was communication error with the storage
-func (c *RunnersApiClient) Get(ctx context.Context, id wyrd.ResourceID) (resource PartialObjectMetadata, exists bool, err error) {
+func (c *runnersApiClient) Get(ctx context.Context, id wyrd.ResourceID) (resource PartialObjectMetadata, exists bool, err error) {
 	exists, err = c.getResource(fmt.Sprintf("v1/runners/%v", id), &resource)
 	return
 }
 
-func (c *RunnersApiClient) Create(ctx context.Context, newEntry wyrd.ResourceManifest) (CreatedResponse, error) {
+func (c *runnersApiClient) Create(ctx context.Context, newEntry wyrd.ResourceManifest) (PartialObjectMetadata, error) {
 	return c.createResource("v1/runners", &newEntry)
 }
 
-func (c *RunnersApiClient) Delete(ctx context.Context, id VersionedResourceId) (bool, error) {
+func (c *runnersApiClient) Delete(ctx context.Context, id VersionedResourceId) (bool, error) {
 	return c.deleteResource(fmt.Sprintf("v1/runners/%v", id.ID), id.Version)
 }
 
-func (c *RunnersApiClient) Update(ctx context.Context, id VersionedResourceId, entry wyrd.ResourceManifest) (CreatedResponse, error) {
-	var result CreatedResponse
+func (c *runnersApiClient) Update(ctx context.Context, id VersionedResourceId, entry wyrd.ResourceManifest) (result PartialObjectMetadata, err error) {
 	data, err := json.Marshal(entry)
 	if err != nil {
-		return result, err
+		return
 	}
 
 	queryParams := url.Values{}
@@ -366,7 +362,7 @@ func (c *RunnersApiClient) Update(ctx context.Context, id VersionedResourceId, e
 		bytes.NewReader(data),
 	)
 	if err != nil {
-		return result, err
+		return
 	}
 
 	defer resp.Body.Close()
@@ -375,10 +371,10 @@ func (c *RunnersApiClient) Update(ctx context.Context, id VersionedResourceId, e
 	}
 
 	err = json.NewDecoder(resp.Body).Decode(&result)
-	return result, err
+	return
 }
 
-func (m *RunnersApiClient) Auth(ctx context.Context, token ApiToken, newEntry RunnerRegistration) (Runner, error) {
+func (m *runnersApiClient) Auth(ctx context.Context, token ApiToken, newEntry RunnerRegistration) (Runner, error) {
 	var result Runner
 	data, err := json.Marshal(newEntry)
 	if err != nil {
@@ -403,30 +399,30 @@ func (m *RunnersApiClient) Auth(ctx context.Context, token ApiToken, newEntry Ru
 // Run Results API
 // --------
 
-type RunResultApiRestClient struct {
+type resultsApiRestClient struct {
 	RestApiClient
 
 	ScenarioId wyrd.ResourceID
 }
 
 // List all resources matching given search query
-func (c *RunResultApiRestClient) List(ctx context.Context, searchQuery SearchQuery) ([]PartialObjectMetadata, error) {
+func (c *resultsApiRestClient) List(ctx context.Context, searchQuery SearchQuery) ([]PartialObjectMetadata, error) {
 	return c.listResources(fmt.Sprintf("v1/scenarios/%v/results", c.ScenarioId), searchQuery)
 }
 
 // Get a single resource given its unique ID,
 // Returns a resource if it exists, false, if resource doesn't exists
 // error if there was communication error with the storage
-func (c *RunResultApiRestClient) Get(ctx context.Context, id wyrd.ResourceID) (result PartialObjectMetadata, exist bool, err error) {
+func (c *resultsApiRestClient) Get(ctx context.Context, id wyrd.ResourceID) (result PartialObjectMetadata, exist bool, err error) {
 	exist, err = c.getResource(fmt.Sprintf("v1/scenarios/%v/results/%v", c.ScenarioId, id), &result)
 	return
 }
 
-func (c *RunResultApiRestClient) Create(ctx context.Context, newEntry wyrd.ResourceManifest) (CreatedResponse, error) {
+func (c *resultsApiRestClient) Create(ctx context.Context, newEntry wyrd.ResourceManifest) (PartialObjectMetadata, error) {
 	return c.createResource(fmt.Sprintf("v1/scenarios/%v/results", c.ScenarioId), &newEntry)
 }
 
-func (c *RunResultApiRestClient) Auth(ctx context.Context, id VersionedResourceId, authRequest AuthRunRequest) (CreatedRunResponse, error) {
+func (c *resultsApiRestClient) Auth(ctx context.Context, id VersionedResourceId, authRequest AuthRunRequest) (CreatedRunResponse, error) {
 	var result CreatedRunResponse
 	data, err := json.Marshal(authRequest)
 	if err != nil {
@@ -457,7 +453,7 @@ func (c *RunResultApiRestClient) Auth(ctx context.Context, id VersionedResourceI
 	return result, err
 }
 
-func (c *RunResultApiRestClient) Update(ctx context.Context, id VersionedResourceId, token ApiToken, runResults FinalRunResults) (CreatedResponse, error) {
+func (c *resultsApiRestClient) Update(ctx context.Context, id VersionedResourceId, token ApiToken, runResults FinalRunResults) (CreatedResponse, error) {
 	var result CreatedResponse
 	data, err := json.Marshal(runResults)
 	if err != nil {
@@ -500,7 +496,7 @@ func (c *artifactApiClient) List(ctx context.Context, searchQuery SearchQuery) (
 	return c.listResources("v1/artifacts", searchQuery)
 }
 
-func (c *artifactApiClient) Create(ctx context.Context, entry wyrd.ResourceManifest) (CreatedResponse, error) {
+func (c *artifactApiClient) Create(ctx context.Context, entry wyrd.ResourceManifest) (PartialObjectMetadata, error) {
 	return c.createResource("v1/artifacts", &entry)
 }
 
@@ -541,7 +537,7 @@ func (c *scenariosApiClient) Get(ctx context.Context, id wyrd.ResourceID) (resul
 	return
 }
 
-func (c *scenariosApiClient) Create(ctx context.Context, scenario wyrd.ResourceManifest) (CreatedResponse, error) {
+func (c *scenariosApiClient) Create(ctx context.Context, scenario wyrd.ResourceManifest) (PartialObjectMetadata, error) {
 	return c.createResource("v1/scenarios", &scenario)
 }
 
@@ -551,8 +547,34 @@ func (c *scenariosApiClient) Delete(ctx context.Context, id VersionedResourceId)
 }
 
 // Update a single resource identified by a unique ID
-func (c *scenariosApiClient) Update(ctx context.Context, id VersionedResourceId, scenario wyrd.ResourceManifest) (CreatedResponse, error) {
-	return CreatedResponse{}, nil
+func (c *scenariosApiClient) Update(ctx context.Context, id VersionedResourceId, entry wyrd.ResourceManifest) (result PartialObjectMetadata, err error) {
+	data, err := json.Marshal(entry)
+	if err != nil {
+		return
+	}
+
+	queryParams := url.Values{}
+	queryParams.Set("version", strconv.FormatUint(id.Version, 10))
+
+	targetApi := urlForPath(c.baseUrl, fmt.Sprintf("v1/scenarios/%v", id), queryParams)
+	resp, err := c.put(targetApi,
+		http.Header{
+			// "Authorization": []string{fmt.Sprintf("Bearer %s", token)},
+			"If-Match": []string{id.String()},
+		},
+		bytes.NewReader(data),
+	)
+	if err != nil {
+		return
+	}
+
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
+		return result, readApiError(resp)
+	}
+
+	err = json.NewDecoder(resp.Body).Decode(&result)
+	return
 }
 
 // ClientAPI?

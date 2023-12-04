@@ -167,9 +167,8 @@ spec:
 				require.Error(t, err, "expected error: %v", test.expectError)
 			} else {
 				require.Nil(t, err, "expected error: %v", test.expectError)
+				require.EqualValues(t, test.expect, got)
 			}
-
-			require.EqualValues(t, test.expect, got)
 		})
 	}
 }

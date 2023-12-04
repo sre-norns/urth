@@ -37,7 +37,7 @@ func (c *createCmd) Run(cfg *commandContext) error {
 			return fmt.Errorf("failed to create resource from %q: %w", filename, err)
 		}
 
-		log.Print("created ", c.Kind, ", ID: ", c.VersionedResourceId)
+		log.Print("created ", c.Kind, ", ID: ", c.GetVersionedID())
 	}
 
 	return nil

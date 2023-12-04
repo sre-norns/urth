@@ -125,6 +125,19 @@ type Runner struct {
 	IdToken ApiToken `form:"-" json:"-" yaml:"-" xml:"-"`
 }
 
+func (s *Runner) asManifest() PartialObjectMetadata {
+	kind, ok := wyrd.KindOf(&s.RunnerDefinition)
+	if !ok {
+		panic(wyrd.ErrUnknownKind)
+	}
+
+	return PartialObjectMetadata{
+		TypeMeta:     wyrd.TypeMeta{Kind: kind},
+		ResourceMeta: s.ResourceMeta,
+		Spec:         &s.RunnerDefinition,
+	}
+}
+
 // Type to represent cron-like schedule
 type CronSchedule string
 
@@ -159,6 +172,19 @@ type ScenarioSpec struct {
 type Scenario struct {
 	ResourceMeta `json:",inline" yaml:",inline"`
 	ScenarioSpec `json:",inline" yaml:",inline"`
+}
+
+func (s *Scenario) asManifest() PartialObjectMetadata {
+	kind, ok := wyrd.KindOf(&s.ScenarioSpec)
+	if !ok {
+		panic(wyrd.ErrUnknownKind)
+	}
+
+	return PartialObjectMetadata{
+		TypeMeta:     wyrd.TypeMeta{Kind: kind},
+		ResourceMeta: s.ResourceMeta,
+		Spec:         &s.ScenarioSpec,
+	}
 }
 
 type JobStatus string
@@ -204,6 +230,19 @@ type Artifact struct {
 	ResourceMeta `json:",inline" yaml:",inline"`
 
 	ArtifactSpec `json:",inline" yaml:",inline"`
+}
+
+func (s *Artifact) asManifest() PartialObjectMetadata {
+	kind, ok := wyrd.KindOf(&s.ArtifactSpec)
+	if !ok {
+		panic(wyrd.ErrUnknownKind)
+	}
+
+	return PartialObjectMetadata{
+		TypeMeta:     wyrd.TypeMeta{Kind: kind},
+		ResourceMeta: s.ResourceMeta,
+		Spec:         &s.ArtifactSpec,
+	}
 }
 
 // Final results of the script run
@@ -258,6 +297,19 @@ type Result struct {
 	ResultSpec `json:",inline" yaml:",inline"`
 
 	UpdateToken ApiToken `uri:"-" form:"-" json:"-" yaml:"-" xml:"-"`
+}
+
+func (s *Result) asManifest() PartialObjectMetadata {
+	kind, ok := wyrd.KindOf(&s.InitialRunResults)
+	if !ok {
+		panic(wyrd.ErrUnknownKind)
+	}
+
+	return PartialObjectMetadata{
+		TypeMeta:     wyrd.TypeMeta{Kind: kind},
+		ResourceMeta: s.ResourceMeta,
+		Spec:         &s.InitialRunResults,
+	}
 }
 
 // GORM hook to auto-increment resource version on each save

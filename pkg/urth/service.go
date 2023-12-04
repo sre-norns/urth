@@ -30,13 +30,13 @@ type ReadableResourceApi[T interface{}] interface {
 type ScenarioApi interface {
 	ReadableResourceApi[Scenario]
 
-	Create(ctx context.Context, entry wyrd.ResourceManifest) (CreatedResponse, error)
+	Create(ctx context.Context, entry wyrd.ResourceManifest) (PartialObjectMetadata, error)
 
 	// Delete a single resource identified by a unique ID
 	Delete(ctx context.Context, id VersionedResourceId) (bool, error)
 
 	// Update a single resource identified by a unique ID
-	Update(ctx context.Context, id VersionedResourceId, entry wyrd.ResourceManifest) (CreatedResponse, error)
+	Update(ctx context.Context, id VersionedResourceId, entry wyrd.ResourceManifest) (PartialObjectMetadata, error)
 
 	UpdateScript(ctx context.Context, id VersionedResourceId, entry ScenarioScript) (CreatedResponse, bool, error)
 
@@ -48,7 +48,7 @@ type ArtifactApi interface {
 	ReadableResourceApi[Artifact]
 
 	// FIXME: Only authorized runner are allowed to create artifacts
-	Create(ctx context.Context, entry wyrd.ResourceManifest) (CreatedResponse, error)
+	Create(ctx context.Context, entry wyrd.ResourceManifest) (PartialObjectMetadata, error)
 
 	// Delete a single resource identified by a unique ID
 	Delete(ctx context.Context, id VersionedResourceId) (bool, error)
@@ -59,7 +59,7 @@ type ArtifactApi interface {
 type RunResultApi interface {
 	ReadableResourceApi[Result]
 
-	Create(ctx context.Context, entry wyrd.ResourceManifest) (CreatedResponse, error)
+	Create(ctx context.Context, entry wyrd.ResourceManifest) (PartialObjectMetadata, error)
 
 	Auth(ctx context.Context, runID VersionedResourceId, authRequest AuthRunRequest) (CreatedRunResponse, error)
 
@@ -72,13 +72,13 @@ type RunnersApi interface {
 	ReadableResourceApi[Runner]
 
 	// Client request to create a new 'slot' for a runner
-	Create(ctx context.Context, entry wyrd.ResourceManifest) (CreatedResponse, error)
+	Create(ctx context.Context, entry wyrd.ResourceManifest) (PartialObjectMetadata, error)
 
 	// Delete a single resource identified by a unique ID
 	Delete(ctx context.Context, id VersionedResourceId) (bool, error)
 
 	// Update a single resource identified by a unique ID
-	Update(ctx context.Context, id VersionedResourceId, entry wyrd.ResourceManifest) (CreatedResponse, error)
+	Update(ctx context.Context, id VersionedResourceId, entry wyrd.ResourceManifest) (PartialObjectMetadata, error)
 
 	// Authenticate a worker and receive Identity from the server
 	Auth(ctx context.Context, token ApiToken, entry RunnerRegistration) (Runner, error)
@@ -209,37 +209,21 @@ func (m *scenarioApiImpl) List(ctx context.Context, query SearchQuery) ([]Partia
 	return results, nil
 }
 
-func (m *scenarioApiImpl) Create(ctx context.Context, newEntry wyrd.ResourceManifest) (CreatedResponse, error) {
+func (m *scenarioApiImpl) Create(ctx context.Context, newEntry wyrd.ResourceManifest) (PartialObjectMetadata, error) {
 	entry := Scenario{
 		ResourceMeta: GetMetadata(newEntry),
 		ScenarioSpec: *newEntry.Spec.(*ScenarioSpec),
 	}
-	kind, ok := wyrd.KindOf(&entry.ScenarioSpec)
-	if !ok {
-		return CreatedResponse{}, wyrd.ErrUnknownKind
-	}
 
 	_, err := m.store.Create(ctx, &entry)
 
-	return CreatedResponse{
-		TypeMeta:            wyrd.TypeMeta{Kind: kind},
-		VersionedResourceId: entry.GetVersionedID(),
-	}, err
+	return entry.asManifest(), err
 }
 
 func (m *scenarioApiImpl) Get(ctx context.Context, id wyrd.ResourceID) (PartialObjectMetadata, bool, error) {
 	var result Scenario
-	kind, ok := wyrd.KindOf(&result.ScenarioSpec)
-	if !ok {
-		return PartialObjectMetadata{}, ok, wyrd.ErrUnknownKind
-	}
-
 	ok, err := m.store.Get(ctx, &result, id)
-	return PartialObjectMetadata{
-			TypeMeta:     wyrd.TypeMeta{Kind: kind},
-			ResourceMeta: result.ResourceMeta,
-			Spec:         &result.ScenarioSpec,
-		},
+	return result.asManifest(),
 		ok && result.GetID() == id && !result.IsDeleted(),
 		err
 }
@@ -269,22 +253,19 @@ func (m *scenarioApiImpl) UpdateScript(ctx context.Context, id VersionedResource
 	}, ok, err
 }
 
-func (m *scenarioApiImpl) Update(ctx context.Context, id VersionedResourceId, entry wyrd.ResourceManifest) (CreatedResponse, error) {
+func (m *scenarioApiImpl) Update(ctx context.Context, id VersionedResourceId, entry wyrd.ResourceManifest) (PartialObjectMetadata, error) {
 	var result Scenario
-	log.Print("[DEBUG ] Loading scenario ", id)
 	ok, err := m.store.GetWithVersion(ctx, &result, id)
-	log.Print("[DEBUG ] scenario ok=", ok, " err=", err)
 	if err != nil {
-		return CreatedResponse{}, err
+		return PartialObjectMetadata{}, err
 	}
 	if !ok {
-		return CreatedResponse{}, ErrResourceNotFound
+		return PartialObjectMetadata{}, ErrResourceNotFound
 	}
 
 	// Identity check
 	if result.Name != entry.Metadata.Name {
-		log.Print("[DEBUG ] Name mismatch request.Name=", entry.Metadata.Name, " entry.Name=", result.Name)
-		return CreatedResponse{}, ErrResourceNotFound
+		return PartialObjectMetadata{}, ErrResourceNotFound
 	}
 
 	result.Labels = entry.Metadata.Labels
@@ -300,13 +281,10 @@ func (m *scenarioApiImpl) Update(ctx context.Context, id VersionedResourceId, en
 
 	ok, err = m.store.Update(ctx, &result, result.GetVersionedID())
 	if !ok {
-		return CreatedResponse{}, ErrResourceVersionConflict
+		return PartialObjectMetadata{}, ErrResourceVersionConflict
 	}
 
-	return CreatedResponse{
-		TypeMeta:            entry.TypeMeta,
-		VersionedResourceId: result.GetVersionedID(),
-	}, err
+	return result.asManifest(), err
 }
 
 //------------------------------
@@ -334,6 +312,7 @@ func (m *resultsApiImpl) List(ctx context.Context, searchQuery SearchQuery) ([]P
 		return nil, wyrd.ErrUnknownKind
 	}
 
+	// Fixme: Should use typed requirements
 	if searchQuery.Labels == "" {
 		searchQuery.Labels = fmt.Sprintf("%v=%v", LabelScenarioId, m.scenarioId)
 	} else if !strings.Contains(searchQuery.Labels, LabelScenarioId) {
@@ -357,23 +336,23 @@ func (m *resultsApiImpl) List(ctx context.Context, searchQuery SearchQuery) ([]P
 	return results, nil
 }
 
-func (m *resultsApiImpl) Create(ctx context.Context, newEntry wyrd.ResourceManifest) (CreatedResponse, error) {
+func (m *resultsApiImpl) Create(ctx context.Context, newEntry wyrd.ResourceManifest) (PartialObjectMetadata, error) {
 	scenarioIdLabelValue := m.scenarioId.String()
 	if v, ok := newEntry.Metadata.Labels[LabelScenarioId]; ok && v != scenarioIdLabelValue {
-		return CreatedResponse{}, fmt.Errorf("invalid scenario ID for the given results entry")
+		return PartialObjectMetadata{}, fmt.Errorf("invalid scenario ID for the given results entry")
 	}
 
 	scenarioManifest, ok, err := m.scenarioApi.Get(ctx, m.scenarioId)
 	if err != nil {
-		return CreatedResponse{}, err
+		return PartialObjectMetadata{}, err
 	}
 	if !ok {
-		return CreatedResponse{}, ErrResourceNotFound
+		return PartialObjectMetadata{}, ErrResourceNotFound
 	}
 
 	scenario := scenarioManifest.Spec.(*ScenarioSpec)
 	if !scenario.IsActive {
-		return CreatedResponse{}, ErrForbidden
+		return PartialObjectMetadata{}, ErrForbidden
 	}
 
 	if newEntry.Metadata.Name == "" || strings.HasPrefix(newEntry.Metadata.Name, "manual-") { // Generate run name for scheduled runs
@@ -408,14 +387,9 @@ func (m *resultsApiImpl) Create(ctx context.Context, newEntry wyrd.ResourceManif
 		},
 	}
 
-	kind, ok := wyrd.KindOf(&entry.InitialRunResults)
-	if !ok {
-		return CreatedResponse{}, wyrd.ErrUnknownKind
-	}
-
 	_, err = m.store.Create(ctx, &entry)
 	if err != nil {
-		return CreatedResponse{}, err
+		return PartialObjectMetadata{}, err
 	}
 
 	_, err = m.scheduleRun(ctx, entry, scenarioManifest.ResourceMeta, scenario)
@@ -429,13 +403,10 @@ func (m *resultsApiImpl) Create(ctx context.Context, newEntry wyrd.ResourceManif
 		}
 
 		// Note: we do want to return original error, to know why we failed to schedule in a first place
-		return CreatedResponse{}, err
+		return PartialObjectMetadata{}, err
 	}
 
-	return CreatedResponse{
-		TypeMeta:            wyrd.TypeMeta{Kind: kind},
-		VersionedResourceId: entry.GetVersionedID(),
-	}, err
+	return entry.asManifest(), err
 }
 
 func (m *resultsApiImpl) Auth(ctx context.Context, id VersionedResourceId, authRequest AuthRunRequest) (CreatedRunResponse, error) {
@@ -589,7 +560,7 @@ func (m *runnersApiImpl) Get(ctx context.Context, id wyrd.ResourceID) (PartialOb
 		err
 }
 
-func (m *runnersApiImpl) Create(ctx context.Context, newEntry wyrd.ResourceManifest) (CreatedResponse, error) {
+func (m *runnersApiImpl) Create(ctx context.Context, newEntry wyrd.ResourceManifest) (PartialObjectMetadata, error) {
 	entry := Runner{
 		ResourceMeta: GetMetadata(newEntry),
 		RunnerSpec: RunnerSpec{
@@ -598,36 +569,28 @@ func (m *runnersApiImpl) Create(ctx context.Context, newEntry wyrd.ResourceManif
 		IdToken: randToken(16),
 	}
 
-	kind, ok := wyrd.KindOf(&entry.RunnerDefinition)
-	if !ok {
-		return CreatedResponse{}, wyrd.ErrUnknownKind
-	}
-
 	_, err := m.store.Create(ctx, &entry)
 
-	return CreatedResponse{
-		TypeMeta:            wyrd.TypeMeta{Kind: kind},
-		VersionedResourceId: entry.GetVersionedID(),
-	}, err
+	return entry.asManifest(), err
 }
 
 func (m *runnersApiImpl) Delete(ctx context.Context, id VersionedResourceId) (bool, error) {
 	return m.store.Delete(ctx, &Runner{}, id)
 }
 
-func (m *runnersApiImpl) Update(ctx context.Context, id VersionedResourceId, entry wyrd.ResourceManifest) (CreatedResponse, error) {
+func (m *runnersApiImpl) Update(ctx context.Context, id VersionedResourceId, entry wyrd.ResourceManifest) (PartialObjectMetadata, error) {
 	var result Runner
 	ok, err := m.store.GetWithVersion(ctx, &result, id)
 	if err != nil {
-		return CreatedResponse{}, err
+		return PartialObjectMetadata{}, err
 	}
 	if !ok {
-		return CreatedResponse{}, ErrResourceVersionConflict
+		return PartialObjectMetadata{}, ErrResourceVersionConflict
 	}
 
 	// Identity check
 	if result.Name != entry.Metadata.Name {
-		return CreatedResponse{}, ErrResourceNotFound
+		return PartialObjectMetadata{}, ErrResourceNotFound
 	}
 
 	result.Labels = entry.Metadata.Labels
@@ -636,13 +599,10 @@ func (m *runnersApiImpl) Update(ctx context.Context, id VersionedResourceId, ent
 	// Persist changes
 	ok, err = m.store.Update(ctx, &result, result.GetVersionedID())
 	if !ok {
-		return CreatedResponse{}, ErrResourceVersionConflict
+		return PartialObjectMetadata{}, ErrResourceVersionConflict
 	}
 
-	return CreatedResponse{
-		TypeMeta:            entry.TypeMeta,
-		VersionedResourceId: result.GetVersionedID(),
-	}, err
+	return result.asManifest(), err
 }
 
 func (m *runnersApiImpl) Auth(ctx context.Context, token ApiToken, entry RunnerRegistration) (Runner, error) {
@@ -727,23 +687,14 @@ func (m *artifactApiImp) GetContent(ctx context.Context, id wyrd.ResourceID) (re
 	return result.ArtifactSpec, ok && result.GetID() == id && !result.IsDeleted(), err
 }
 
-func (m *artifactApiImp) Create(ctx context.Context, newEntry wyrd.ResourceManifest) (CreatedResponse, error) {
+func (m *artifactApiImp) Create(ctx context.Context, newEntry wyrd.ResourceManifest) (PartialObjectMetadata, error) {
 	entry := Artifact{
 		ResourceMeta: GetMetadata(newEntry),
 		ArtifactSpec: *newEntry.Spec.(*ArtifactSpec),
 	}
 
-	kind, ok := wyrd.KindOf(&entry.ArtifactSpec)
-	if !ok {
-		return CreatedResponse{}, wyrd.ErrUnknownKind
-	}
-
 	_, err := m.store.Create(ctx, &entry)
-
-	return CreatedResponse{
-		TypeMeta:            wyrd.TypeMeta{Kind: kind},
-		VersionedResourceId: entry.GetVersionedID(),
-	}, err
+	return entry.asManifest(), err
 }
 
 func (m *artifactApiImp) Delete(ctx context.Context, id VersionedResourceId) (bool, error) {

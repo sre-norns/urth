@@ -9,7 +9,6 @@ import (
 )
 
 func TestLabesInterface(t *testing.T) {
-
 	require.Equal(t, "value", wyrd.Labels{"key": "value"}.Get("key"))
 	require.Equal(t, false, wyrd.Labels{"key": "value"}.Has("key-2"))
 	require.Equal(t, true, wyrd.Labels{"key": "value"}.Has("key"))

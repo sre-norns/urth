@@ -7,11 +7,13 @@ const runScenario = (id) => async dispatch => {
 
   try {
     const response = await apiPost(`/api/v1/scenarios/${id}/results`, {
-      name: "manual-",
-      labels: {
-        trigger: "manual",
-        triggerAgent: "web-ui"
-      },
+      metadata: {
+        name: "manual-",
+        labels: {
+          trigger: "manual",
+          triggerAgent: "web-ui"
+        },
+        }
     })
 
     dispatch({
