@@ -11,6 +11,8 @@ import (
 	"path"
 	"strconv"
 	"strings"
+
+	"github.com/sre-norns/urth/pkg/wyrd"
 )
 
 type RestApiClient struct {
@@ -39,7 +41,7 @@ func (c *RestApiClient) GetScenarioAPI() ScenarioApi {
 	}
 }
 
-func (c *RestApiClient) GetResultsAPI(id ResourceID) RunResultApi {
+func (c *RestApiClient) GetResultsAPI(id wyrd.ResourceID) RunResultApi {
 	return &RunResultApiRestClient{
 		RestApiClient: *c,
 		ScenarioId:    id,
@@ -58,7 +60,7 @@ func (c *RestApiClient) GetArtifactsApi() ArtifactApi {
 	}
 }
 
-func (c *RestApiClient) ApplyObjectDefinition(ctx context.Context, spec ResourceManifest) (CreatedResponse, error) {
+func (c *RestApiClient) ApplyObjectDefinition(ctx context.Context, spec wyrd.ResourceManifest) (CreatedResponse, error) {
 	var result CreatedResponse
 	data, err := json.Marshal(spec)
 	if err != nil {
@@ -80,7 +82,7 @@ func (c *RestApiClient) ApplyObjectDefinition(ctx context.Context, spec Resource
 	return result, err
 }
 
-func (c *RestApiClient) CreateFromManifest(ctx context.Context, manifest ResourceManifest) (CreatedResponse, error) {
+func (c *RestApiClient) CreateFromManifest(ctx context.Context, manifest wyrd.ResourceManifest) (CreatedResponse, error) {
 	var result CreatedResponse
 	data, err := json.Marshal(manifest)
 	if err != nil {
@@ -278,7 +280,7 @@ func (c *RestApiClient) createResource(uri string, entry any) (CreatedResponse, 
 	return result, err
 }
 
-func apiUrlForPath(baseUrl *url.URL, typeInfo TypeMeta, element string, query url.Values) *url.URL {
+func apiUrlForPath(baseUrl *url.URL, typeInfo wyrd.TypeMeta, element string, query url.Values) *url.URL {
 	collection := strings.ToLower(string(typeInfo.Kind))
 	// TODO: Make plural
 	return urlForPath(baseUrl, path.Join(typeInfo.APIVersion, collection, element), query)
@@ -332,13 +334,13 @@ func (c *RunnersApiClient) List(ctx context.Context, searchQuery SearchQuery) ([
 // Get a single resource given its unique ID,
 // Returns a resource if it exists, false, if resource doesn't exists
 // error if there was communication error with the storage
-func (c *RunnersApiClient) Get(ctx context.Context, id ResourceID) (resource Runner, exists bool, commError error) {
+func (c *RunnersApiClient) Get(ctx context.Context, id wyrd.ResourceID) (resource Runner, exists bool, commError error) {
 	var result Runner
 	exists, err := c.getResource(fmt.Sprintf("v1/runners/%v", id), &result)
 	return result, exists, err
 }
 
-func (c *RunnersApiClient) Create(ctx context.Context, newEntry ResourceManifest) (CreatedResponse, error) {
+func (c *RunnersApiClient) Create(ctx context.Context, newEntry wyrd.ResourceManifest) (CreatedResponse, error) {
 	return c.createResource("v1/runners", &newEntry)
 }
 
@@ -346,7 +348,7 @@ func (c *RunnersApiClient) Delete(ctx context.Context, id VersionedResourceId) (
 	return c.deleteResource(fmt.Sprintf("v1/runners/%v", id.ID), id.Version)
 }
 
-func (c *RunnersApiClient) Update(ctx context.Context, id VersionedResourceId, entry ResourceManifest) (CreatedResponse, error) {
+func (c *RunnersApiClient) Update(ctx context.Context, id VersionedResourceId, entry wyrd.ResourceManifest) (CreatedResponse, error) {
 	var result CreatedResponse
 	data, err := json.Marshal(entry)
 	if err != nil {
@@ -405,7 +407,7 @@ func (m *RunnersApiClient) Auth(ctx context.Context, token ApiToken, newEntry Ru
 type RunResultApiRestClient struct {
 	RestApiClient
 
-	ScenarioId ResourceID
+	ScenarioId wyrd.ResourceID
 }
 
 // List all resources matching given search query
@@ -416,13 +418,13 @@ func (c *RunResultApiRestClient) List(ctx context.Context, searchQuery SearchQue
 // Get a single resource given its unique ID,
 // Returns a resource if it exists, false, if resource doesn't exists
 // error if there was communication error with the storage
-func (c *RunResultApiRestClient) Get(ctx context.Context, id ResourceID) (Result, bool, error) {
+func (c *RunResultApiRestClient) Get(ctx context.Context, id wyrd.ResourceID) (Result, bool, error) {
 	var result Result
 	exists, err := c.getResource(fmt.Sprintf("v1/scenarios/%v/results/%v", c.ScenarioId, id), &result)
 	return result, exists, err
 }
 
-func (c *RunResultApiRestClient) Create(ctx context.Context, newEntry ResourceManifest) (CreatedResponse, error) {
+func (c *RunResultApiRestClient) Create(ctx context.Context, newEntry wyrd.ResourceManifest) (CreatedResponse, error) {
 	return c.createResource(fmt.Sprintf("v1/scenarios/%v/results", c.ScenarioId), &newEntry)
 }
 
@@ -500,17 +502,17 @@ func (c *artifactApiClient) List(ctx context.Context, searchQuery SearchQuery) (
 	return c.listResources("v1/artifacts", searchQuery)
 }
 
-func (c *artifactApiClient) Create(ctx context.Context, entry ResourceManifest) (CreatedResponse, error) {
+func (c *artifactApiClient) Create(ctx context.Context, entry wyrd.ResourceManifest) (CreatedResponse, error) {
 	return c.createResource("v1/artifacts", &entry)
 }
 
-func (c *artifactApiClient) Get(ctx context.Context, id ResourceID) (Artifact, bool, error) {
+func (c *artifactApiClient) Get(ctx context.Context, id wyrd.ResourceID) (Artifact, bool, error) {
 	var result Artifact
 	exists, err := c.getResource(fmt.Sprintf("v1/artifacts/%v", id), &result)
 	return result, exists, err
 }
 
-func (c *artifactApiClient) GetContent(ctx context.Context, id ResourceID) (resource ArtifactSpec, exists bool, err error) {
+func (c *artifactApiClient) GetContent(ctx context.Context, id wyrd.ResourceID) (resource ArtifactSpec, exists bool, err error) {
 	body, exists, err := c.getRawResource(fmt.Sprintf("v1/artifacts/%v/content", id))
 	if !exists || err != nil {
 		return
@@ -537,13 +539,13 @@ func (c *scenariosApiClient) List(ctx context.Context, searchQuery SearchQuery) 
 	return c.listResources("v1/scenarios", searchQuery)
 }
 
-func (c *scenariosApiClient) Get(ctx context.Context, id ResourceID) (Scenario, bool, error) {
+func (c *scenariosApiClient) Get(ctx context.Context, id wyrd.ResourceID) (Scenario, bool, error) {
 	var result Scenario
 	exists, err := c.getResource(fmt.Sprintf("v1/scenarios/%v", id), &result)
 	return result, exists, err
 }
 
-func (c *scenariosApiClient) Create(ctx context.Context, scenario ResourceManifest) (CreatedResponse, error) {
+func (c *scenariosApiClient) Create(ctx context.Context, scenario wyrd.ResourceManifest) (CreatedResponse, error) {
 	return c.createResource("v1/scenarios", &scenario)
 }
 
@@ -553,7 +555,7 @@ func (c *scenariosApiClient) Delete(ctx context.Context, id VersionedResourceId)
 }
 
 // Update a single resource identified by a unique ID
-func (c *scenariosApiClient) Update(ctx context.Context, id VersionedResourceId, scenario ResourceManifest) (CreatedResponse, error) {
+func (c *scenariosApiClient) Update(ctx context.Context, id VersionedResourceId, scenario wyrd.ResourceManifest) (CreatedResponse, error) {
 	return CreatedResponse{}, nil
 }
 

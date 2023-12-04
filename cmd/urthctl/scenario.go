@@ -8,11 +8,12 @@ import (
 	"strings"
 
 	"github.com/sre-norns/urth/pkg/urth"
+	"github.com/sre-norns/urth/pkg/wyrd"
 )
 
 var ErrResourceNotFound = fmt.Errorf("requested resource not found")
 
-func fetchRunner(ctx context.Context, id urth.ResourceID, apiServerAddress string) (urth.Runner, error) {
+func fetchRunner(ctx context.Context, id wyrd.ResourceID, apiServerAddress string) (urth.Runner, error) {
 	apiClient, err := urth.NewRestApiClient(apiServerAddress)
 	if err != nil {
 		return urth.Runner{}, fmt.Errorf("failed to initialize API Client: %w", err)
@@ -26,7 +27,7 @@ func fetchRunner(ctx context.Context, id urth.ResourceID, apiServerAddress strin
 	return resource, err
 }
 
-func fetchScenario(ctx context.Context, id urth.ResourceID, apiServerAddress string) (urth.Scenario, error) {
+func fetchScenario(ctx context.Context, id wyrd.ResourceID, apiServerAddress string) (urth.Scenario, error) {
 	apiClient, err := urth.NewRestApiClient(apiServerAddress)
 	if err != nil {
 		return urth.Scenario{}, fmt.Errorf("failed to initialize API Client: %w", err)
@@ -40,7 +41,7 @@ func fetchScenario(ctx context.Context, id urth.ResourceID, apiServerAddress str
 	return resource, err
 }
 
-func fetchResults(ctx context.Context, scenarioId, id urth.ResourceID, apiServerAddress string) (urth.Result, error) {
+func fetchResults(ctx context.Context, scenarioId, id wyrd.ResourceID, apiServerAddress string) (urth.Result, error) {
 	apiClient, err := urth.NewRestApiClient(apiServerAddress)
 	if err != nil {
 		return urth.Result{}, fmt.Errorf("failed to initialize API Client: %w", err)
@@ -54,7 +55,7 @@ func fetchResults(ctx context.Context, scenarioId, id urth.ResourceID, apiServer
 	return resource, err
 }
 
-func fetchArtifact(ctx context.Context, id urth.ResourceID, apiServerAddress string) (urth.Artifact, error) {
+func fetchArtifact(ctx context.Context, id wyrd.ResourceID, apiServerAddress string) (urth.Artifact, error) {
 	apiClient, err := urth.NewRestApiClient(apiServerAddress)
 	if err != nil {
 		return urth.Artifact{}, fmt.Errorf("failed to initialize API Client: %w", err)
@@ -68,14 +69,14 @@ func fetchArtifact(ctx context.Context, id urth.ResourceID, apiServerAddress str
 	return resource, err
 }
 
-func fetchLogs(ctx context.Context, apiServerAddress string, id urth.ResourceID, customSelector string) (chan io.Reader, error) {
+func fetchLogs(ctx context.Context, apiServerAddress string, id wyrd.ResourceID, customSelector string) (chan io.Reader, error) {
 	apiClient, err := urth.NewRestApiClient(apiServerAddress)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize API Client: %w", err)
 	}
 
 	labels := []string{}
-	if id != urth.InvalidResourceID {
+	if id != wyrd.InvalidResourceID {
 		labels = append(labels, fmt.Sprintf("%v=%v", urth.LabelScenarioRunId, id))
 	}
 

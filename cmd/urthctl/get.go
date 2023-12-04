@@ -8,29 +8,30 @@ import (
 	"time"
 
 	"github.com/sre-norns/urth/pkg/urth"
+	"github.com/sre-norns/urth/pkg/wyrd"
 	"gopkg.in/yaml.v3"
 )
 
 type (
 	Scenario struct {
-		ScenarioId urth.ResourceID `help:"Id of the scenario" arg:"" name:"scenario" `
+		ScenarioId wyrd.ResourceID `help:"Id of the scenario" arg:"" name:"scenario" `
 	}
 
 	Script struct {
-		ScenarioId urth.ResourceID `help:"Id of the scenario" arg:"" name:"scenario" `
+		ScenarioId wyrd.ResourceID `help:"Id of the scenario" arg:"" name:"scenario" `
 	}
 
 	Results struct {
-		ScenarioId urth.ResourceID `help:"Id of the scenario" arg:"" name:"scenario" `
-		RunId      urth.ResourceID `help:"Id of the run results" arg:"" name:"result" `
+		ScenarioId wyrd.ResourceID `help:"Id of the scenario" arg:"" name:"scenario" `
+		RunId      wyrd.ResourceID `help:"Id of the run results" arg:"" name:"result" `
 	}
 
 	Runner struct {
-		Id urth.ResourceID `help:"Id of the runner" arg:"" name:"scenario" `
+		Id wyrd.ResourceID `help:"Id of the runner" arg:"" name:"scenario" `
 	}
 
 	Artifact struct {
-		Id       urth.ResourceID `help:"Id of the artifact to get" arg:"" name:"artifact" `
+		Id       wyrd.ResourceID `help:"Id of the artifact to get" arg:"" name:"artifact" `
 		ShowMeta bool            `help:"Show artifact meta information instead of content" name:"meta"`
 	}
 

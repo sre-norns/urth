@@ -5,6 +5,7 @@ import (
 	"log"
 
 	"github.com/sre-norns/urth/pkg/urth"
+	"github.com/sre-norns/urth/pkg/wyrd"
 	"gopkg.in/yaml.v3"
 )
 
@@ -25,7 +26,7 @@ func (c *createCmd) Run(cfg *commandContext) error {
 			return fmt.Errorf("failed read content from %q: %w", filename, err)
 		}
 
-		var resourceSpec urth.ResourceManifest
+		var resourceSpec wyrd.ResourceManifest
 		if err := yaml.Unmarshal(content, &resourceSpec); err != nil {
 			return fmt.Errorf("failed parse manifest from %q: %w", filename, err)
 		}

@@ -1,17 +1,27 @@
-package urth
+package wyrd
 
 import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strconv"
 
-	"github.com/sre-norns/urth/pkg/wyrd"
 	"gopkg.in/yaml.v3"
 )
 
 var (
 	ErrUnknownKind = fmt.Errorf("unknown kind")
 )
+
+// Type to represent an ID of a resource
+type ResourceID uint
+
+const InvalidResourceID ResourceID = 0
+
+func (r ResourceID) String() string {
+	return strconv.FormatInt(int64(r), 10)
+	// return string(r)
+}
 
 type Kind string
 
@@ -68,21 +78,13 @@ type ObjectMeta struct {
 
 	// Labels is map of string keys and values that can be used to organize and categorize
 	// (scope and select) resources.
-	Labels wyrd.Labels `form:"labels,omitempty" json:"labels,omitempty" yaml:"labels,omitempty" xml:"labels,omitempty"`
+	Labels Labels `form:"labels,omitempty" json:"labels,omitempty" yaml:"labels,omitempty" xml:"labels,omitempty"`
 }
 
 type ResourceManifest struct {
 	TypeMeta `json:",inline" yaml:",inline"`
 	Metadata ObjectMeta  `json:"metadata" yaml:"metadata"`
 	Spec     interface{} `json:"-" yaml:"-"`
-}
-
-func (m *ResourceManifest) GetMetadata() ResourceMeta {
-	return ResourceMeta{
-		// ID: m.Metadata.UUID,
-		Name:   m.Metadata.Name,
-		Labels: m.Metadata.Labels,
-	}
 }
 
 func (u *ResourceManifest) MarshalJSON() ([]byte, error) {

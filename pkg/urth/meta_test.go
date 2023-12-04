@@ -12,7 +12,7 @@ import (
 func TestResourceManifest_Unmarshaling(t *testing.T) {
 	testCases := map[string]struct {
 		given       []byte
-		expect      ResourceManifest
+		expect      wyrd.ResourceManifest
 		expectError bool
 	}{
 		"unknown_kind": {
@@ -41,11 +41,11 @@ spec:
     matchLabels:
       os: linux
 `),
-			expect: ResourceManifest{
-				TypeMeta: TypeMeta{
+			expect: wyrd.ResourceManifest{
+				TypeMeta: wyrd.TypeMeta{
 					Kind: "runners",
 				},
-				Metadata: ObjectMeta{
+				Metadata: wyrd.ObjectMeta{
 					Name: "nginx-demo",
 				},
 				Spec: &RunnerDefinition{
@@ -92,12 +92,12 @@ spec:
       - { key: "owner", operator: "in",  values: ["trusted", "allowed"] }
       - { key: "env", operator: "notIn",  values: ["dev", "testing"] }
 `),
-			expect: ResourceManifest{
-				TypeMeta: TypeMeta{
+			expect: wyrd.ResourceManifest{
+				TypeMeta: wyrd.TypeMeta{
 					APIVersion: "v1",
 					Kind:       "scenarios",
 				},
-				Metadata: ObjectMeta{
+				Metadata: wyrd.ObjectMeta{
 					Name: "simple-web-prober",
 					Labels: wyrd.Labels{
 						"app":      "web-prob",
@@ -137,12 +137,12 @@ spec:
  rel: "har"
  mimeType: "data"
 `),
-			expect: ResourceManifest{
-				TypeMeta: TypeMeta{
+			expect: wyrd.ResourceManifest{
+				TypeMeta: wyrd.TypeMeta{
 					APIVersion: "v1",
 					Kind:       "artifacts",
 				},
-				Metadata: ObjectMeta{
+				Metadata: wyrd.ObjectMeta{
 					Name: "artifact-example",
 					Labels: wyrd.Labels{
 						"scenario": "xyz-script",
@@ -161,7 +161,7 @@ spec:
 	for name, tc := range testCases {
 		test := tc
 		t.Run(fmt.Sprintf("unmarshal:%s", name), func(t *testing.T) {
-			var got ResourceManifest
+			var got wyrd.ResourceManifest
 			err := yaml.Unmarshal(test.given, &got)
 			if test.expectError {
 				require.Error(t, err, "expected error: %v", test.expectError)

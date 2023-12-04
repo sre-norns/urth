@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/sre-norns/urth/pkg/urth"
+	"github.com/sre-norns/urth/pkg/wyrd"
 	"gopkg.in/yaml.v3"
 )
 
@@ -18,7 +19,7 @@ func (c *ApplyCmd) Run(cfg *commandContext) error {
 	}
 
 	// FIXME: Should be just a universal resource manifest file
-	var resourceSpec urth.ResourceManifest
+	var resourceSpec wyrd.ResourceManifest
 	if err := yaml.Unmarshal(content, &resourceSpec); err != nil {
 		return err
 	}

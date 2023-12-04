@@ -107,9 +107,8 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 		artifact := a
 		wg.Go(func() error {
 			// TODO: Must include run Auth Token
-			_, err := artifactsApiClient.Create(ctx, urth.ResourceManifest{
-				// TypeMeta: urth.TypeMeta{},
-				Metadata: urth.ObjectMeta{
+			_, err := artifactsApiClient.Create(ctx, wyrd.ResourceManifest{
+				Metadata: wyrd.ObjectMeta{
 					Name: fmt.Sprintf("%v.%v", runID, artifact.Rel),
 					Labels: wyrd.MergeLabels(
 						w.LabelJob(w.identity.GetVersionedID(), job),

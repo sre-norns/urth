@@ -25,17 +25,17 @@ type (
 	}
 
 	ResourceRequest struct {
-		ID ResourceID `uri:"id" form:"id" binding:"required"`
+		ID wyrd.ResourceID `uri:"id" form:"id" binding:"required"`
 	}
 
 	ScenarioRunResultsRequest struct {
 		ResourceRequest `uri:",inline" form:",inline" binding:"required"`
-		RunId           ResourceID `uri:"runId" form:"runId" binding:"required"`
+		RunId           wyrd.ResourceID `uri:"runId" form:"runId" binding:"required"`
 	}
 
 	ScenarioRunResultArtifactRequest struct {
 		ScenarioRunResultsRequest `uri:",inline" form:",inline" binding:"required"`
-		ArtifactID                ResourceID `uri:"artifactId" form:"artifactId" binding:"required"`
+		ArtifactID                wyrd.ResourceID `uri:"artifactId" form:"artifactId" binding:"required"`
 	}
 
 	PaginatedResponse[T any] struct {
@@ -52,7 +52,7 @@ type (
 
 	CreatedResponse struct {
 		// Gives us kind info
-		TypeMeta `json:",inline" yaml:",inline"`
+		wyrd.TypeMeta `json:",inline" yaml:",inline"`
 
 		VersionedResourceId `json:",inline" yaml:",inline"`
 	}

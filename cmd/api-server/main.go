@@ -12,6 +12,7 @@ import (
 	"github.com/sre-norns/urth/pkg/grace"
 	"github.com/sre-norns/urth/pkg/redqueue"
 	"github.com/sre-norns/urth/pkg/urth"
+	"github.com/sre-norns/urth/pkg/wyrd"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
@@ -185,10 +186,10 @@ func bindingFor(method, contentType string) binding.Binding {
 	}
 }
 
-func manifestApi(kind urth.Kind) gin.HandlerFunc {
+func manifestApi(kind wyrd.Kind) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
-		manifest := urth.ResourceManifest{
-			TypeMeta: urth.TypeMeta{
+		manifest := wyrd.ResourceManifest{
+			TypeMeta: wyrd.TypeMeta{
 				Kind: kind, // Assume correct kind in case of run-triggers with min info
 			},
 		}
@@ -207,6 +208,10 @@ func manifestApi(kind urth.Kind) gin.HandlerFunc {
 		ctx.Set(resourceManifestKey, manifest)
 		ctx.Next()
 	}
+}
+
+func requireManifest(ctx *gin.Context) wyrd.ResourceManifest {
+	return ctx.MustGet(resourceManifestKey).(wyrd.ResourceManifest)
 }
 
 // TODO: JWT Auth middleware for runners!
@@ -285,7 +290,7 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 		})
 
 		v1.POST("/runners", contentTypeApi(), manifestApi(urth.KindRunner), func(ctx *gin.Context) {
-			newEntry := ctx.MustGet(resourceManifestKey).(urth.ResourceManifest)
+			newEntry := requireManifest(ctx)
 			result, err := srv.GetRunnerAPI().Create(ctx.Request.Context(), newEntry)
 			if err != nil {
 				abortWithError(ctx, http.StatusBadRequest, err)
@@ -313,7 +318,7 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 
 		v1.PUT("/runners/:id", contentTypeApi(), resourceIdApi(), versionedResourceApi(), manifestApi(urth.KindRunner), func(ctx *gin.Context) {
 			versionedId := ctx.MustGet(versionedIdKey).(urth.VersionedResourceId)
-			newEntry := ctx.MustGet(resourceManifestKey).(urth.ResourceManifest)
+			newEntry := requireManifest(ctx)
 
 			updateResponse, err := srv.GetRunnerAPI().Update(ctx.Request.Context(), versionedId, newEntry)
 			if err != nil {
@@ -357,7 +362,7 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 		})
 
 		v1.POST("/scenarios", contentTypeApi(), manifestApi(urth.KindScenario), func(ctx *gin.Context) {
-			newEntry := ctx.MustGet(resourceManifestKey).(urth.ResourceManifest)
+			newEntry := requireManifest(ctx)
 			result, err := srv.GetScenarioAPI().Create(ctx.Request.Context(), newEntry)
 			if err != nil {
 				abortWithError(ctx, http.StatusBadRequest, err)
@@ -403,7 +408,7 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 
 		v1.PUT("/scenarios/:id", contentTypeApi(), resourceIdApi(), versionedResourceApi(), manifestApi(urth.KindScenario), func(ctx *gin.Context) {
 			versionedId := ctx.MustGet(versionedIdKey).(urth.VersionedResourceId)
-			newEntry := ctx.MustGet(resourceManifestKey).(urth.ResourceManifest)
+			newEntry := requireManifest(ctx)
 
 			updateResponse, err := srv.GetScenarioAPI().Update(ctx.Request.Context(), versionedId, newEntry)
 			if err != nil {
@@ -477,7 +482,7 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 		})
 		v1.POST("/scenarios/:id/results", contentTypeApi(), resourceIdApi(), manifestApi(urth.KindResult), func(ctx *gin.Context) {
 			resourceId := ctx.MustGet(resourceIdKey).(urth.ResourceRequest)
-			newEntry := ctx.MustGet(resourceManifestKey).(urth.ResourceManifest)
+			newEntry := requireManifest(ctx)
 
 			result, err := srv.GetResultsAPI(resourceId.ID).Create(ctx.Request.Context(), newEntry)
 			if err != nil {
@@ -579,7 +584,7 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 
 		// FIXME: Require valid worker auth / JWT
 		v1.POST("/artifacts", contentTypeApi() /*authBearerApi(),*/, manifestApi(urth.KindArtifact), func(ctx *gin.Context) {
-			newEntry := ctx.MustGet(resourceManifestKey).(urth.ResourceManifest)
+			newEntry := requireManifest(ctx)
 
 			// Considers streaming data to a blob storage
 			result, err := srv.GetArtifactsApi().Create(ctx.Request.Context(), newEntry)

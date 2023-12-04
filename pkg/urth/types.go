@@ -2,7 +2,6 @@ package urth
 
 import (
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/sre-norns/urth/pkg/wyrd"
@@ -10,25 +9,15 @@ import (
 	"gorm.io/gorm"
 )
 
-// Type to represent an ID of a resource
-type ResourceID uint
-
-const InvalidResourceID ResourceID = 0
-
-func (r ResourceID) String() string {
-	return strconv.FormatInt(int64(r), 10)
-	// return string(r)
-}
-
 // ApiToken is opaque datum used for auth purposes
 type ApiToken string
 
 type VersionedResourceId struct {
-	ID      ResourceID `form:"id" json:"id" yaml:"id" xml:"id"`
-	Version uint64     `form:"version" json:"version" yaml:"version" xml:"version"`
+	ID      wyrd.ResourceID `form:"id" json:"id" yaml:"id" xml:"id"`
+	Version uint64          `form:"version" json:"version" yaml:"version" xml:"version"`
 }
 
-func NewVersionedId(id ResourceID, version uint64) VersionedResourceId {
+func NewVersionedId(id wyrd.ResourceID, version uint64) VersionedResourceId {
 	return VersionedResourceId{
 		ID:      id,
 		Version: version,
@@ -45,7 +34,7 @@ type ResourceLabel struct {
 }
 
 type Resourceable interface {
-	GetID() ResourceID
+	GetID() wyrd.ResourceID
 	GetVersionedID() VersionedResourceId
 	IsDeleted() bool
 }
@@ -69,8 +58,8 @@ type ResourceMeta struct {
 	Labels wyrd.Labels `form:"labels,omitempty" json:"labels,omitempty" yaml:"labels,omitempty" xml:"labels,omitempty" gorm:"serializer:json"`
 }
 
-func (meta *ResourceMeta) GetID() ResourceID {
-	return ResourceID(meta.ID)
+func (meta *ResourceMeta) GetID() wyrd.ResourceID {
+	return wyrd.ResourceID(meta.ID)
 }
 
 func (meta *ResourceMeta) IsDeleted() bool {
@@ -78,14 +67,22 @@ func (meta *ResourceMeta) IsDeleted() bool {
 }
 
 func (meta *ResourceMeta) GetVersionedID() VersionedResourceId {
-	return NewVersionedId(ResourceID(meta.ID), meta.Version)
+	return NewVersionedId(wyrd.ResourceID(meta.ID), meta.Version)
+}
+
+func GetMetadata(m wyrd.ResourceManifest) ResourceMeta {
+	return ResourceMeta{
+		// ID: m.Metadata.UUID,
+		Name:   m.Metadata.Name,
+		Labels: m.Metadata.Labels,
+	}
 }
 
 // PartialObjectMetadata is a common information about a managed resource without details of that resource.
 // TypeMeta represents info about the type of resource.
 // This Type is return by API that manage collection of resources.
 type PartialObjectMetadata struct {
-	TypeMeta `json:",inline" yaml:",inline"`
+	wyrd.TypeMeta `json:",inline" yaml:",inline"`
 
 	// Standard resource's metadata.
 	ResourceMeta `json:"metadata,omitempty" yaml:"metadata,omitempty"`
@@ -270,23 +267,23 @@ func (meta *ResourceMeta) BeforeSave(tx *gorm.DB) (err error) {
 }
 
 const (
-	KindScenario Kind = "scenarios"
-	KindRunner   Kind = "runners"
-	KindResult   Kind = "results"
-	KindArtifact Kind = "artifacts"
+	KindScenario wyrd.Kind = "scenarios"
+	KindRunner   wyrd.Kind = "runners"
+	KindResult   wyrd.Kind = "results"
+	KindArtifact wyrd.Kind = "artifacts"
 )
 
 func init() {
-	if err := RegisterKind(KindScenario, &ScenarioSpec{}); err != nil {
+	if err := wyrd.RegisterKind(KindScenario, &ScenarioSpec{}); err != nil {
 		panic(err)
 	}
-	if err := RegisterKind(KindRunner, &RunnerDefinition{}); err != nil {
+	if err := wyrd.RegisterKind(KindRunner, &RunnerDefinition{}); err != nil {
 		panic(err)
 	}
-	if err := RegisterKind(KindResult, &InitialRunResults{}); err != nil {
+	if err := wyrd.RegisterKind(KindResult, &InitialRunResults{}); err != nil {
 		panic(err)
 	}
-	if err := RegisterKind(KindArtifact, &ArtifactSpec{}); err != nil {
+	if err := wyrd.RegisterKind(KindArtifact, &ArtifactSpec{}); err != nil {
 		panic(err)
 	}
 }

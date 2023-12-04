@@ -6,13 +6,13 @@ import (
 	"os"
 	"time"
 
-	"github.com/sre-norns/urth/pkg/urth"
+	"github.com/sre-norns/urth/pkg/wyrd"
 )
 
 type getLogs struct {
 	Selector string `help:"Keys to match" optional:"" name:"selector" short:"l"`
 
-	RunID urth.ResourceID `arg:"" optional:"" help:"Name of scenario run to show logs for"`
+	RunID wyrd.ResourceID `arg:"" optional:"" help:"Name of scenario run to show logs for"`
 }
 
 func (c *getLogs) Run(cfg *commandContext) error {

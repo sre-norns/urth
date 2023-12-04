@@ -20,13 +20,14 @@ import (
 	"github.com/sre-norns/urth/pkg/probers/tcp_prob"
 	"github.com/sre-norns/urth/pkg/runner"
 	"github.com/sre-norns/urth/pkg/urth"
+	"github.com/sre-norns/urth/pkg/wyrd"
 )
 
 type RunCmd struct {
 	Files []string `arg:"" optional:"" name:"file" help:"A script file to execute" type:"existingfile" xor:"scenario"`
 	Kind  string   `help:"The type of the scenario to run. Will try to guess if not specified"`
 
-	ScenarioId urth.ResourceID `help:"Id of the scenario" name:"scenario" xor:"file"`
+	ScenarioId wyrd.ResourceID `help:"Id of the scenario" name:"scenario" xor:"file"`
 
 	KeepTemp bool `help:"If true, temporary work directory is kept after run is complete"`
 	SaveHAR  bool `help:"If true, save HAR recording of HTTP scripts if applicable"`
@@ -141,14 +142,14 @@ func jobFromFile(filename string, kindHint string) (*urth.ScenarioScript, error)
 
 func (c *RunCmd) Run(cfg *commandContext) error {
 	// Check that either scenarioID or files is specified but not both
-	if len(c.Files) == 0 && c.ScenarioId == urth.InvalidResourceID {
+	if len(c.Files) == 0 && c.ScenarioId == wyrd.InvalidResourceID {
 		return fmt.Errorf("file or scenario ID must be provided")
 	}
-	if len(c.Files) != 0 && c.ScenarioId != urth.InvalidResourceID {
+	if len(c.Files) != 0 && c.ScenarioId != wyrd.InvalidResourceID {
 		return fmt.Errorf("only file or scenario ID must be provided, but not both")
 	}
 
-	if c.ScenarioId != urth.InvalidResourceID {
+	if c.ScenarioId != wyrd.InvalidResourceID {
 		scenario, err := fetchScenario(cfg.Context, c.ScenarioId, cfg.ApiServerAddress)
 		if err != nil {
 			return err

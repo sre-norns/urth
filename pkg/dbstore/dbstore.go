@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/sre-norns/urth/pkg/urth"
+	"github.com/sre-norns/urth/pkg/wyrd"
 	"gorm.io/gorm"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/selection"
@@ -30,7 +31,7 @@ func (s *DbStore) Create(ctx context.Context, value any) (bool, error) {
 	return true, s.db.WithContext(ctx).Create(value).Error
 }
 
-func (s *DbStore) Get(ctx context.Context, dest any, id urth.ResourceID) (bool, error) {
+func (s *DbStore) Get(ctx context.Context, dest any, id wyrd.ResourceID) (bool, error) {
 	tx := s.db.WithContext(ctx).First(dest, id)
 	if errors.Is(tx.Error, gorm.ErrRecordNotFound) {
 		return false, nil
