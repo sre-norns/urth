@@ -1,39 +1,103 @@
-import React, {forwardRef, useCallback, useMemo} from 'react'
+import React, {Component} from 'react'
 import PropTypes from 'prop-types'
 import styled from '@emotion/styled'
+import FormContext from './FormContext.js'
 import FormGroupContext from './FormGroupContext.js'
 
 
 const FormGroupContainer = styled.div``
 
-const FormGroup = forwardRef(({controlId, onValidate, ...props}, ref) => {
-  const [error, setError] = React.useState(undefined)
+class FormGroup extends Component {
+  static contextType = FormContext
 
-  const validate = useCallback((value, prevValue, force) => {
+  constructor(props) {
+    super(props)
+
+    this.state = {
+      context: {
+        controlId: props.controlId,
+        error: undefined,
+        validate: this.onValidate,
+      }
+    }
+
+    this.value = undefined
+  }
+
+  componentDidMount() {
+    if (this.context && this.context.register && this.props.controlId) {
+      this.context.register(this.props.controlId, this.onForceValidate)
+    }
+  }
+
+  componentWillUnmount() {
+    if (this.context && this.context.unregister && this.props.controlId) {
+      this.context.unregister(this.props.controlId)
+    }
+  }
+
+  componentDidUpdate(prevProps, prevState, snapshot) {
+    if (prevProps.controlId !== this.props.controlId) {
+      if (this.context && this.context.unregister && prevProps.controlId) {
+        this.context.unregister(prevProps.controlId)
+      }
+
+      if (this.context && this.context.register && this.props.controlId) {
+        this.context.register(this.props.controlId, this.onForceValidate)
+      }
+
+      this.setState(state => ({
+        context: {
+          ...state.context,
+          controlId: this.props.controlId,
+        }
+      }))
+    }
+  }
+
+  notifyValidated(error) {
+    this.setState(state => ({
+      context: {
+        ...state.context,
+        error,
+      }
+    }))
+
+    if (this.context && this.context.validated && this.props.controlId) {
+      this.context.validated(this.props.controlId, error)
+    }
+  }
+
+  onValidate = (value, prevValue, force) => {
+    this.value = value
+
+    const {onValidate} = this.props
     if (typeof onValidate === 'function') {
       const result = onValidate(value, prevValue, force)
       if (result instanceof Promise) {
         result.then((error) => {
-          setError(error)
+          this.notifyValidated(error)
         })
       } else {
-        setError(result)
+        this.notifyValidated(result)
       }
     }
-  }, [onValidate])
+  }
 
-  const context = useMemo(() => ({
-    controlId, error, validate,
-  }), [
-    controlId, error, validate,
-  ])
+  onForceValidate = () => {
+    this.onValidate(this.value, this.value, true)
+  }
 
-  return (
-    <FormGroupContext.Provider value={context}>
-      <FormGroupContainer {...props} ref={ref}/>
-    </FormGroupContext.Provider>
-  )
-})
+  render() {
+    const {controlId, onValidate, children, ...props} = this.props
+
+    return (
+      <FormGroupContext.Provider value={this.state.context}>
+        <FormGroupContainer {...props}>{children}</FormGroupContainer>
+      </FormGroupContext.Provider>
+    )
+  }
+}
 
 FormGroup.propTypes = {
   controlId: PropTypes.string,

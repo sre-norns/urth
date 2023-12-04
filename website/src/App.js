@@ -5,7 +5,7 @@ import {Navigate, Route, Routes} from 'react-router-dom'
 import {createTheme} from './theme/index.js'
 import HeaderMock from './containers/HeaderMock.js'
 import Scenarios from './pages/Scenarios.js'
-import ScenarioEditor from './pages/ScenarioEditor.js'
+import ScenarioViewer from './pages/ScenarioViewer.js'
 
 export default () => {
   const dark = useMediaQuery('(prefers-color-scheme: dark)')
@@ -19,7 +19,8 @@ export default () => {
           <Route path="/">
             <Route index element={<Navigate to="/scenarios"/>}/>
             <Route path="scenarios" element={<Scenarios/>}/>
-            <Route path="scenarios/:scenarioId" element={<ScenarioEditor/>}/>
+            <Route path="scenarios/:scenarioId" element={<ScenarioViewer/>}/>
+            <Route path="scenarios/:scenarioId/edit" element={<ScenarioViewer edit/>}/>
             <Route path="*" element={<p>Unknown</p>}/>
           </Route>
         </Routes>
