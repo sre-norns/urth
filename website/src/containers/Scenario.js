@@ -10,6 +10,7 @@ import {cyrb53} from '../utils/hash.js'
 import Button from '../components/Button.js'
 import Link from '../components/Link.js'
 import runScenario from '../actions/runScenario.js'
+import ObjectCapsules from '../components/ObjectCapsules.js'
 
 
 const TopContainer = styled.div`
@@ -22,14 +23,6 @@ const BodyContainer = styled.div`
 `
 
 const ActionsContainer = styled.div`
-`
-
-const CapsulesContainer = styled.div`
-  display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
-  gap: .25rem .5rem;
-  padding-top: .25rem;
 `
 
 const IconButton = styled(Button)`
@@ -52,9 +45,9 @@ const StopButton = styled(IconButton)`
   border-radius: 0 .5rem .5rem 0;
 `
 
-const onNonClick = (e) => { e.preventDefault() }
-
-const colors = ['primary', 'secondary', 'error', 'success', 'warning', 'neutral']
+const ScenarioCapsules = styled(ObjectCapsules)`
+  padding-top: .25rem;
+`
 
 const statusToColor = (status) => {
   switch (status) {
@@ -92,7 +85,7 @@ const Scenario = ({data, odd}) => {
         <BodyContainer>
           <TextDiv size="medium" level={2} weight={500}>
             <RagIndicator color={statusColor} style={{margin: '0 .5rem 0 2px'}} />
-            <Link href={`/scenarios/${ID}`}>{description}</Link>
+            <Link href={`/scenarios/${ID}`}>{name}</Link>
           </TextDiv>
           <TextDiv size='small' level={4}>
             <TextSpan>Schedule: </TextSpan>
@@ -110,18 +103,7 @@ const Scenario = ({data, odd}) => {
           <StopButton color={stopDisabled ? 'contrast' : 'error'} disabled={stopDisabled}><i className="fi fi-stop"></i></StopButton>
         </ActionsContainer>
       </TopContainer>
-      <CapsulesContainer>
-        { Object.entries(labels || {}).map(([name, value], i) =>
-          <Capsule
-            key={name}
-            name={name}
-            value={value}
-            color={colors[cyrb53(name, 11) % colors.length]}
-            href="#"
-            onClick={onNonClick}
-          />
-        )}
-      </CapsulesContainer>
+      <ScenarioCapsules value={labels} />
     </OddContainer>
   )
 }

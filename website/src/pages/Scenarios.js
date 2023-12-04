@@ -9,6 +9,10 @@ import ErrorInlay from '../components/ErrorInlay.js'
 
 
 const ScenariosContainer = styled.div`
+  width: 100%;
+  max-width: 1320px;
+  margin-left: auto;
+  margin-right: auto;
   padding: 1rem;
 `
 
