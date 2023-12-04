@@ -334,10 +334,9 @@ func (c *RunnersApiClient) List(ctx context.Context, searchQuery SearchQuery) ([
 // Get a single resource given its unique ID,
 // Returns a resource if it exists, false, if resource doesn't exists
 // error if there was communication error with the storage
-func (c *RunnersApiClient) Get(ctx context.Context, id wyrd.ResourceID) (resource Runner, exists bool, commError error) {
-	var result Runner
-	exists, err := c.getResource(fmt.Sprintf("v1/runners/%v", id), &result)
-	return result, exists, err
+func (c *RunnersApiClient) Get(ctx context.Context, id wyrd.ResourceID) (resource PartialObjectMetadata, exists bool, err error) {
+	exists, err = c.getResource(fmt.Sprintf("v1/runners/%v", id), &resource)
+	return
 }
 
 func (c *RunnersApiClient) Create(ctx context.Context, newEntry wyrd.ResourceManifest) (CreatedResponse, error) {
@@ -418,10 +417,9 @@ func (c *RunResultApiRestClient) List(ctx context.Context, searchQuery SearchQue
 // Get a single resource given its unique ID,
 // Returns a resource if it exists, false, if resource doesn't exists
 // error if there was communication error with the storage
-func (c *RunResultApiRestClient) Get(ctx context.Context, id wyrd.ResourceID) (Result, bool, error) {
-	var result Result
-	exists, err := c.getResource(fmt.Sprintf("v1/scenarios/%v/results/%v", c.ScenarioId, id), &result)
-	return result, exists, err
+func (c *RunResultApiRestClient) Get(ctx context.Context, id wyrd.ResourceID) (result PartialObjectMetadata, exist bool, err error) {
+	exist, err = c.getResource(fmt.Sprintf("v1/scenarios/%v/results/%v", c.ScenarioId, id), &result)
+	return
 }
 
 func (c *RunResultApiRestClient) Create(ctx context.Context, newEntry wyrd.ResourceManifest) (CreatedResponse, error) {
@@ -506,10 +504,9 @@ func (c *artifactApiClient) Create(ctx context.Context, entry wyrd.ResourceManif
 	return c.createResource("v1/artifacts", &entry)
 }
 
-func (c *artifactApiClient) Get(ctx context.Context, id wyrd.ResourceID) (Artifact, bool, error) {
-	var result Artifact
-	exists, err := c.getResource(fmt.Sprintf("v1/artifacts/%v", id), &result)
-	return result, exists, err
+func (c *artifactApiClient) Get(ctx context.Context, id wyrd.ResourceID) (result PartialObjectMetadata, exist bool, err error) {
+	exist, err = c.getResource(fmt.Sprintf("v1/artifacts/%v", id), &result)
+	return
 }
 
 func (c *artifactApiClient) GetContent(ctx context.Context, id wyrd.ResourceID) (resource ArtifactSpec, exists bool, err error) {
@@ -539,10 +536,9 @@ func (c *scenariosApiClient) List(ctx context.Context, searchQuery SearchQuery) 
 	return c.listResources("v1/scenarios", searchQuery)
 }
 
-func (c *scenariosApiClient) Get(ctx context.Context, id wyrd.ResourceID) (Scenario, bool, error) {
-	var result Scenario
-	exists, err := c.getResource(fmt.Sprintf("v1/scenarios/%v", id), &result)
-	return result, exists, err
+func (c *scenariosApiClient) Get(ctx context.Context, id wyrd.ResourceID) (result PartialObjectMetadata, exist bool, err error) {
+	exist, err = c.getResource(fmt.Sprintf("v1/scenarios/%v", id), &result)
+	return
 }
 
 func (c *scenariosApiClient) Create(ctx context.Context, scenario wyrd.ResourceManifest) (CreatedResponse, error) {

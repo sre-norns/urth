@@ -427,14 +427,14 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 				abortWithError(ctx, http.StatusBadRequest, err)
 				return
 			}
-
 			if !exists {
 				abortWithError(ctx, http.StatusNotFound, urth.ErrResourceNotFound)
 				return
 			}
 
-			ctx.Header("Content-Type", urth.ScriptKindToMimeType(resource.Script.Kind))
-			ctx.Writer.Write(resource.Script.Content)
+			script := resource.Spec.(*urth.ScenarioSpec).Script
+			ctx.Header("Content-Type", urth.ScriptKindToMimeType(script.Kind))
+			ctx.Writer.Write(script.Content)
 		})
 
 		v1.PUT("/scenarios/:id/script", resourceIdApi(), contentTypeApi(), versionedResourceApi(), func(ctx *gin.Context) {
@@ -611,7 +611,8 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 			}
 
 			// TODO: Find a better way to not-expand content
-			resource.Content = nil
+			artifact := resource.Spec.(*urth.ArtifactSpec)
+			artifact.Content = nil
 			marshalResponse(ctx, http.StatusOK, resource)
 		})
 		v1.GET("/artifacts/:id/content", contentTypeApi(), resourceIdApi(), func(ctx *gin.Context) {

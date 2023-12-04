@@ -156,7 +156,8 @@ func (c *Artifact) Run(cfg *commandContext) error {
 		return cfg.OutputFormatter(&resource)
 	}
 
-	_, err = os.Stdout.Write(resource.Content)
+	artifact := resource.Spec.(*urth.ArtifactSpec)
+	_, err = os.Stdout.Write(artifact.Content)
 
 	return err
 }

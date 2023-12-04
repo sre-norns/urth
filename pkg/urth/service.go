@@ -24,7 +24,7 @@ type ReadableResourceApi[T interface{}] interface {
 	// Get a single resource given its unique ID,
 	// Returns a resource if it exists, false, if resource doesn't exists
 	// error if there was communication error with the storage
-	Get(ctx context.Context, id wyrd.ResourceID) (resource T, exists bool, commError error)
+	Get(ctx context.Context, id wyrd.ResourceID) (resource PartialObjectMetadata, exists bool, commError error)
 }
 
 type ScenarioApi interface {
@@ -227,10 +227,21 @@ func (m *scenarioApiImpl) Create(ctx context.Context, newEntry wyrd.ResourceMani
 	}, err
 }
 
-func (m *scenarioApiImpl) Get(ctx context.Context, id wyrd.ResourceID) (Scenario, bool, error) {
+func (m *scenarioApiImpl) Get(ctx context.Context, id wyrd.ResourceID) (PartialObjectMetadata, bool, error) {
 	var result Scenario
+	kind, ok := wyrd.KindOf(&result.ScenarioSpec)
+	if !ok {
+		return PartialObjectMetadata{}, ok, wyrd.ErrUnknownKind
+	}
+
 	ok, err := m.store.Get(ctx, &result, id)
-	return result, ok && result.GetID() == id && !result.IsDeleted(), err
+	return PartialObjectMetadata{
+			TypeMeta:     wyrd.TypeMeta{Kind: kind},
+			ResourceMeta: result.ResourceMeta,
+			Spec:         &result.ScenarioSpec,
+		},
+		ok && result.GetID() == id && !result.IsDeleted(),
+		err
 }
 
 func (m *scenarioApiImpl) Delete(ctx context.Context, id VersionedResourceId) (bool, error) {
@@ -260,7 +271,9 @@ func (m *scenarioApiImpl) UpdateScript(ctx context.Context, id VersionedResource
 
 func (m *scenarioApiImpl) Update(ctx context.Context, id VersionedResourceId, entry wyrd.ResourceManifest) (CreatedResponse, error) {
 	var result Scenario
+	log.Print("[DEBUG ] Loading scenario ", id)
 	ok, err := m.store.GetWithVersion(ctx, &result, id)
+	log.Print("[DEBUG ] scenario ok=", ok, " err=", err)
 	if err != nil {
 		return CreatedResponse{}, err
 	}
@@ -270,6 +283,7 @@ func (m *scenarioApiImpl) Update(ctx context.Context, id VersionedResourceId, en
 
 	// Identity check
 	if result.Name != entry.Metadata.Name {
+		log.Print("[DEBUG ] Name mismatch request.Name=", entry.Metadata.Name, " entry.Name=", result.Name)
 		return CreatedResponse{}, ErrResourceNotFound
 	}
 
@@ -299,7 +313,7 @@ func (m *scenarioApiImpl) Update(ctx context.Context, id VersionedResourceId, en
 /// Scenarios run results
 //------------------------------
 
-func (s *resultsApiImpl) scheduleRun(ctx context.Context, runResult Result, scenario Scenario) (RunId, error) {
+func (s *resultsApiImpl) scheduleRun(ctx context.Context, runResult Result, meta ResourceMeta, scenario *ScenarioSpec) (RunId, error) {
 	if s.scheduler == nil {
 		return InvalidRunId, nil
 	}
@@ -309,8 +323,8 @@ func (s *resultsApiImpl) scheduleRun(ctx context.Context, runResult Result, scen
 	// 	return InvalidRunId, nil
 	// }
 
-	log.Printf("Scheduling scenario: %v (active=%t)", scenario.GetVersionedID(), scenario.IsActive)
-	return s.scheduler.Schedule(ctx, scenarioToRunnable(runResult, scenario))
+	log.Printf("Scheduling scenario: %v (active=%t)", meta.GetVersionedID(), scenario.IsActive)
+	return s.scheduler.Schedule(ctx, scenarioToRunnable(runResult, meta, scenario))
 }
 
 func (m *resultsApiImpl) List(ctx context.Context, searchQuery SearchQuery) ([]PartialObjectMetadata, error) {
@@ -349,7 +363,7 @@ func (m *resultsApiImpl) Create(ctx context.Context, newEntry wyrd.ResourceManif
 		return CreatedResponse{}, fmt.Errorf("invalid scenario ID for the given results entry")
 	}
 
-	scenario, ok, err := m.scenarioApi.Get(ctx, m.scenarioId)
+	scenarioManifest, ok, err := m.scenarioApi.Get(ctx, m.scenarioId)
 	if err != nil {
 		return CreatedResponse{}, err
 	}
@@ -357,19 +371,20 @@ func (m *resultsApiImpl) Create(ctx context.Context, newEntry wyrd.ResourceManif
 		return CreatedResponse{}, ErrResourceNotFound
 	}
 
+	scenario := scenarioManifest.Spec.(*ScenarioSpec)
 	if !scenario.IsActive {
 		return CreatedResponse{}, ErrForbidden
 	}
 
 	if newEntry.Metadata.Name == "" || strings.HasPrefix(newEntry.Metadata.Name, "manual-") { // Generate run name for scheduled runs
 		log.Print("manual run, prefix: ", newEntry.Metadata.Name)
-		newEntry.Metadata.Name = fmt.Sprintf("%v%v-v%v-%v", newEntry.Metadata.Name, scenario.Name, scenario.Version, randToken(32))
+		newEntry.Metadata.Name = fmt.Sprintf("%v%v-v%v-%v", newEntry.Metadata.Name, scenarioManifest.Name, scenarioManifest.Version, randToken(32))
 		log.Print("...generated name: ", newEntry.Metadata.Name)
 	}
 
 	// Ensure labels are set correctly
 	newEntry.Metadata.Labels = wyrd.MergeLabels(
-		scenario.Labels,
+		scenarioManifest.Labels,
 		newEntry.Metadata.Labels,
 		wyrd.Labels{
 			LabelScenarioId: scenarioIdLabelValue,
@@ -403,7 +418,7 @@ func (m *resultsApiImpl) Create(ctx context.Context, newEntry wyrd.ResourceManif
 		return CreatedResponse{}, err
 	}
 
-	_, err = m.scheduleRun(ctx, entry, scenario)
+	_, err = m.scheduleRun(ctx, entry, scenarioManifest.ResourceMeta, scenario)
 	if err != nil {
 		// Well, scheduling failed. Might as well cancel it:
 		entry.Status = JobErrored
@@ -510,10 +525,21 @@ func (m *resultsApiImpl) Update(ctx context.Context, id VersionedResourceId, tok
 	}, err
 }
 
-func (m *resultsApiImpl) Get(ctx context.Context, id wyrd.ResourceID) (Result, bool, error) {
+func (m *resultsApiImpl) Get(ctx context.Context, id wyrd.ResourceID) (PartialObjectMetadata, bool, error) {
 	var result Result
+	kind, ok := wyrd.KindOf(&result.InitialRunResults)
+	if !ok {
+		return PartialObjectMetadata{}, ok, wyrd.ErrUnknownKind
+	}
+
 	ok, err := m.store.Get(ctx, &result, id)
-	return result, ok && result.GetID() == id && !result.IsDeleted(), err
+	return PartialObjectMetadata{
+			TypeMeta:     wyrd.TypeMeta{Kind: kind},
+			ResourceMeta: result.ResourceMeta,
+			Spec:         &result.ResultSpec,
+		},
+		ok && result.GetID() == id && !result.IsDeleted(),
+		err
 }
 
 //------------------------------
@@ -546,10 +572,21 @@ func (m *runnersApiImpl) List(ctx context.Context, searchQuery SearchQuery) ([]P
 	return results, nil
 }
 
-func (m *runnersApiImpl) Get(ctx context.Context, id wyrd.ResourceID) (Runner, bool, error) {
+func (m *runnersApiImpl) Get(ctx context.Context, id wyrd.ResourceID) (PartialObjectMetadata, bool, error) {
 	var result Runner
+	kind, ok := wyrd.KindOf(&result.RunnerDefinition)
+	if !ok {
+		return PartialObjectMetadata{}, ok, wyrd.ErrUnknownKind
+	}
+
 	ok, err := m.store.Get(ctx, &result, id)
-	return result, ok && result.GetID() == id && !result.IsDeleted(), err
+	return PartialObjectMetadata{
+			TypeMeta:     wyrd.TypeMeta{Kind: kind},
+			ResourceMeta: result.ResourceMeta,
+			Spec:         &result.RunnerSpec,
+		},
+		ok && result.GetID() == id && !result.IsDeleted(),
+		err
 }
 
 func (m *runnersApiImpl) Create(ctx context.Context, newEntry wyrd.ResourceManifest) (CreatedResponse, error) {
@@ -667,10 +704,21 @@ func (m *artifactApiImp) List(ctx context.Context, query SearchQuery) ([]Partial
 	return results, nil
 }
 
-func (m *artifactApiImp) Get(ctx context.Context, id wyrd.ResourceID) (Artifact, bool, error) {
+func (m *artifactApiImp) Get(ctx context.Context, id wyrd.ResourceID) (PartialObjectMetadata, bool, error) {
 	var result Artifact
+	kind, ok := wyrd.KindOf(&result.ArtifactSpec)
+	if !ok {
+		return PartialObjectMetadata{}, ok, wyrd.ErrUnknownKind
+	}
+
 	ok, err := m.store.Get(ctx, &result, id)
-	return result, ok && result.GetID() == id && !result.IsDeleted(), err
+	return PartialObjectMetadata{
+			TypeMeta:     wyrd.TypeMeta{Kind: kind},
+			ResourceMeta: result.ResourceMeta,
+			Spec:         &result.ArtifactSpec,
+		},
+		ok && result.GetID() == id && !result.IsDeleted(),
+		err
 }
 
 func (m *artifactApiImp) GetContent(ctx context.Context, id wyrd.ResourceID) (resource ArtifactSpec, exists bool, commError error) {

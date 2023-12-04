@@ -150,11 +150,12 @@ func (c *RunCmd) Run(cfg *commandContext) error {
 	}
 
 	if c.ScenarioId != wyrd.InvalidResourceID {
-		scenario, err := fetchScenario(cfg.Context, c.ScenarioId, cfg.ApiServerAddress)
+		resource, err := fetchScenario(cfg.Context, c.ScenarioId, cfg.ApiServerAddress)
 		if err != nil {
 			return err
 		}
-		return c.runScenario(cfg.Context, scenario.Name, scenario.Script, cfg.WorkingDirectory, cfg.Timeout)
+		script := resource.Spec.(*urth.ScenarioSpec).Script
+		return c.runScenario(cfg.Context, resource.Name, script, cfg.WorkingDirectory, cfg.Timeout)
 	}
 
 	for _, filename := range c.Files {

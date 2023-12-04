@@ -33,17 +33,17 @@ type RunScenarioJob struct {
 	RunName string              `json:"runName" yaml:"runName"`
 }
 
-func scenarioToRunnable(run Result, scenario Scenario) RunScenarioJob {
+func scenarioToRunnable(run Result, scenarioMeta ResourceMeta, scenario *ScenarioSpec) RunScenarioJob {
 	return RunScenarioJob{
-		Name: scenario.Name,
+		Name:       scenarioMeta.Name,
+		ScenarioID: scenarioMeta.GetVersionedID(),
 
 		Requirements: scenario.Requirements,
 		RunSchedule:  scenario.RunSchedule,
-		ScenarioID:   scenario.GetVersionedID(),
 		Script:       scenario.Script,
 
 		Labels: wyrd.MergeLabels(
-			scenario.Labels,
+			scenarioMeta.Labels,
 			run.Labels,
 		),
 

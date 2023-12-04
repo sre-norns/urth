@@ -13,10 +13,10 @@ import (
 
 var ErrResourceNotFound = fmt.Errorf("requested resource not found")
 
-func fetchRunner(ctx context.Context, id wyrd.ResourceID, apiServerAddress string) (urth.Runner, error) {
+func fetchRunner(ctx context.Context, id wyrd.ResourceID, apiServerAddress string) (urth.PartialObjectMetadata, error) {
 	apiClient, err := urth.NewRestApiClient(apiServerAddress)
 	if err != nil {
-		return urth.Runner{}, fmt.Errorf("failed to initialize API Client: %w", err)
+		return urth.PartialObjectMetadata{}, fmt.Errorf("failed to initialize API Client: %w", err)
 	}
 
 	resource, ok, err := apiClient.GetRunnerAPI().Get(ctx, id)
@@ -27,10 +27,10 @@ func fetchRunner(ctx context.Context, id wyrd.ResourceID, apiServerAddress strin
 	return resource, err
 }
 
-func fetchScenario(ctx context.Context, id wyrd.ResourceID, apiServerAddress string) (urth.Scenario, error) {
+func fetchScenario(ctx context.Context, id wyrd.ResourceID, apiServerAddress string) (urth.PartialObjectMetadata, error) {
 	apiClient, err := urth.NewRestApiClient(apiServerAddress)
 	if err != nil {
-		return urth.Scenario{}, fmt.Errorf("failed to initialize API Client: %w", err)
+		return urth.PartialObjectMetadata{}, fmt.Errorf("failed to initialize API Client: %w", err)
 	}
 
 	resource, ok, err := apiClient.GetScenarioAPI().Get(ctx, id)
@@ -41,10 +41,10 @@ func fetchScenario(ctx context.Context, id wyrd.ResourceID, apiServerAddress str
 	return resource, err
 }
 
-func fetchResults(ctx context.Context, scenarioId, id wyrd.ResourceID, apiServerAddress string) (urth.Result, error) {
+func fetchResults(ctx context.Context, scenarioId, id wyrd.ResourceID, apiServerAddress string) (urth.PartialObjectMetadata, error) {
 	apiClient, err := urth.NewRestApiClient(apiServerAddress)
 	if err != nil {
-		return urth.Result{}, fmt.Errorf("failed to initialize API Client: %w", err)
+		return urth.PartialObjectMetadata{}, fmt.Errorf("failed to initialize API Client: %w", err)
 	}
 
 	resource, ok, err := apiClient.GetResultsAPI(scenarioId).Get(ctx, id)
@@ -55,10 +55,10 @@ func fetchResults(ctx context.Context, scenarioId, id wyrd.ResourceID, apiServer
 	return resource, err
 }
 
-func fetchArtifact(ctx context.Context, id wyrd.ResourceID, apiServerAddress string) (urth.Artifact, error) {
+func fetchArtifact(ctx context.Context, id wyrd.ResourceID, apiServerAddress string) (urth.PartialObjectMetadata, error) {
 	apiClient, err := urth.NewRestApiClient(apiServerAddress)
 	if err != nil {
-		return urth.Artifact{}, fmt.Errorf("failed to initialize API Client: %w", err)
+		return urth.PartialObjectMetadata{}, fmt.Errorf("failed to initialize API Client: %w", err)
 	}
 
 	resource, ok, err := apiClient.GetArtifactsApi().Get(ctx, id)

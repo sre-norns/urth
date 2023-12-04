@@ -95,13 +95,18 @@ const ScenarioViewer = ({edit = false}) => {
       return
     }
 
-    dispatch(updateScenario(scenarioId, response.version, {
-      name,
-      labels: response.labels,
-      description,
-      requirements: response.requirements,
-      active: response.active,
-      script: response.script,
+    dispatch(updateScenario(scenarioId, response.metadata.version, {
+      kind: response.kind,
+      metadata: {
+        name,
+        labels: response.metadata.labels,
+      },
+      spec: {
+        description,
+        requirements: response.spec.requirements,
+        active: response.spec.active,
+        script: response.spec.script,
+        },
     }))
   }, [name, description])
 
@@ -115,8 +120,8 @@ const ScenarioViewer = ({edit = false}) => {
 
   React.useEffect(() => {
     if (response) {
-      setName(response.name)
-      setDescription(response.description)
+      setName(response.metadata.name)
+      setDescription(response.spec.description)
     }
   }, [response])
 
@@ -157,10 +162,10 @@ const ScenarioViewer = ({edit = false}) => {
             {!edit && <div>{description}</div>}
             <FormGroupError/>
           </FormGroup>
-          {!edit && Object.keys(response.labels).length &&
+          {!edit && Object.keys(response.metadata.labels || {}).length &&
             <FormGroup controlId="scenario-labels">
               <FormLabel>Labels</FormLabel>
-              <ObjectCapsules value={response.labels}/>
+              <ObjectCapsules value={response.metadata.labels}/>
             </FormGroup>
           }
         </PageForm>
