@@ -1,8 +1,9 @@
 package urth
 
 import (
+	"encoding/json"
+
 	"github.com/sre-norns/urth/pkg/wyrd"
-	"gopkg.in/yaml.v3"
 )
 
 // RunScenarioJob represents a to be picked by a qualified worker
@@ -23,7 +24,7 @@ type RunScenarioJob struct {
 	ScenarioID VersionedResourceId `form:"play_id" json:"play_id" yaml:"play_id" xml:"play_id"  binding:"required" `
 
 	// Script of a job to be performed by a runner
-	Script *ScenarioScript `form:"script" json:"script" yaml:"script" xml:"script" `
+	Prob ProbManifest `form:"prob" json:"prob" yaml:"prob" xml:"prob" `
 
 	// True if you want the worker to keep temp working directory with run artifacts
 	IsKeepDirectory bool `form:"keepDir" json:"keepDir" yaml:"keepDir" xml:"keepDir" `
@@ -40,7 +41,7 @@ func scenarioToRunnable(run Result, scenarioMeta ResourceMeta, scenario *Scenari
 
 		Requirements: scenario.Requirements,
 		RunSchedule:  scenario.RunSchedule,
-		Script:       scenario.Script,
+		Prob:         scenario.Prob,
 
 		Labels: wyrd.MergeLabels(
 			scenarioMeta.Labels,
@@ -52,13 +53,13 @@ func scenarioToRunnable(run Result, scenarioMeta ResourceMeta, scenario *Scenari
 	}
 }
 
-func UnmarshalJobYAML(data []byte) (RunScenarioJob, error) {
-	var value RunScenarioJob
-	err := yaml.Unmarshal(data, &value)
-
-	return value, err
+func UnmarshalJob(data []byte) (result RunScenarioJob, err error) {
+	// err = yaml.Unmarshal(data, &result)
+	err = json.Unmarshal(data, &result)
+	return
 }
 
-func MarshalJobYAML(runScenario RunScenarioJob) ([]byte, error) {
-	return yaml.Marshal(&runScenario)
+func MarshalJob(runScenario RunScenarioJob) ([]byte, error) {
+	// return yaml.Marshal(&runScenario)
+	return json.Marshal(&runScenario)
 }

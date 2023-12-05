@@ -38,7 +38,7 @@ type ScenarioApi interface {
 	// Update a single resource identified by a unique ID
 	Update(ctx context.Context, id VersionedResourceId, entry wyrd.ResourceManifest) (PartialObjectMetadata, error)
 
-	UpdateScript(ctx context.Context, id VersionedResourceId, entry ScenarioScript) (CreatedResponse, bool, error)
+	UpdateScript(ctx context.Context, id VersionedResourceId, entry ProbManifest) (CreatedResponse, bool, error)
 
 	// ClientAPI: Can it be done using filters?
 	ListRunnable(ctx context.Context, query SearchQuery) ([]Scenario, error)
@@ -198,7 +198,7 @@ func (m *scenarioApiImpl) List(ctx context.Context, query SearchQuery) ([]Partia
 	results := make([]PartialObjectMetadata, 0, len(resources))
 	for _, sc := range resources {
 		// TODO: Script should be moved into a separate table, that way we won't have to filter it out here
-		sc.Script = nil
+		sc.Prob.Spec = nil
 		results = append(results, PartialObjectMetadata{
 			TypeMeta:     wyrd.TypeMeta{Kind: kind},
 			ResourceMeta: sc.ResourceMeta,
@@ -232,7 +232,7 @@ func (m *scenarioApiImpl) Delete(ctx context.Context, id VersionedResourceId) (b
 	return m.store.Delete(ctx, &Scenario{}, id)
 }
 
-func (m *scenarioApiImpl) UpdateScript(ctx context.Context, id VersionedResourceId, script ScenarioScript) (CreatedResponse, bool, error) {
+func (m *scenarioApiImpl) UpdateScript(ctx context.Context, id VersionedResourceId, prob ProbManifest) (CreatedResponse, bool, error) {
 	var result Scenario
 	kind, ok := wyrd.KindOf(&result.ScenarioSpec)
 	if !ok {
@@ -244,7 +244,7 @@ func (m *scenarioApiImpl) UpdateScript(ctx context.Context, id VersionedResource
 		return CreatedResponse{}, ok, err
 	}
 
-	result.Script = &script
+	result.Prob = prob
 	ok, err = m.store.Update(ctx, &result, result.GetVersionedID())
 
 	return CreatedResponse{
@@ -269,15 +269,7 @@ func (m *scenarioApiImpl) Update(ctx context.Context, id VersionedResourceId, en
 	}
 
 	result.Labels = entry.Metadata.Labels
-	currentScript := result.Script
-	newScenario := *entry.Spec.(*ScenarioSpec)
-
-	// Ensure that manifest without a script section does not accidentally deletes a script
-	// TODO: A better way to move .script out of `CreateScenario` and into `Scenario` directly
-	if newScenario.Script == nil && currentScript != nil {
-		newScenario.Script = currentScript
-	}
-	result.ScenarioSpec = newScenario
+	result.ScenarioSpec = *entry.Spec.(*ScenarioSpec)
 
 	ok, err = m.store.Update(ctx, &result, result.GetVersionedID())
 	if !ok {
@@ -369,6 +361,10 @@ func (m *resultsApiImpl) Create(ctx context.Context, newEntry wyrd.ResourceManif
 			LabelScenarioId: scenarioIdLabelValue,
 		},
 	)
+
+	if newEntry.Spec == nil {
+		newEntry.Spec = &InitialRunResults{}
+	}
 
 	spec := newEntry.Spec.(*InitialRunResults)
 	// Ensure timestamp is set:

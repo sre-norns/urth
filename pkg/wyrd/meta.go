@@ -28,18 +28,25 @@ type Kind string
 var metaKindRegistry = map[Kind]reflect.Type{}
 
 func RegisterKind(kind Kind, proto any) error {
-	t := reflect.ValueOf(proto)
-	if t.Kind() != reflect.Pointer || !t.CanInterface() {
-		return fmt.Errorf("pointer expected")
+	val := reflect.ValueOf(proto)
+	if !val.CanInterface() {
+		return fmt.Errorf("type of %q can not interface", val.Type())
 	}
 
-	metaKindRegistry[kind] = t.Elem().Type()
+	t := val.Type()
+	if val.Kind() == reflect.Pointer {
+		t = val.Elem().Type()
+	}
+
+	metaKindRegistry[kind] = t
 	return nil
 }
 
 func UnregisterKind(kind Kind) {
 	delete(metaKindRegistry, kind)
 }
+
+type KindFactory func(kind Kind) (any, error)
 
 func InstanceOf(kind Kind) (any, error) {
 	t, known := metaKindRegistry[kind]
@@ -51,12 +58,12 @@ func InstanceOf(kind Kind) (any, error) {
 }
 
 func KindOf(maybeManifest any) (result Kind, known bool) {
-	value := reflect.ValueOf(maybeManifest)
-	if value.Kind() != reflect.Pointer || !value.CanInterface() {
-		return
+	val := reflect.ValueOf(maybeManifest)
+	t := val.Type()
+	if val.Kind() == reflect.Pointer {
+		t = val.Elem().Type()
 	}
 
-	t := value.Elem().Type()
 	// Linear scan over map to find key with value equals give: not that terrible when the map is small
 	for kind, v := range metaKindRegistry {
 		if v == t {
@@ -103,6 +110,23 @@ func (u ResourceManifest) MarshalJSON() ([]byte, error) {
 	})
 }
 
+func UnmarshalJsonWithRegister(kind Kind, specData json.RawMessage, factory KindFactory) (any, error) {
+	spec, err := factory(kind)
+	if err != nil { // Kind is not known, get raw message if not-nil
+		if len(specData) != 0 { // No spec to parse
+			spec = specData
+		}
+		return spec, nil // err
+	}
+
+	if len(specData) == 0 { // No spec to parse
+		return nil, nil
+	}
+
+	err = json.Unmarshal(specData, spec)
+	return spec, err
+}
+
 func (s *ResourceManifest) UnmarshalJSON(data []byte) error {
 	aux := &struct {
 		TypeMeta `json:",inline"`
@@ -120,24 +144,15 @@ func (s *ResourceManifest) UnmarshalJSON(data []byte) error {
 
 	s.TypeMeta = aux.TypeMeta
 	s.Metadata = aux.Metadata
-
-	s.Spec, err = InstanceOf(s.Kind)
-	if err != nil {
-		return err
-	}
-
-	if len(aux.Spec) == 0 { // No spec to parse
-		return nil
-	}
-
-	return json.Unmarshal(aux.Spec, s.Spec)
+	s.Spec, err = UnmarshalJsonWithRegister(aux.Kind, aux.Spec, InstanceOf)
+	return err
 }
 
-func (u *ResourceManifest) MarshalYAML() (interface{}, error) {
+func (u ResourceManifest) MarshalYAML() (interface{}, error) {
 	return struct {
 		TypeMeta `json:",inline" yaml:",inline"`
 		Metadata ObjectMeta  `json:"metadata" yaml:"metadata"`
-		Spec     interface{} // needed to strip any json tags
+		Spec     interface{} `json:"spec" yaml:"spec,omitempty"` // needed to strip any json tags
 	}{
 		TypeMeta: u.TypeMeta,
 		Metadata: u.Metadata,
@@ -153,13 +168,17 @@ func (s *ResourceManifest) UnmarshalYAML(n *yaml.Node) (err error) {
 	}
 
 	obj := &T{S: (*S)(s)}
-	if err := n.Decode(obj); err != nil {
-		return err
+	if err = n.Decode(obj); err != nil {
+		return
 	}
 
 	s.Spec, err = InstanceOf(s.Kind)
 	if err != nil {
-		return
+		if len(obj.Spec.Content) == 0 {
+			s.Spec = nil
+			return nil
+		}
+		s.Spec = make(map[string]string)
 	}
 
 	return obj.Spec.Decode(s.Spec)

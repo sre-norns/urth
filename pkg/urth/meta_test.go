@@ -3,6 +3,7 @@ package urth
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/sre-norns/urth/pkg/wyrd"
 	"github.com/stretchr/testify/require"
@@ -60,16 +61,6 @@ spec:
 			},
 		},
 
-		// requirements:
-		// matchLabels:
-		//   os: "linux"
-		// matchSelector:
-		//  - Key: "owner"
-		//    Op: "in"
-		//    Values:
-		// 	- "allowed"
-		// 	- "trusted"
-
 		"scenario": {
 			given: []byte(`
 apiVersion: v1
@@ -83,8 +74,9 @@ spec:
   description: "Awesome"
   active: true
   schedule: "* * * * *"
-  script:
-    kind: "http/get"
+  prob:
+    kind: http
+    timeout: 120s
   requirements:
     matchLabels:
       os: "linux"
@@ -108,8 +100,9 @@ spec:
 					IsActive:    true,
 					RunSchedule: "* * * * *",
 					Description: "Awesome",
-					Script: &ScenarioScript{
-						Kind: "http/get",
+					Prob: ProbManifest{
+						Kind:    "http",
+						Timeout: time.Second * 120,
 					},
 					Requirements: wyrd.LabelSelector{
 						MatchSelector: []wyrd.Selector{

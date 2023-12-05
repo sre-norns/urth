@@ -36,7 +36,7 @@ type RunOptions struct {
 	Har       HarOptions
 }
 
-type ScriptRunner func(context.Context, []byte, RunOptions) (urth.FinalRunResults, []urth.ArtifactSpec, error)
+type ScriptRunner func(context.Context, any, RunOptions) (urth.FinalRunResults, []urth.ArtifactSpec, error)
 
 type ProbRegistration struct {
 	// Function to execute a script
@@ -53,12 +53,18 @@ type ProbRegistration struct {
 }
 
 // Registrar of Probing modules
-var kindRunnerMap = map[urth.ScenarioKind]ProbRegistration{}
+var (
+	kindRunnerMap = map[urth.ProbKind]ProbRegistration{}
+)
 
 // Register new kind of prob
-func RegisterProbKind(kind urth.ScenarioKind, probInfo ProbRegistration) error {
+func RegisterProbKind(kind urth.ProbKind, proto any, probInfo ProbRegistration) error {
 	if probInfo.RunFunc == nil {
 		return ErrNilRunner
+	}
+
+	if err := urth.RegisterProbKind(kind, proto); err != nil {
+		return err
 	}
 
 	// TODO: Should be return an error?
@@ -67,7 +73,8 @@ func RegisterProbKind(kind urth.ScenarioKind, probInfo ProbRegistration) error {
 }
 
 // Unregister given prober kind
-func UnregisterProbKind(kind urth.ScenarioKind) error {
+func UnregisterProbKind(kind urth.ProbKind) error {
+	urth.UnregisterProbKind(kind)
 	delete(kindRunnerMap, kind)
 
 	return nil
@@ -75,28 +82,29 @@ func UnregisterProbKind(kind urth.ScenarioKind) error {
 
 // List all registered probers
 // Note: function makes a copy of the module list to avoid accidental modification of registration info
-func ListProbs() map[urth.ScenarioKind]ProbRegistration {
-	result := make(map[urth.ScenarioKind]ProbRegistration, len(kindRunnerMap))
+func ListProbs() map[urth.ProbKind]ProbRegistration {
+	result := make(map[urth.ProbKind]ProbRegistration, len(kindRunnerMap))
 	for kind, info := range kindRunnerMap {
 		result[kind] = info
 	}
+
 	return result
 }
 
 // Execute a single scenario
-func Play(ctx context.Context, script *urth.ScenarioScript, options RunOptions) (urth.FinalRunResults, []urth.ArtifactSpec, error) {
-	if script == nil {
-		return urth.NewRunResults(urth.RunFinishedError), nil, fmt.Errorf("no script to run")
-	}
+func Play(ctx context.Context, script urth.ProbManifest, options RunOptions) (urth.FinalRunResults, []urth.ArtifactSpec, error) {
+	// if script == nil {
+	// 	return urth.NewRunResults(urth.RunFinishedError), nil, fmt.Errorf("no script to run")
+	// }
 
-	if len(script.Kind) == 0 {
-		return urth.NewRunResults(urth.RunFinishedError), nil, fmt.Errorf("no script Kind specified")
-	}
+	// if len(script.Kind) == 0 {
+	// 	return urth.NewRunResults(urth.RunFinishedError), nil, fmt.Errorf("no script Kind specified")
+	// }
 
 	probInfo, ok := kindRunnerMap[script.Kind]
 	if !ok {
-		return urth.NewRunResults(urth.RunFinishedError), nil, fmt.Errorf("unsupported script kind: %v", script.Kind)
+		return urth.NewRunResults(urth.RunFinishedError), nil, fmt.Errorf("unsupported script kind: %q", script.Kind)
 	}
 
-	return probInfo.RunFunc(ctx, script.Content, options)
+	return probInfo.RunFunc(ctx, script.Spec, options)
 }

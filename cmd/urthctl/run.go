@@ -18,6 +18,7 @@ import (
 	"github.com/sre-norns/urth/pkg/probers/puppeteer_prob"
 	"github.com/sre-norns/urth/pkg/probers/pypuppeteer_prob"
 	"github.com/sre-norns/urth/pkg/probers/tcp_prob"
+
 	"github.com/sre-norns/urth/pkg/runner"
 	"github.com/sre-norns/urth/pkg/urth"
 	"github.com/sre-norns/urth/pkg/wyrd"
@@ -34,11 +35,11 @@ type RunCmd struct {
 	Headless bool `help:"If true, puppeteer scripts are run in a headless mode"`
 }
 
-func (c *RunCmd) runScenario(cmdCtx context.Context, sourceName string, script *urth.ScenarioScript, workingDir string, timeout time.Duration) error {
+func (c *RunCmd) runScenario(cmdCtx context.Context, sourceName string, prob *urth.ProbManifest, workingDir string, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(cmdCtx, timeout)
 	defer cancel()
 
-	runResult, artifacts, err := runner.Play(ctx, script, runner.RunOptions{
+	runResult, artifacts, err := runner.Play(ctx, *prob, runner.RunOptions{
 		Puppeteer: runner.PuppeteerOptions{
 			Headless:         c.Headless,
 			WorkingDirectory: workingDir,
@@ -89,7 +90,7 @@ func readContent(filename string) ([]byte, string, error) {
 	return content, filepath.Ext(filename), err
 }
 
-func jobFromFile(filename string, kindHint string) (*urth.ScenarioScript, error) {
+func jobFromFile(filename string, kindHint string) (*urth.ProbManifest, error) {
 	content, ext, err := readContent(filename)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read content: %w", err)
@@ -98,23 +99,38 @@ func jobFromFile(filename string, kindHint string) (*urth.ScenarioScript, error)
 	if kindHint == "" {
 		switch ext {
 		case ".yaml", ".yml":
-			var scenario urth.Scenario
+			var scenario wyrd.ResourceManifest
 			err := yaml.Unmarshal(content, &scenario)
-			return scenario.Script, err
-		case ".json":
-			var scenario urth.Scenario
-			err := json.Unmarshal(content, &scenario)
+			if err != nil {
+				return nil, err
+			}
 
-			return scenario.Script, err
+			if scenario.Kind != urth.KindScenario {
+				return nil, fmt.Errorf("non-runnable manifest file of kind %q", scenario.Kind)
+			}
+
+			return &scenario.Spec.(*urth.ScenarioSpec).Prob, err
+		case ".json":
+			var scenario wyrd.ResourceManifest
+			err := json.Unmarshal(content, &scenario)
+			if err != nil {
+				return nil, err
+			}
+
+			if scenario.Kind != urth.KindScenario {
+				return nil, fmt.Errorf("non-runnable manifest file of kind %q", scenario.Kind)
+			}
+
+			return &scenario.Spec.(*urth.ScenarioSpec).Prob, err
 		}
 
 		// Fallthrough: Not a recognized format for scenario file
 	}
 
-	var kind urth.ScenarioKind
+	var kind urth.ProbKind
 	// Kind guessing
 	if kindHint != "" {
-		kind = urth.ScenarioKind(kindHint)
+		kind = urth.ProbKind(kindHint)
 	} else {
 		switch ext {
 		case ".js", ".mjs":
@@ -131,13 +147,34 @@ func jobFromFile(filename string, kindHint string) (*urth.ScenarioScript, error)
 	}
 
 	if string(kind) == "" {
-		return nil, fmt.Errorf("no script kind for content file (ext: %q)", ext)
+		return nil, fmt.Errorf("no kind provided for the input file (ext: %q)", ext)
 	}
 
-	return &urth.ScenarioScript{
-		Kind:    kind,
-		Content: content,
-	}, nil
+	switch kind {
+	case puppeteer_prob.Kind:
+		return &urth.ProbManifest{
+			Kind: kind,
+			Spec: puppeteer_prob.Spec{
+				Script: string(content),
+			},
+		}, nil
+	case http_prob.Kind:
+		return &urth.ProbManifest{
+			Kind: kind,
+			Spec: http_prob.Spec{
+				Script: string(content),
+			},
+		}, nil
+	case har_prob.Kind:
+		return &urth.ProbManifest{
+			Kind: kind,
+			Spec: har_prob.Spec{
+				Script: string(content),
+			},
+		}, nil
+	default:
+		return nil, fmt.Errorf("kind %v can not be run locally (yet)", kind)
+	}
 }
 
 func (c *RunCmd) Run(cfg *commandContext) error {
@@ -154,17 +191,17 @@ func (c *RunCmd) Run(cfg *commandContext) error {
 		if err != nil {
 			return err
 		}
-		script := resource.Spec.(*urth.ScenarioSpec).Script
-		return c.runScenario(cfg.Context, resource.Name, script, cfg.WorkingDirectory, cfg.Timeout)
+		prob := resource.Spec.(*urth.ScenarioSpec).Prob
+		return c.runScenario(cfg.Context, resource.Name, &prob, cfg.WorkingDirectory, cfg.Timeout)
 	}
 
 	for _, filename := range c.Files {
-		script, err := jobFromFile(filename, c.Kind)
+		prob, err := jobFromFile(filename, c.Kind)
 		if err != nil {
 			return err
 		}
 
-		if err := c.runScenario(cfg.Context, strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename)), script, cfg.WorkingDirectory, cfg.Timeout); err != nil {
+		if err := c.runScenario(cfg.Context, strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename)), prob, cfg.WorkingDirectory, cfg.Timeout); err != nil {
 			return err
 		}
 	}

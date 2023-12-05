@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: scenarios
 metadata:
-  name: basic-rest-prober
+  name: basic-rest-prober-NEW
   labels:
     app: web-prob
     function: front-end
@@ -9,11 +9,14 @@ spec:
   description: "Self-prob using HTTP prober"
   active: true
   schedule: "* * * * *"
-  script:
-    kind: "http/get"
   requirements:
     matchLabels:
       os: "linux"
     matchSelector:
       - { key: "owner", operator: "in",  values: ["trusted", "allowed"] }
       - { key: "env", operator: "notIn",  values: ["dev", "testing"] }
+  prob:
+    kind: tcp
+    spec:
+      host: localhost
+      port: 8080

@@ -1,14 +1,21 @@
 {
-    "name": "scenario-tcp-example-1",
-    "labels": {
-        "os": "linux"
+    "metadata": {
+        "name": "scenario-tcp-example-1",
+        "labels": {
+            "os": "linux"
+        }
     },
-    "active": true,
-    "description": "My other scenario",
-    "requirements": {},
-    "schedule": "0 0 * * TUE",
-    "script": {
-        "content": "bG9jYWxob3N0OjgwODAK",
-        "kind": "tcp"
+    "spec": {
+        "active": true,
+        "description": "My other scenario",
+        "requirements": {},
+        "schedule": "0 0 * * TUE",
+        "prob": {
+            "kind": "tcp",
+            "spec": {
+                "host": "localhost",
+                "port": 8080
+            }
+        }
     }
 }

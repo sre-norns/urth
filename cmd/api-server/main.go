@@ -421,51 +421,51 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 
 			marshalResponse(ctx, http.StatusCreated, updateResponse)
 		})
+		/*
+			v1.GET("/scenarios/:id/script", resourceIdApi(), func(ctx *gin.Context) {
+				resourceId := ctx.MustGet(resourceIdKey).(urth.ResourceRequest)
 
-		v1.GET("/scenarios/:id/script", resourceIdApi(), func(ctx *gin.Context) {
-			resourceId := ctx.MustGet(resourceIdKey).(urth.ResourceRequest)
+				resource, exists, err := srv.GetScenarioAPI().Get(ctx.Request.Context(), resourceId.ID)
+				if err != nil {
+					abortWithError(ctx, http.StatusBadRequest, err)
+					return
+				}
+				if !exists {
+					abortWithError(ctx, http.StatusNotFound, urth.ErrResourceNotFound)
+					return
+				}
 
-			resource, exists, err := srv.GetScenarioAPI().Get(ctx.Request.Context(), resourceId.ID)
-			if err != nil {
-				abortWithError(ctx, http.StatusBadRequest, err)
-				return
-			}
-			if !exists {
-				abortWithError(ctx, http.StatusNotFound, urth.ErrResourceNotFound)
-				return
-			}
-
-			script := resource.Spec.(*urth.ScenarioSpec).Script
-			ctx.Header("Content-Type", urth.ScriptKindToMimeType(script.Kind))
-			ctx.Writer.Write(script.Content)
-		})
-
-		v1.PUT("/scenarios/:id/script", resourceIdApi(), contentTypeApi(), versionedResourceApi(), func(ctx *gin.Context) {
-			versionedId := ctx.MustGet(versionedIdKey).(urth.VersionedResourceId)
-
-			// Considers streaming data to a blob storage
-			data, err := ctx.GetRawData()
-			if err != nil {
-				abortWithError(ctx, http.StatusBadRequest, err)
-				return
-			}
-
-			result, exists, err := srv.GetScenarioAPI().UpdateScript(ctx.Request.Context(), versionedId, urth.ScenarioScript{
-				Kind:    urth.GuessScenarioKind(ctx.Query("kind"), ctx.ContentType(), data),
-				Content: data,
+				script := resource.Spec.(*urth.ScenarioSpec).Script
+				ctx.Header("Content-Type", urth.ScriptKindToMimeType(script.Kind))
+				ctx.Writer.Write(script.Content)
 			})
-			if err != nil {
-				abortWithError(ctx, http.StatusBadRequest, err)
-				return
-			}
-			if !exists {
-				abortWithError(ctx, http.StatusNotFound, urth.ErrResourceNotFound)
-				return
-			}
 
-			marshalResponse(ctx, http.StatusCreated, result)
-		})
+			v1.PUT("/scenarios/:id/script", resourceIdApi(), contentTypeApi(), versionedResourceApi(), func(ctx *gin.Context) {
+				versionedId := ctx.MustGet(versionedIdKey).(urth.VersionedResourceId)
 
+				// Considers streaming data to a blob storage
+				data, err := ctx.GetRawData()
+				if err != nil {
+					abortWithError(ctx, http.StatusBadRequest, err)
+					return
+				}
+
+				result, exists, err := srv.GetScenarioAPI().UpdateScript(ctx.Request.Context(), versionedId, urth.ScenarioScript{
+					Kind:    urth.GuessScenarioKind(ctx.Query("kind"), ctx.ContentType(), data),
+					Content: data,
+				})
+				if err != nil {
+					abortWithError(ctx, http.StatusBadRequest, err)
+					return
+				}
+				if !exists {
+					abortWithError(ctx, http.StatusNotFound, urth.ErrResourceNotFound)
+					return
+				}
+
+				marshalResponse(ctx, http.StatusCreated, result)
+			})
+		*/
 		// DELETE script ? => UpdateScript("")
 
 		//------------

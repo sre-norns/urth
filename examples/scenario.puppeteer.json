@@ -1,15 +1,21 @@
 {
-    "name": "scenario-puppeteer-example-1",
-    "labels": {
-        "os": "linux",
-        "ui": "web"
+    "metadata": {
+        "name": "scenario-puppeteer-example-1",
+        "labels": {
+            "os": "linux",
+            "ui": "web"
+        }
     },
-    "active": true,
-    "description": "My other scenario",
-    "requirements": {},
-    "schedule": "0 0 * * TUE",
-    "script": {
-        "kind": "puppeteer/javascript",
-        "content": "Y29uc29sZS5sb2coImhlbGxvIik="
+    "spec": {
+        "active": true,
+        "description": "My other scenario",
+        "requirements": {},
+        "schedule": "0 0 * * TUE",
+        "prob": {
+            "kind": "puppeteer",
+            "spec": {
+                "script": "console.log(`Hello world`);"
+            }
+        }
     }
 }

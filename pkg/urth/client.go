@@ -582,7 +582,7 @@ func (c *scenariosApiClient) ListRunnable(ctx context.Context, query SearchQuery
 	return nil, nil
 }
 
-func (c *scenariosApiClient) UpdateScript(ctx context.Context, id VersionedResourceId, script ScenarioScript) (CreatedResponse, bool, error) {
+func (c *scenariosApiClient) UpdateScript(ctx context.Context, id VersionedResourceId, prob ProbManifest) (CreatedResponse, bool, error) {
 	return CreatedResponse{}, false, nil
 }
 

@@ -5,16 +5,26 @@ import (
 	"fmt"
 	"net"
 	"runtime/debug"
-	"strings"
 
 	"github.com/sre-norns/urth/pkg/runner"
 	"github.com/sre-norns/urth/pkg/urth"
 )
 
 const (
-	Kind           = urth.ScenarioKind("tcp")
+	Kind           = urth.ProbKind("tcp")
 	ScriptMimeType = "text/plain"
 )
+
+type Spec struct {
+	Port int
+	Host string
+}
+
+type TcpProbSpec1 struct {
+	Aggregation string // All / Any
+	Address     []Spec
+	Payload     []byte
+}
 
 func init() {
 	moduleVersion := "(unknown)"
@@ -24,26 +34,33 @@ func init() {
 	}
 
 	// Ignore double registration error
-	_ = runner.RegisterProbKind(Kind, runner.ProbRegistration{
-		RunFunc:     RunScript,
-		ContentType: ScriptMimeType,
-		Version:     moduleVersion,
-	})
+	_ = runner.RegisterProbKind(
+		Kind,
+		&Spec{},
+		runner.ProbRegistration{
+			RunFunc:     RunScript,
+			ContentType: ScriptMimeType,
+			Version:     moduleVersion,
+		},
+	)
 }
 
-func RunScript(ctx context.Context, scriptContent []byte, options runner.RunOptions) (urth.FinalRunResults, []urth.ArtifactSpec, error) {
+func RunScript(ctx context.Context, probSpec any, options runner.RunOptions) (urth.FinalRunResults, []urth.ArtifactSpec, error) {
 	var runLog runner.RunLog
+	prob, ok := probSpec.(*Spec)
+	if !ok {
+		return urth.NewRunResults(urth.RunFinishedError), runLog.Package(), fmt.Errorf("invalid spec")
+	}
 
 	runLog.Log("fondling TCP port")
-	host, port, err := net.SplitHostPort(strings.TrimSpace(string(scriptContent)))
+	// host, port, err := net.SplitHostPort(strings.TrimSpace(string(scriptContent)))
+	// if err != nil {
+	// 	runLog.Log("failed to parse address: ", err)
+	// 	return urth.NewRunResults(urth.RunFinishedError), runLog.Package(), nil
+	// }
+	runLog.Logf("script parsed: host=%q port=%v", prob.Host, prob.Port)
 
-	if err != nil {
-		runLog.Log("failed to parse address: ", err)
-		return urth.NewRunResults(urth.RunFinishedError), runLog.Package(), nil
-	}
-	runLog.Logf("script parsed: host=%q port=%q", host, port)
-
-	addr, err := net.ResolveTCPAddr("tcp", fmt.Sprintf("%s:%s", host, port))
+	addr, err := net.ResolveTCPAddr("tcp", fmt.Sprintf("%s:%v", prob.Host, prob.Port))
 	if err != nil {
 		runLog.Log("failed to resolve address: ", err)
 		return urth.NewRunResults(urth.RunFinishedError), runLog.Package(), nil

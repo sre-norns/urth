@@ -22,9 +22,14 @@ import (
 )
 
 const (
-	Kind           = urth.ScenarioKind("http")
+	Kind           = urth.ProbKind("http")
 	ScriptMimeType = "application/http"
 )
+
+type Spec struct {
+	FollowRedirects bool
+	Script          string
+}
 
 func init() {
 	moduleVersion := "(unknown)"
@@ -34,11 +39,14 @@ func init() {
 	}
 
 	// Ignore double registration error
-	_ = runner.RegisterProbKind(Kind, runner.ProbRegistration{
-		RunFunc:     RunScript,
-		ContentType: ScriptMimeType,
-		Version:     moduleVersion,
-	})
+	_ = runner.RegisterProbKind(
+		Kind,
+		&Spec{},
+		runner.ProbRegistration{
+			RunFunc:     RunScript,
+			ContentType: ScriptMimeType,
+			Version:     moduleVersion,
+		})
 }
 
 type httpRequestTracer struct {
@@ -207,11 +215,15 @@ func RunHttpRequests(ctx context.Context, texLogger *runner.RunLog, requests []h
 		}, nil
 }
 
-func RunScript(ctx context.Context, scriptContent []byte, options runner.RunOptions) (urth.FinalRunResults, []urth.ArtifactSpec, error) {
+func RunScript(ctx context.Context, probSpec any, options runner.RunOptions) (urth.FinalRunResults, []urth.ArtifactSpec, error) {
 	texLogger := runner.RunLog{}
+	prob, ok := probSpec.(*Spec)
+	if !ok {
+		return urth.NewRunResults(urth.RunFinishedError), texLogger.Package(), fmt.Errorf("invalid spec")
+	}
 
 	texLogger.Log("fondling HTTP")
-	requests, err := httpparser.Parse(bytes.NewReader(scriptContent))
+	requests, err := httpparser.Parse(bytes.NewReader([]byte(prob.Script)))
 	if err != nil {
 		texLogger.Log("failed: ", err)
 		return urth.NewRunResults(urth.RunFinishedError), texLogger.Package(), nil

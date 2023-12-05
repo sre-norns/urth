@@ -46,8 +46,8 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 	}
 
 	timeout := w.Timeout
-	if (job.Script != nil && job.Script.Timeout != 0) && timeout > job.Script.Timeout {
-		timeout = job.Script.Timeout
+	if (job.Prob.Timeout != 0) && timeout > job.Prob.Timeout {
+		timeout = job.Prob.Timeout
 	}
 
 	runID := job.RunName
@@ -81,7 +81,7 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 	defer cancel()
 	log.Print("jobID: ", runID, ", starting timeout: ", timeout)
 
-	runResult, artifacts, err := runner.Play(workCtx, job.Script, runner.RunOptions{
+	runResult, artifacts, err := runner.Play(workCtx, job.Prob, runner.RunOptions{
 		Http: runner.HttpOptions{
 			CaptureResponseBody: false,
 			CaptureRequestBody:  false,

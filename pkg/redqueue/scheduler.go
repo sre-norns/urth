@@ -2,7 +2,6 @@ package redqueue
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"sync/atomic"
 
@@ -13,11 +12,11 @@ import (
 const TaskType = urth.RunScenarioTopicName
 
 func UnmarshalJob(msg *asynq.Task) (urth.RunScenarioJob, error) {
-	return urth.UnmarshalJobYAML(msg.Payload())
+	return urth.UnmarshalJob(msg.Payload())
 }
 
 func MarshalJob(job urth.RunScenarioJob) (*asynq.Task, error) {
-	data, err := urth.MarshalJobYAML(job)
+	data, err := urth.MarshalJob(job)
 	if err != nil {
 		return nil, err
 	}
@@ -50,10 +49,6 @@ func (s *asynqScheduler) Close() error {
 }
 
 func (s *asynqScheduler) Schedule(ctx context.Context, job urth.RunScenarioJob) (urth.RunId, error) {
-	if job.Script == nil {
-		return urth.InvalidRunId, fmt.Errorf("cannot schedule a job %v with no script", job.ScenarioID)
-	}
-
 	task, err := MarshalJob(job)
 	if err != nil {
 		log.Printf("Scheduling error %v, will try again later", err)

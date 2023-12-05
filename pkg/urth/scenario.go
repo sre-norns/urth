@@ -1,8 +1,8 @@
 package urth
 
-import "net/http"
-
-type ScenarioKind string
+import (
+	"net/http"
+)
 
 // Well-know labels for scenarios
 const (
@@ -15,9 +15,9 @@ const (
 	LabelScenarioRunMessageId = "run.messageId"
 )
 
-var kindToMimeMap = map[ScenarioKind]string{}
+var kindToMimeMap = map[ProbKind]string{}
 
-func ScriptKindToMimeType(kind ScenarioKind) string {
+func ScriptKindToMimeType(kind ProbKind) string {
 	mtype, known := kindToMimeMap[kind]
 	if !known {
 		return "text/plain"
@@ -26,7 +26,7 @@ func ScriptKindToMimeType(kind ScenarioKind) string {
 	return mtype
 }
 
-func contentTypeToKind(contentType string) (ScenarioKind, bool) {
+func contentTypeToKind(contentType string) (ProbKind, bool) {
 	for k, v := range kindToMimeMap {
 		if v == contentType {
 			return k, true
@@ -36,9 +36,9 @@ func contentTypeToKind(contentType string) (ScenarioKind, bool) {
 	return "", false
 }
 
-func GuessScenarioKind(hint string, contentType string, data []byte) ScenarioKind {
+func GuessScenarioKind(hint string, contentType string, data []byte) ProbKind {
 	if hint != "" {
-		h := ScenarioKind(hint)
+		h := ProbKind(hint)
 		_, exists := kindToMimeMap[h]
 		if exists {
 			return h

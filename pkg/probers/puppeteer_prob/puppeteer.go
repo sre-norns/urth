@@ -13,9 +13,14 @@ import (
 )
 
 const (
-	Kind           = urth.ScenarioKind("puppeteer")
+	Kind           = urth.ProbKind("puppeteer")
 	ScriptMimeType = "text/javascript"
 )
+
+type Spec struct {
+	Port   int
+	Script string
+}
 
 func init() {
 	moduleVersion := "(unknown)"
@@ -25,11 +30,14 @@ func init() {
 	}
 
 	// Ignore double registration error
-	_ = runner.RegisterProbKind(Kind, runner.ProbRegistration{
-		RunFunc:     RunScript,
-		ContentType: ScriptMimeType,
-		Version:     moduleVersion,
-	})
+	_ = runner.RegisterProbKind(
+		Kind,
+		&Spec{},
+		runner.ProbRegistration{
+			RunFunc:     RunScript,
+			ContentType: ScriptMimeType,
+			Version:     moduleVersion,
+		})
 }
 
 func setupNodeDir(dir string) error {
@@ -62,8 +70,12 @@ func SetupRunEnv(workDir string) error {
 	return nil
 }
 
-func RunScript(ctx context.Context, scriptContent []byte, options runner.RunOptions) (urth.FinalRunResults, []urth.ArtifactSpec, error) {
+func RunScript(ctx context.Context, probSpec any, options runner.RunOptions) (urth.FinalRunResults, []urth.ArtifactSpec, error) {
 	texLogger := runner.RunLog{}
+	prob, ok := probSpec.(*Spec)
+	if !ok {
+		return urth.NewRunResults(urth.RunFinishedError), texLogger.Package(), fmt.Errorf("invalid spec")
+	}
 	texLogger.Log("Running puppeteer script")
 
 	// TODO: Check that working directory exists and writable!
@@ -109,7 +121,7 @@ func RunScript(ctx context.Context, scriptContent []byte, options runner.RunOpti
 	// TODO: Write common prolog for all scrips
 	go func() {
 		defer inPipe.Close()
-		n, err := inPipe.Write(scriptContent)
+		n, err := inPipe.Write([]byte(prob.Script))
 		if err != nil {
 			texLogger.Log("failed to write script into the nodejs input pipe: ", err)
 		}

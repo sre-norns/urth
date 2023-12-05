@@ -105,7 +105,7 @@ const ScenarioViewer = ({edit = false}) => {
         description,
         requirements: response.spec.requirements,
         active: response.spec.active,
-        script: response.spec.script,
+        prob: response.spec.prob,
         },
     }))
   }, [name, description])
