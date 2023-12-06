@@ -1,6 +1,8 @@
 import React, { useCallback } from 'react';
 import PropTypes from 'prop-types'
 import styled from '@emotion/styled'
+import {parseExpression} from 'cron-parser';
+import { Tooltip } from 'react-tooltip'
 import {useDispatch, useSelector} from 'react-redux'
 import OddContainer from '../components/OddContainer.js'
 import Capsule from '../components/Capsule.js'
@@ -59,6 +61,23 @@ const statusToColor = (status) => {
   }
 }
 
+function scheduleBreakdown(expression) {
+  if (!expression) {
+    return {
+      runSchedule: null,
+      prevScheduledRun: null,
+      nextScheduledRun: null
+    }
+  }
+
+  const runSchedule = parseExpression(expression)
+  return {
+    runSchedule: runSchedule,
+    prevScheduledRun: runSchedule.prev(),
+    nextScheduledRun: runSchedule.next()
+  }
+}
+
 const Scenario = ({data, odd}) => {
   const {ID, name, labels} = data.metadata
   const {active, description, schedule} = data.spec
@@ -72,6 +91,7 @@ const Scenario = ({data, odd}) => {
   const scenarioActions = useSelector(s => s.scenarioActions)
   const {fetching, response, error} = scenarioActions[ID] || {}
 
+  const runSchedule = scheduleBreakdown(schedule)
   const dispatch = useDispatch()
 
   const requestRun = useCallback((event) => {
@@ -82,6 +102,17 @@ const Scenario = ({data, odd}) => {
   return (
     <OddContainer odd={odd}>
       <TopContainer>
+      <Tooltip id="schedule-tooltip" effect="solid" >
+        <TextDiv size="small" level={2} weight={500}>
+          <TextSpan>Next run: </TextSpan>
+          <TextSpan level={2} weight={500}>{runSchedule?.nextScheduledRun?.toString() || "unknown"}</TextSpan>
+        </TextDiv>
+        <TextDiv size="small" level={2} weight={500}>
+          <TextSpan>Previous run: </TextSpan>
+          <TextSpan level={2} weight={500}>{runSchedule?.prevScheduledRun?.toString() || "unknown"}</TextSpan>
+        </TextDiv>
+      </Tooltip>
+
         <BodyContainer>
           <TextDiv size="medium" level={2} weight={500}>
             <RagIndicator color={statusColor} style={{margin: '0 .5rem 0 2px'}} />
@@ -89,7 +120,9 @@ const Scenario = ({data, odd}) => {
           </TextDiv>
           <TextDiv size='small' level={4}>
             <TextSpan>Schedule: </TextSpan>
-            <TextSpan level={2} weight={500}>{schedule}</TextSpan>
+            <TextSpan level={2} weight={500} data-tooltip-id="schedule-tooltip">{schedule}</TextSpan>
+
+            
             {/*<TextSpan aria-hidden> · </TextSpan>*/}
             {/*<TextSpan>Last run: </TextSpan>*/}
             {/*<TextSpan level={2} weight={500}>{data.lastRun && data.lastRun.date.toLocaleString() || 'never'}</TextSpan>*/}
