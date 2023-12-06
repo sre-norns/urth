@@ -15,11 +15,11 @@ import (
 	"github.com/sre-norns/urth/pkg/urth"
 	"github.com/sre-norns/urth/pkg/wyrd"
 
-	_ "github.com/sre-norns/urth/pkg/probers/har_prob"
-	_ "github.com/sre-norns/urth/pkg/probers/http_prob"
-	_ "github.com/sre-norns/urth/pkg/probers/puppeteer_prob"
-	_ "github.com/sre-norns/urth/pkg/probers/pypuppeteer_prob"
-	_ "github.com/sre-norns/urth/pkg/probers/tcp_prob"
+	_ "github.com/sre-norns/urth/pkg/probers/har"
+	_ "github.com/sre-norns/urth/pkg/probers/http"
+	_ "github.com/sre-norns/urth/pkg/probers/puppeteer"
+	_ "github.com/sre-norns/urth/pkg/probers/pypuppeteer"
+	_ "github.com/sre-norns/urth/pkg/probers/tcp"
 )
 
 type WorkerConfig struct {
@@ -153,6 +153,8 @@ var defaultConfig = WorkerConfig{
 }
 
 func main() {
+	log.SetFlags(0)
+
 	appCtx := kong.Parse(&defaultConfig,
 		kong.Name("runner"),
 		kong.Description("Urth async worker picks up jobs from and executes scripts, producing metrics and test artifacts"),

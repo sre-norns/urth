@@ -1,7 +1,6 @@
-package http_prob
+package http
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -66,57 +65,57 @@ type httpRequestTracer struct {
 	timeResponseReceived time.Time
 }
 
-func newHttpRequestTracer(texLogger *runner.RunLog) *httpRequestTracer {
+func newHttpRequestTracer(logger *runner.RunLog) *httpRequestTracer {
 	result := &httpRequestTracer{}
 
 	tracer := &httptrace.ClientTrace{
 		DNSStart: func(info httptrace.DNSStartInfo) {
-			texLogger.Log("DNS resolving: ", info.Host)
+			logger.Log("DNS resolving: ", info.Host)
 			result.dnsResolutionStarted = time.Now()
 		},
 		DNSDone: func(info httptrace.DNSDoneInfo) {
-			texLogger.Log("DNS resolved: ", info.Addrs)
+			logger.Log("DNS resolved: ", info.Addrs)
 			result.dnsResolutionFinished = time.Now()
 		},
 
 		TLSHandshakeStart: func() {
-			texLogger.Log("TLS handshake started")
+			logger.Log("TLS handshake started")
 			result.tlsStarted = time.Now()
 		},
 
 		TLSHandshakeDone: func(tlsState tls.ConnectionState, err error) {
-			texLogger.Logf("TLS handshake done: err=%v: %v", err, tlsState)
+			logger.Logf("TLS handshake done: err=%v: %v", err, tlsState)
 			result.tlsFinished = time.Now()
 		},
 
 		ConnectStart: func(network, addr string) {
-			texLogger.Logf("net=%q connecting to: addr=%q", network, addr)
+			logger.Logf("net=%q connecting to: addr=%q", network, addr)
 			result.connectionStarted = time.Now()
 		},
 		ConnectDone: func(network, addr string, err error) {
-			texLogger.Logf("net=%q connected to: addr=%q, err=%v", network, addr, err)
+			logger.Logf("net=%q connected to: addr=%q, err=%v", network, addr, err)
 			result.connectionFinished = time.Now()
 		},
 
 		WroteHeaders: func() {
-			texLogger.Log("done writing request headers")
+			logger.Log("done writing request headers")
 			result.timeHeaderWritten = time.Now()
 		},
 		WroteRequest: func(info httptrace.WroteRequestInfo) {
-			texLogger.Log("done writing request: err=", info.Err)
+			logger.Log("done writing request: err=", info.Err)
 			result.timeRequestWritten = time.Now()
 		},
 		GotConn: func(connInfo httptrace.GotConnInfo) {
-			texLogger.Log("established connection: ", connInfo)
+			logger.Log("established connection: ", connInfo)
 		},
 
 		Got1xxResponse: func(code int, header textproto.MIMEHeader) error {
-			texLogger.Logf("got response %d: %+v", code, header)
+			logger.Logf("got response %d: %+v", code, header)
 			return nil
 		},
 
 		GotFirstResponseByte: func() {
-			texLogger.Log("response data received")
+			logger.Log("response data received")
 			result.timeResponseReceived = time.Now()
 		},
 	}
@@ -152,39 +151,39 @@ func formatResponse(resp *http.Response) string {
 	return result.String()
 }
 
-func RunHttpRequests(ctx context.Context, texLogger *runner.RunLog, requests []httpparser.TestRequest, options runner.RunOptions) (urth.FinalRunResults, []urth.ArtifactSpec, error) {
+func RunHttpRequests(ctx context.Context, logger *runner.RunLog, requests []httpparser.TestRequest, options runner.RunOptions) (urth.FinalRunResults, []urth.ArtifactSpec, error) {
 	harLogger := har.NewLogger()
 	harLogger.SetOption(har.BodyLogging(options.Http.CaptureResponseBody))
 	harLogger.SetOption(har.PostDataLogging(options.Http.CaptureRequestBody))
 
 	outcome := urth.RunFinishedSuccess
 	client := http.Client{}
-	tracer := newHttpRequestTracer(texLogger)
+	tracer := newHttpRequestTracer(logger)
 
 	for i, req := range requests {
 		id := fmt.Sprintf("%d", i)
-		texLogger.Logf("HTTP Request %d / %d\n%v\n", i+1, len(requests), formatRequest(req.Request))
+		logger.Logf("HTTP Request %d / %d\n%v\n", i+1, len(requests), formatRequest(req.Request))
 
 		if err := harLogger.RecordRequest(id, req.Request); err != nil {
-			texLogger.Log("...failed to record request: ", err)
-			return urth.NewRunResults(urth.RunFinishedError), texLogger.Package(), nil
+			logger.Log("...failed to record request: ", err)
+			return urth.NewRunResults(urth.RunFinishedError), logger.Package(), nil
 		}
 
 		res, err := client.Do(tracer.TraceRequest(req.Request))
 		if err != nil {
-			texLogger.Log("...failed: ", err)
-			return urth.NewRunResults(urth.RunFinishedError), texLogger.Package(), nil
+			logger.Log("...failed: ", err)
+			return urth.NewRunResults(urth.RunFinishedError), logger.Package(), nil
 		}
 
 		if err := harLogger.RecordResponse(id, res); err != nil {
-			texLogger.Log("...failed to record response: ", err)
-			return urth.NewRunResults(urth.RunFinishedError), texLogger.Package(), nil
+			logger.Log("...failed to record response: ", err)
+			return urth.NewRunResults(urth.RunFinishedError), logger.Package(), nil
 		}
 
-		texLogger.Logf("Response:\n%v\n", formatResponse(res))
+		logger.Logf("Response:\n%v\n", formatResponse(res))
 
 		if _, err := io.Copy(io.Discard, res.Body); err != nil {
-			texLogger.Log("...failed while reading response body: ", err)
+			logger.Log("...failed while reading response body: ", err)
 		}
 		res.Body.Close()
 
@@ -200,13 +199,13 @@ func RunHttpRequests(ctx context.Context, texLogger *runner.RunLog, requests []h
 	har := harLogger.ExportAndReset()
 	harData, err := json.Marshal(har)
 	if err != nil {
-		texLogger.Log("...error: failed to serialize HAR file ", err)
-		return urth.NewRunResults(urth.RunFinishedError), texLogger.Package(), nil
+		logger.Log("...error: failed to serialize HAR file ", err)
+		return urth.NewRunResults(urth.RunFinishedError), logger.Package(), nil
 	}
 
 	return urth.NewRunResults(outcome),
 		[]urth.ArtifactSpec{
-			texLogger.ToArtifact(),
+			logger.ToArtifact(),
 			{
 				Rel:      "har",
 				MimeType: "application/json",
@@ -215,19 +214,18 @@ func RunHttpRequests(ctx context.Context, texLogger *runner.RunLog, requests []h
 		}, nil
 }
 
-func RunScript(ctx context.Context, probSpec any, options runner.RunOptions) (urth.FinalRunResults, []urth.ArtifactSpec, error) {
-	texLogger := runner.RunLog{}
+func RunScript(ctx context.Context, probSpec any, logger *runner.RunLog, options runner.RunOptions) (urth.FinalRunResults, []urth.ArtifactSpec, error) {
 	prob, ok := probSpec.(*Spec)
 	if !ok {
-		return urth.NewRunResults(urth.RunFinishedError), texLogger.Package(), fmt.Errorf("invalid spec")
+		return urth.NewRunResults(urth.RunFinishedError), logger.Package(), fmt.Errorf("invalid spec")
 	}
 
-	texLogger.Log("fondling HTTP")
-	requests, err := httpparser.Parse(bytes.NewReader([]byte(prob.Script)))
+	logger.Log("fondling HTTP")
+	requests, err := httpparser.Parse(strings.NewReader(prob.Script))
 	if err != nil {
-		texLogger.Log("failed: ", err)
-		return urth.NewRunResults(urth.RunFinishedError), texLogger.Package(), nil
+		logger.Log("failed: ", err)
+		return urth.NewRunResults(urth.RunFinishedError), logger.Package(), nil
 	}
 
-	return RunHttpRequests(ctx, &texLogger, requests, options)
+	return RunHttpRequests(ctx, logger, requests, options)
 }

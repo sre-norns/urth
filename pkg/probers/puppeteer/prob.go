@@ -1,4 +1,4 @@
-package puppeteer_prob
+package puppeteer
 
 import (
 	"context"
@@ -70,27 +70,26 @@ func SetupRunEnv(workDir string) error {
 	return nil
 }
 
-func RunScript(ctx context.Context, probSpec any, options runner.RunOptions) (urth.FinalRunResults, []urth.ArtifactSpec, error) {
-	texLogger := runner.RunLog{}
+func RunScript(ctx context.Context, probSpec any, logger *runner.RunLog, options runner.RunOptions) (urth.FinalRunResults, []urth.ArtifactSpec, error) {
 	prob, ok := probSpec.(*Spec)
 	if !ok {
-		return urth.NewRunResults(urth.RunFinishedError), texLogger.Package(), fmt.Errorf("invalid spec")
+		return urth.NewRunResults(urth.RunFinishedError), logger.Package(), fmt.Errorf("invalid spec")
 	}
-	texLogger.Log("Running puppeteer script")
+	logger.Log("Running puppeteer script")
 
 	// TODO: Check that working directory exists and writable!
 	if err := SetupRunEnv(options.Puppeteer.WorkingDirectory); err != nil {
 		err = fmt.Errorf("failed to initialize work directory: %w", err)
-		texLogger.Log(err)
+		logger.Log(err)
 
-		return urth.NewRunResults(urth.RunFinishedError), texLogger.Package(), nil
+		return urth.NewRunResults(urth.RunFinishedError), logger.Package(), nil
 	}
 
 	workDir, err := os.MkdirTemp(options.Puppeteer.WorkingDirectory, options.Puppeteer.TempDirPrefix)
 	if err != nil {
 		err = fmt.Errorf("failed to create work directory: %w", err)
-		texLogger.Log(err)
-		return urth.NewRunResults(urth.RunFinishedError), texLogger.Package(), nil
+		logger.Log(err)
+		return urth.NewRunResults(urth.RunFinishedError), logger.Package(), nil
 	}
 
 	defer func(dir string, keep bool) {
@@ -98,12 +97,12 @@ func RunScript(ctx context.Context, probSpec any, options runner.RunOptions) (ur
 			os.RemoveAll(dir)
 		}
 	}(workDir, options.Puppeteer.KeepTempDir)
-	texLogger.Logf("working directory: %q (will be kept: %t)", workDir, options.Puppeteer.KeepTempDir)
+	logger.Logf("working directory: %q (will be kept: %t)", workDir, options.Puppeteer.KeepTempDir)
 
 	if err := SetupRunEnv(options.Puppeteer.WorkingDirectory); err != nil {
 		err = fmt.Errorf("failed setup run-time environment: %w", err)
-		texLogger.Log(err)
-		return urth.NewRunResults(urth.RunFinishedError), texLogger.Package(), nil
+		logger.Log(err)
+		return urth.NewRunResults(urth.RunFinishedError), logger.Package(), nil
 	}
 
 	cmd := exec.Command("node", "-")
@@ -114,8 +113,8 @@ func RunScript(ctx context.Context, probSpec any, options runner.RunOptions) (ur
 	inPipe, err := cmd.StdinPipe()
 	if err != nil {
 		err := fmt.Errorf("failed to open input pipe: %w", err)
-		texLogger.Log(err)
-		return urth.NewRunResults(urth.RunFinishedError), texLogger.Package(), nil
+		logger.Log(err)
+		return urth.NewRunResults(urth.RunFinishedError), logger.Package(), nil
 	}
 
 	// TODO: Write common prolog for all scrips
@@ -123,20 +122,20 @@ func RunScript(ctx context.Context, probSpec any, options runner.RunOptions) (ur
 		defer inPipe.Close()
 		n, err := inPipe.Write([]byte(prob.Script))
 		if err != nil {
-			texLogger.Log("failed to write script into the nodejs input pipe: ", err)
+			logger.Log("failed to write script into the nodejs input pipe: ", err)
 		}
-		texLogger.Logf("script loaded: %d bytes", n)
+		logger.Logf("script loaded: %d bytes", n)
 	}()
 
 	out, err := cmd.CombinedOutput()
 	// TODO: Capture and store HAR file
-	texLogger.Log(string(out))
+	logger.Log(string(out))
 
 	runResult := urth.RunFinishedSuccess
 	if err != nil {
-		texLogger.Log(err)
+		logger.Log(err)
 		runResult = urth.RunFinishedError
 	}
 
-	return urth.NewRunResults(runResult), []urth.ArtifactSpec{texLogger.ToArtifact()}, nil
+	return urth.NewRunResults(runResult), []urth.ArtifactSpec{logger.ToArtifact()}, nil
 }

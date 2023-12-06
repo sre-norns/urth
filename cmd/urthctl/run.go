@@ -13,11 +13,11 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/sre-norns/urth/pkg/probers/har_prob"
-	"github.com/sre-norns/urth/pkg/probers/http_prob"
-	"github.com/sre-norns/urth/pkg/probers/puppeteer_prob"
-	"github.com/sre-norns/urth/pkg/probers/pypuppeteer_prob"
-	"github.com/sre-norns/urth/pkg/probers/tcp_prob"
+	"github.com/sre-norns/urth/pkg/probers/har"
+	"github.com/sre-norns/urth/pkg/probers/http"
+	"github.com/sre-norns/urth/pkg/probers/puppeteer"
+	"github.com/sre-norns/urth/pkg/probers/pypuppeteer"
+	"github.com/sre-norns/urth/pkg/probers/tcp"
 
 	"github.com/sre-norns/urth/pkg/runner"
 	"github.com/sre-norns/urth/pkg/urth"
@@ -134,15 +134,15 @@ func jobFromFile(filename string, kindHint string) (*urth.ProbManifest, error) {
 	} else {
 		switch ext {
 		case ".js", ".mjs":
-			kind = puppeteer_prob.Kind
+			kind = puppeteer.Kind
 		case ".py":
-			kind = pypuppeteer_prob.Kind
+			kind = pypuppeteer.Kind
 		case ".tcp":
-			kind = tcp_prob.Kind
+			kind = tcp.Kind
 		case ".http", ".rest":
-			kind = http_prob.Kind
+			kind = http.Kind
 		case ".har":
-			kind = har_prob.Kind
+			kind = har.Kind
 		}
 	}
 
@@ -151,24 +151,24 @@ func jobFromFile(filename string, kindHint string) (*urth.ProbManifest, error) {
 	}
 
 	switch kind {
-	case puppeteer_prob.Kind:
+	case puppeteer.Kind:
 		return &urth.ProbManifest{
 			Kind: kind,
-			Spec: puppeteer_prob.Spec{
+			Spec: puppeteer.Spec{
 				Script: string(content),
 			},
 		}, nil
-	case http_prob.Kind:
+	case http.Kind:
 		return &urth.ProbManifest{
 			Kind: kind,
-			Spec: http_prob.Spec{
+			Spec: http.Spec{
 				Script: string(content),
 			},
 		}, nil
-	case har_prob.Kind:
+	case har.Kind:
 		return &urth.ProbManifest{
 			Kind: kind,
-			Spec: har_prob.Spec{
+			Spec: har.Spec{
 				Script: string(content),
 			},
 		}, nil

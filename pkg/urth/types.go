@@ -141,17 +141,6 @@ func (s *Runner) asManifest() PartialObjectMetadata {
 // Type to represent cron-like schedule
 type CronSchedule string
 
-// type ScenarioScript struct {
-// 	// Kind identifies the type of content this scenario implementing
-// 	Kind ScenarioKind `form:"kind" json:"kind,omitempty" yaml:"kind,omitempty" xml:"kind"`
-
-// 	// Timeout
-// 	Timeout time.Duration `form:"timeout" json:"timeout,omitempty" yaml:"timeout,omitempty" xml:"timeout,omitempty"`
-
-// 	// Actual script, of a 'kind' type
-// 	Content []byte `form:"content" json:"content,omitempty" yaml:"content,omitempty" xml:"content"`
-// }
-
 type ScenarioSpec struct {
 	// Description is a human readable text to describe the scenario
 	Description string `form:"description" json:"description,omitempty" yaml:"description,omitempty" xml:"description"`
@@ -167,6 +156,10 @@ type ScenarioSpec struct {
 
 	// Script is the actual test scenario that a qualified runner executes
 	Prob ProbManifest `form:"prob" json:"prob,omitempty" yaml:"prob,omitempty" xml:"prob" gorm:"embedded;embeddedPrefix:prob_"`
+
+	// Computed fields
+	NextRun    *time.Time  `json:"nextScheduledRunTime,omitempty" yaml:"nextScheduledRunTime,omitempty" gorm:"-"`
+	LastResult *ResultSpec `json:"last_result,omitempty" yaml:"last_result,omitempty" gorm:"-"`
 }
 
 type Scenario struct {

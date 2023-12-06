@@ -1,4 +1,4 @@
-package har_prob
+package har
 
 import (
 	"bytes"
@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"runtime/debug"
 
-	"github.com/sre-norns/urth/pkg/probers/http_prob"
+	"github.com/sre-norns/urth/pkg/probers/http"
 	"github.com/sre-norns/urth/pkg/runner"
 	"github.com/sre-norns/urth/pkg/urth"
 )
@@ -39,25 +39,24 @@ func init() {
 		})
 }
 
-func RunScript(ctx context.Context, probSpec any, options runner.RunOptions) (urth.FinalRunResults, []urth.ArtifactSpec, error) {
-	texLogger := runner.RunLog{}
+func RunScript(ctx context.Context, probSpec any, logger *runner.RunLog, options runner.RunOptions) (urth.FinalRunResults, []urth.ArtifactSpec, error) {
 	prob, ok := probSpec.(*Spec)
 	if !ok {
-		return urth.NewRunResults(urth.RunFinishedError), texLogger.Package(), fmt.Errorf("invalid spec")
+		return urth.NewRunResults(urth.RunFinishedError), logger.Package(), fmt.Errorf("invalid spec")
 	}
-	texLogger.Log("replaying HAR file")
+	logger.Log("replaying HAR file")
 
 	harLog, err := UnmarshalHAR(bytes.NewReader([]byte(prob.Script)))
 	if err != nil {
-		texLogger.Log("...failed to deserialize HAR file: ", err)
-		return urth.NewRunResults(urth.RunFinishedError), texLogger.Package(), nil
+		logger.Log("...failed to deserialize HAR file: ", err)
+		return urth.NewRunResults(urth.RunFinishedError), logger.Package(), nil
 	}
 
 	requests, err := ConvertHarToHttpTester(harLog.Log.Entries)
 	if err != nil {
-		texLogger.Log("...failed to convert HAR file requests: ", err)
-		return urth.NewRunResults(urth.RunFinishedError), texLogger.Package(), err
+		logger.Log("...failed to convert HAR file requests: ", err)
+		return urth.NewRunResults(urth.RunFinishedError), logger.Package(), err
 	}
 
-	return http_prob.RunHttpRequests(ctx, &texLogger, requests, options)
+	return http.RunHttpRequests(ctx, logger, requests, options)
 }

@@ -96,16 +96,17 @@ const ScenarioViewer = ({edit = false}) => {
     }
 
     dispatch(updateScenario(scenarioId, response.metadata.version, {
-      kind: response.kind,
+      // kind: response.kind,
       metadata: {
         name,
         labels: response.metadata.labels,
       },
       spec: {
+        ...response.spec,
         description,
-        requirements: response.spec.requirements,
-        active: response.spec.active,
-        prob: response.spec.prob,
+        // requirements: response.spec.requirements,
+        // active: response.spec.active,
+        // prob: response.spec.prob,
         },
     }))
   }, [name, description])

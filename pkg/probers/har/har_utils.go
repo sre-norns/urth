@@ -1,4 +1,4 @@
-package har_prob
+package har
 
 import (
 	"encoding/json"

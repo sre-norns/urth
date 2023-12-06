@@ -1,9 +1,8 @@
-package pypuppeteer_prob
+package pypuppeteer
 
 import (
 	"context"
 	"fmt"
-	"log"
 	"runtime/debug"
 
 	"github.com/sre-norns/urth/pkg/runner"
@@ -33,8 +32,8 @@ func init() {
 		})
 }
 
-func RunScript(ctx context.Context, prob any, options runner.RunOptions) (urth.FinalRunResults, []urth.ArtifactSpec, error) {
-	log.Print("FIXME: PyPuppeteer scenarios are not implemented....yet")
+func RunScript(ctx context.Context, prob any, logger *runner.RunLog, options runner.RunOptions) (urth.FinalRunResults, []urth.ArtifactSpec, error) {
+	logger.Log("FIXME: PyPuppeteer scenarios are not implemented....yet")
 
 	return urth.NewRunResults(urth.RunFinishedError), nil, fmt.Errorf("not implemented yet")
 }

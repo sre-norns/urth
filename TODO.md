@@ -49,6 +49,7 @@
 [X] UX - 'run now' button must be locked until post request returns with an ID of message posted into the run Queue.
 [X] A RUN must be in `pending` state when a message been posted into the queue but before being picked up by a worker.
 [] For manual runs - trigger identity of the who triggered the run as job labels, such that all jobs triggered by a given user can be found!
+[] Add visual indicator around STATUS circle for time for time before the next run: `(next_run - previous_run) / (delta_between_runs)`
 
 ## Workers / Script Runners
 [x] Add .HTTP/.REST file runner into its own package

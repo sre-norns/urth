@@ -36,7 +36,7 @@ type RunOptions struct {
 	Har       HarOptions
 }
 
-type ScriptRunner func(context.Context, any, RunOptions) (urth.FinalRunResults, []urth.ArtifactSpec, error)
+type ScriptRunner func(context.Context, any, *RunLog, RunOptions) (urth.FinalRunResults, []urth.ArtifactSpec, error)
 
 type ProbRegistration struct {
 	// Function to execute a script
@@ -92,19 +92,16 @@ func ListProbs() map[urth.ProbKind]ProbRegistration {
 }
 
 // Execute a single scenario
-func Play(ctx context.Context, script urth.ProbManifest, options RunOptions) (urth.FinalRunResults, []urth.ArtifactSpec, error) {
-	// if script == nil {
-	// 	return urth.NewRunResults(urth.RunFinishedError), nil, fmt.Errorf("no script to run")
-	// }
-
-	// if len(script.Kind) == 0 {
-	// 	return urth.NewRunResults(urth.RunFinishedError), nil, fmt.Errorf("no script Kind specified")
-	// }
-
-	probInfo, ok := kindRunnerMap[script.Kind]
-	if !ok {
-		return urth.NewRunResults(urth.RunFinishedError), nil, fmt.Errorf("unsupported script kind: %q", script.Kind)
+func Play(ctx context.Context, prob urth.ProbManifest, options RunOptions) (urth.FinalRunResults, []urth.ArtifactSpec, error) {
+	if prob.Spec == nil {
+		return urth.NewRunResults(urth.RunFinishedError), nil, fmt.Errorf("no prob spec")
 	}
 
-	return probInfo.RunFunc(ctx, script.Spec, options)
+	probInfo, ok := kindRunnerMap[prob.Kind]
+	if !ok {
+		return urth.NewRunResults(urth.RunFinishedError), nil, fmt.Errorf("unsupported script kind: %q", prob.Kind)
+	}
+
+	var logger RunLog
+	return probInfo.RunFunc(ctx, prob.Spec, &logger, options)
 }
