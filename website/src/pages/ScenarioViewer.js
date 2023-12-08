@@ -55,13 +55,17 @@ const HeaderPanel = styled(Panel)`
   }
 `
 
+const HeaderButton = styled(Button)`
+  min-width: 96px;
+`
+
 const PageForm = styled(Form)`
   display: flex;
   flex-direction: column;
   gap: 1rem;
 `
 
-const EditButton = routed(Button.withComponent('a'), true)
+const EditButton = routed(HeaderButton.withComponent('a'), true)
 
 const validateName = (...args) => validateNotEmpty(...args) || validateMaxLength(32)(...args)
 
@@ -82,6 +86,13 @@ const ScenarioViewer = ({edit = false}) => {
   const {id, fetching, updating, response, error} = useSelector(s => s.scenario)
   const dispatch = useDispatch()
 
+  const handleResponse = useCallback((response) => {
+    if (response) {
+      setName(response.metadata.name)
+      setDescription(response.spec.description)
+    }
+  }, [])
+
   const handleNameChange = useCallback((e) => {
     setName(e.target.value)
   }, [])
@@ -89,6 +100,11 @@ const ScenarioViewer = ({edit = false}) => {
   const handleDescriptionChange = useCallback((e) => {
     setDescription(e.target.value)
   }, [])
+
+  const handleCancel = useCallback(() => {
+    handleResponse(response)
+    navigate(`/scenarios/${scenarioId}`, {replace: true})
+  }, [response])
 
   const handleSave = useCallback(() => {
     if (!formRef.current || !formRef.current.validate()) {
@@ -120,10 +136,7 @@ const ScenarioViewer = ({edit = false}) => {
   }, [scenarioId])
 
   React.useEffect(() => {
-    if (response) {
-      setName(response.metadata.name)
-      setDescription(response.spec.description)
-    }
+    handleResponse(response)
   }, [response])
 
   if (!isNew && id !== scenarioId) {
@@ -147,7 +160,8 @@ const ScenarioViewer = ({edit = false}) => {
           <h3>{title}</h3>
           {!edit && <EditButton href={`/scenarios/${scenarioId}/edit`}>
             <i className="fi fi-page-edit"></i>&nbsp;Edit</EditButton>}
-          {edit && <Button onClick={handleSave} disabled={!isValid}><i className="fi fi-save"></i>&nbsp;Save</Button>}
+          {edit && <HeaderButton onClick={handleCancel} color="neutral"><i className="fi fi-trash"></i>&nbsp;Cancel</HeaderButton>}
+          {edit && <HeaderButton onClick={handleSave} disabled={!isValid}><i className="fi fi-save"></i>&nbsp;Save</HeaderButton>}
         </HeaderPanel>
         <PageForm ref={formRef} onValidated={setIsValid}>
           {edit &&
@@ -159,9 +173,11 @@ const ScenarioViewer = ({edit = false}) => {
           }
           <FormGroup controlId="scenario-description" onValidate={validateDescription}>
             <FormLabel>Description</FormLabel>
-            {edit && <FormControl as="textarea" rows="5" value={description} onChange={handleDescriptionChange}/>}
-            {!edit && <div>{description}</div>}
-            <FormGroupError/>
+            {edit && <>
+              <FormControl as="textarea" rows="5" value={description} onChange={handleDescriptionChange}/>
+              <FormGroupError/>
+            </> || <div>{description}</div>
+            }
           </FormGroup>
           {!edit && Object.keys(response.metadata.labels || {}).length &&
             <FormGroup controlId="scenario-labels">
