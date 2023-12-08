@@ -372,7 +372,10 @@ func (m *resultsApiImpl) Create(ctx context.Context, newEntry wyrd.ResourceManif
 		return PartialObjectMetadata{}, ErrResourceNotFound
 	}
 
-	scenario := scenarioManifest.Spec.(*ScenarioSpec)
+	scenario, ok := scenarioManifest.Spec.(*ScenarioSpec)
+	if !ok {
+		return PartialObjectMetadata{}, ErrResourceSpecTypeInvalid
+	}
 	if !scenario.IsActive {
 		return PartialObjectMetadata{}, ErrForbidden
 	}

@@ -156,7 +156,11 @@ func (c *Artifact) Run(cfg *commandContext) error {
 		return cfg.OutputFormatter(&resource)
 	}
 
-	artifact := resource.Spec.(*urth.ArtifactSpec)
+	artifact, ok := resource.Spec.(*urth.ArtifactSpec)
+	if !ok {
+		return fmt.Errorf("unexpected type of Spec for the resource %q (kind=%q)", resource.Name, resource.Kind)
+	}
+
 	_, err = os.Stdout.Write(artifact.Content)
 
 	return err

@@ -35,11 +35,11 @@ type RunCmd struct {
 	Headless bool `help:"If true, puppeteer scripts are run in a headless mode"`
 }
 
-func (c *RunCmd) runScenario(cmdCtx context.Context, sourceName string, prob *urth.ProbManifest, workingDir string, timeout time.Duration) error {
+func (c *RunCmd) runScenario(cmdCtx context.Context, sourceName string, prob urth.ProbManifest, workingDir string, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(cmdCtx, timeout)
 	defer cancel()
 
-	runResult, artifacts, err := runner.Play(ctx, *prob, runner.RunOptions{
+	runResult, artifacts, err := runner.Play(ctx, prob, runner.RunOptions{
 		Puppeteer: runner.PuppeteerOptions{
 			Headless:         c.Headless,
 			WorkingDirectory: workingDir,
@@ -90,10 +90,23 @@ func readContent(filename string) ([]byte, string, error) {
 	return content, filepath.Ext(filename), err
 }
 
-func jobFromFile(filename string, kindHint string) (*urth.ProbManifest, error) {
+func getScenarioProb(kind wyrd.Kind, scenarioSpec any) (urth.ProbManifest, error) {
+	if kind != urth.KindScenario {
+		return urth.ProbManifest{}, fmt.Errorf("non-runnable manifest file of kind %q", kind)
+	}
+
+	spec, ok := scenarioSpec.(*urth.ScenarioSpec)
+	if !ok {
+		return urth.ProbManifest{}, fmt.Errorf("unexpected type of Spec for the resource (kind=%q)", kind)
+	}
+
+	return spec.Prob, nil
+}
+
+func jobFromFile(filename string, kindHint string) (urth.ProbManifest, error) {
 	content, ext, err := readContent(filename)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read content: %w", err)
+		return urth.ProbManifest{}, fmt.Errorf("failed to read content: %w", err)
 	}
 
 	if kindHint == "" {
@@ -102,26 +115,18 @@ func jobFromFile(filename string, kindHint string) (*urth.ProbManifest, error) {
 			var scenario wyrd.ResourceManifest
 			err := yaml.Unmarshal(content, &scenario)
 			if err != nil {
-				return nil, err
+				return urth.ProbManifest{}, err
 			}
 
-			if scenario.Kind != urth.KindScenario {
-				return nil, fmt.Errorf("non-runnable manifest file of kind %q", scenario.Kind)
-			}
-
-			return &scenario.Spec.(*urth.ScenarioSpec).Prob, err
+			return getScenarioProb(scenario.Kind, scenario.Spec)
 		case ".json":
 			var scenario wyrd.ResourceManifest
 			err := json.Unmarshal(content, &scenario)
 			if err != nil {
-				return nil, err
+				return urth.ProbManifest{}, err
 			}
 
-			if scenario.Kind != urth.KindScenario {
-				return nil, fmt.Errorf("non-runnable manifest file of kind %q", scenario.Kind)
-			}
-
-			return &scenario.Spec.(*urth.ScenarioSpec).Prob, err
+			return getScenarioProb(scenario.Kind, scenario.Spec)
 		}
 
 		// Fallthrough: Not a recognized format for scenario file
@@ -147,33 +152,33 @@ func jobFromFile(filename string, kindHint string) (*urth.ProbManifest, error) {
 	}
 
 	if string(kind) == "" {
-		return nil, fmt.Errorf("no kind provided for the input file (ext: %q)", ext)
+		return urth.ProbManifest{}, fmt.Errorf("no kind provided for the input file (ext: %q)", ext)
 	}
 
 	switch kind {
 	case puppeteer.Kind:
-		return &urth.ProbManifest{
+		return urth.ProbManifest{
 			Kind: kind,
 			Spec: puppeteer.Spec{
 				Script: string(content),
 			},
 		}, nil
 	case http.Kind:
-		return &urth.ProbManifest{
+		return urth.ProbManifest{
 			Kind: kind,
 			Spec: http.Spec{
 				Script: string(content),
 			},
 		}, nil
 	case har.Kind:
-		return &urth.ProbManifest{
+		return urth.ProbManifest{
 			Kind: kind,
 			Spec: har.Spec{
 				Script: string(content),
 			},
 		}, nil
 	default:
-		return nil, fmt.Errorf("kind %v can not be run locally (yet)", kind)
+		return urth.ProbManifest{}, fmt.Errorf("kind %v can not be run locally (yet)", kind)
 	}
 }
 
@@ -191,8 +196,11 @@ func (c *RunCmd) Run(cfg *commandContext) error {
 		if err != nil {
 			return err
 		}
-		prob := resource.Spec.(*urth.ScenarioSpec).Prob
-		return c.runScenario(cfg.Context, resource.Name, &prob, cfg.WorkingDirectory, cfg.Timeout)
+		prob, err := getScenarioProb(resource.Kind, resource.Spec)
+		if err != nil {
+			return err
+		}
+		return c.runScenario(cfg.Context, resource.Name, prob, cfg.WorkingDirectory, cfg.Timeout)
 	}
 
 	for _, filename := range c.Files {
