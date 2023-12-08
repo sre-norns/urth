@@ -16,9 +16,8 @@ func TestCustomMarshaling_JSON(t *testing.T) {
 	}
 
 	testCases := map[string]struct {
-		given       urth.ProbManifest
-		expect      string
-		expectError bool
+		given  urth.ProbManifest
+		expect string
 	}{
 		"nothing": {
 			given:  urth.ProbManifest{},

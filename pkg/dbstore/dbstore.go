@@ -71,17 +71,18 @@ func (s *DbStore) Delete(ctx context.Context, value any, id urth.VersionedResour
 	return tx.RowsAffected == 1, tx.Error
 }
 
-func (s *DbStore) startPaginatedTx(ctx context.Context, pagination urth.Pagination) *gorm.DB {
+func (s *DbStore) startPaginatedTx(ctx context.Context, pagination urth.Pagination, maxLimit uint) *gorm.DB {
+	pagination.ClampLimit(maxLimit)
 	return s.db.WithContext(ctx).Offset(int(pagination.Offset)).Limit(int(pagination.Limit))
 }
 
-func (s *DbStore) FindResources(ctx context.Context, resources any, searchQuery urth.SearchQuery) (uint, error) {
+func (s *DbStore) FindResources(ctx context.Context, resources any, searchQuery urth.SearchQuery, maxLimit uint) (uint, error) {
 	selector, err := labels.Parse(searchQuery.Labels)
 	if err != nil {
 		return 0, fmt.Errorf("error parsing labels selector: %w", err)
 	}
 
-	tx, err := s.withSelector(s.startPaginatedTx(ctx, searchQuery.Pagination), selector)
+	tx, err := s.withSelector(s.startPaginatedTx(ctx, searchQuery.Pagination, maxLimit), selector)
 	if err != nil {
 		return 0, err
 	}

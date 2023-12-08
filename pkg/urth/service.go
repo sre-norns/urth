@@ -10,6 +10,8 @@ import (
 	"github.com/sre-norns/urth/pkg/wyrd"
 )
 
+const paginationLimit = 512
+
 var (
 	ErrResourceUnauthorized    = &ErrorResponse{Code: 401, Message: "resource access unauthorized"}
 	ErrForbidden               = &ErrorResponse{Code: 403, Message: "forbidden"}
@@ -125,6 +127,7 @@ type (
 		scenarioId  wyrd.ResourceID
 		scheduler   Scheduler
 		scenarioApi ScenarioApi
+		workersApi  RunnersApi
 	}
 
 	labelsApiImpl struct {
@@ -150,6 +153,7 @@ func (s *serviceImpl) GetResultsAPI(id wyrd.ResourceID) RunResultApi {
 		scenarioId:  id,
 		scheduler:   s.scheduler,
 		scenarioApi: s.GetScenarioAPI(),
+		workersApi:  s.GetRunnerAPI(),
 	}
 }
 
@@ -178,7 +182,7 @@ func (s *serviceImpl) GetLabels() LabelsApi {
 //------------------------------
 func (m *scenarioApiImpl) ListRunnable(ctx context.Context, query SearchQuery) ([]Scenario, error) {
 	var resources []Scenario
-	_, err := m.store.FindResources(ctx, &resources, query)
+	_, err := m.store.FindResources(ctx, &resources, query, paginationLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -187,25 +191,16 @@ func (m *scenarioApiImpl) ListRunnable(ctx context.Context, query SearchQuery) (
 
 func (m *scenarioApiImpl) List(ctx context.Context, query SearchQuery) ([]PartialObjectMetadata, error) {
 	var resources []Scenario
-	kind, ok := wyrd.KindOf(&ScenarioSpec{})
-	if !ok {
-		return nil, wyrd.ErrUnknownKind
-	}
-
-	_, err := m.store.FindResources(ctx, &resources, query)
+	_, err := m.store.FindResources(ctx, &resources, query, paginationLimit)
 	if err != nil {
 		return nil, err
 	}
 
 	results := make([]PartialObjectMetadata, 0, len(resources))
-	for _, sc := range resources {
+	for _, resource := range resources {
 		// TODO: Script should be moved into a separate table, that way we won't have to filter it out here
-		sc.Prob.Spec = nil
-		results = append(results, PartialObjectMetadata{
-			TypeMeta:     wyrd.TypeMeta{Kind: kind},
-			ResourceMeta: sc.ResourceMeta,
-			Spec:         sc.ScenarioSpec,
-		})
+		resource.Prob.Spec = nil
+		results = append(results, resource.asManifest())
 	}
 
 	return results, nil
@@ -303,8 +298,8 @@ func (m *scenarioApiImpl) Update(ctx context.Context, id VersionedResourceId, en
 /// Scenarios run results
 //------------------------------
 
-func (s *resultsApiImpl) scheduleRun(ctx context.Context, runResult Result, meta ResourceMeta, scenario *ScenarioSpec) (RunId, error) {
-	if s.scheduler == nil {
+func (s *resultsApiImpl) scheduleRun(ctx context.Context, runResult Result, scenarioMeta ResourceMeta, scenario *ScenarioSpec) (RunId, error) {
+	if s.scheduler == nil || s.workersApi == nil {
 		return InvalidRunId, nil
 	}
 
@@ -313,16 +308,26 @@ func (s *resultsApiImpl) scheduleRun(ctx context.Context, runResult Result, meta
 	// 	return InvalidRunId, nil
 	// }
 
-	log.Printf("Scheduling scenario: %v (active=%t)", meta.GetVersionedID(), scenario.IsActive)
-	return s.scheduler.Schedule(ctx, scenarioToRunnable(runResult, meta, scenario))
+	// Find all workers qualified to run the scenario:
+	requirement, err := scenario.Requirements.AsLabels()
+	if err != nil {
+		return InvalidRunId, fmt.Errorf("failed to parse scenario requirements: %w", err)
+	}
+
+	log.Printf("Scheduling scenario: looking for workers that match: %q", requirement)
+	workers, err := s.workersApi.List(ctx, SearchQuery{
+		Labels: requirement,
+	})
+	if err != nil {
+		return InvalidRunId, fmt.Errorf("failed to list workers to schedule a scenario: %w", err)
+	}
+
+	log.Printf("Scheduling scenario: %v (active=%t); qualified workers: %d", scenarioMeta.GetVersionedID(), scenario.IsActive, len(workers))
+	return s.scheduler.Schedule(ctx, scenarioToRunnable(runResult, scenarioMeta, scenario))
 }
 
 func (m *resultsApiImpl) List(ctx context.Context, searchQuery SearchQuery) ([]PartialObjectMetadata, error) {
 	var resources []Result
-	kind, ok := wyrd.KindOf(&InitialRunResults{})
-	if !ok {
-		return nil, wyrd.ErrUnknownKind
-	}
 
 	// Fixme: Should use typed requirements
 	if searchQuery.Labels == "" {
@@ -331,18 +336,14 @@ func (m *resultsApiImpl) List(ctx context.Context, searchQuery SearchQuery) ([]P
 		searchQuery.Labels = fmt.Sprintf("%v=%v,%v", LabelScenarioId, m.scenarioId, searchQuery.Labels)
 	}
 
-	_, err := m.store.FindResources(ctx, &resources, searchQuery)
+	_, err := m.store.FindResources(ctx, &resources, searchQuery, paginationLimit)
 	if err != nil {
 		return nil, err
 	}
 
 	results := make([]PartialObjectMetadata, 0, len(resources))
-	for _, sc := range resources {
-		results = append(results, PartialObjectMetadata{
-			TypeMeta:     wyrd.TypeMeta{Kind: kind},
-			ResourceMeta: sc.ResourceMeta,
-			Spec:         sc.ResultSpec,
-		})
+	for _, resource := range resources {
+		results = append(results, resource.asManifest())
 	}
 
 	return results, nil
@@ -527,6 +528,7 @@ func (m *resultsApiImpl) Get(ctx context.Context, id wyrd.ResourceID) (PartialOb
 	}
 
 	ok, err := m.store.Get(ctx, &result, id)
+	// Note, cant' use asManifest yet. Manifest only includes initial results
 	return PartialObjectMetadata{
 			TypeMeta:     wyrd.TypeMeta{Kind: kind},
 			ResourceMeta: result.ResourceMeta,
@@ -541,26 +543,14 @@ func (m *resultsApiImpl) Get(ctx context.Context, id wyrd.ResourceID) (PartialOb
 //------------------------------
 func (m *runnersApiImpl) List(ctx context.Context, searchQuery SearchQuery) ([]PartialObjectMetadata, error) {
 	var resources []Runner
-	kind, ok := wyrd.KindOf(&RunnerDefinition{})
-	if !ok {
-		return nil, wyrd.ErrUnknownKind
-	}
-
-	_, err := m.store.FindResources(ctx, &resources, searchQuery)
+	_, err := m.store.FindResources(ctx, &resources, searchQuery, paginationLimit)
 	if err != nil {
 		return nil, err
 	}
 
 	results := make([]PartialObjectMetadata, 0, len(resources))
-	for _, sc := range resources {
-		// TODO: Token should be hidden?
-		sc.IdToken = ""
-		// sc.
-		results = append(results, PartialObjectMetadata{
-			TypeMeta:     wyrd.TypeMeta{Kind: kind},
-			ResourceMeta: sc.ResourceMeta,
-			Spec:         sc.RunnerSpec,
-		})
+	for _, resource := range resources {
+		results = append(results, resource.asManifest())
 	}
 
 	return results, nil
@@ -681,25 +671,16 @@ type artifactApiImp struct {
 
 func (m *artifactApiImp) List(ctx context.Context, query SearchQuery) ([]PartialObjectMetadata, error) {
 	var resources []Artifact
-	kind, ok := wyrd.KindOf(&ArtifactSpec{})
-	if !ok {
-		return nil, wyrd.ErrUnknownKind
-	}
-
-	_, err := m.store.FindResources(ctx, &resources, query)
+	_, err := m.store.FindResources(ctx, &resources, query, paginationLimit)
 	if err != nil {
 		return nil, err
 	}
 
 	results := make([]PartialObjectMetadata, 0, len(resources))
-	for _, sc := range resources {
+	for _, resource := range resources {
 		// Note: Do not return artifact value when listing
-		sc.ArtifactSpec.Content = nil
-		results = append(results, PartialObjectMetadata{
-			TypeMeta:     wyrd.TypeMeta{Kind: kind},
-			ResourceMeta: sc.ResourceMeta,
-			Spec:         sc.ArtifactSpec,
-		})
+		resource.ArtifactSpec.Content = nil
+		results = append(results, resource.asManifest())
 	}
 
 	return results, nil
@@ -707,17 +688,8 @@ func (m *artifactApiImp) List(ctx context.Context, query SearchQuery) ([]Partial
 
 func (m *artifactApiImp) Get(ctx context.Context, id wyrd.ResourceID) (PartialObjectMetadata, bool, error) {
 	var result Artifact
-	kind, ok := wyrd.KindOf(&result.ArtifactSpec)
-	if !ok {
-		return PartialObjectMetadata{}, ok, wyrd.ErrUnknownKind
-	}
-
 	ok, err := m.store.Get(ctx, &result, id)
-	return PartialObjectMetadata{
-			TypeMeta:     wyrd.TypeMeta{Kind: kind},
-			ResourceMeta: result.ResourceMeta,
-			Spec:         &result.ArtifactSpec,
-		},
+	return result.asManifest(),
 		ok && result.GetID() == id && !result.IsDeleted(),
 		err
 }

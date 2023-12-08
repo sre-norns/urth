@@ -139,7 +139,7 @@ func searchableApi() gin.HandlerFunc {
 		if ctx.ShouldBindQuery(&searchQuery) != nil {
 			searchQuery.Limit = paginationLimit
 		}
-		searchQuery.ClampLimit(paginationLimit)
+		searchQuery.ClampLimit(paginationLimit) // Redundant, now that the server clamps it
 		ctx.Set(searchQueryKey, searchQuery)
 		ctx.Next()
 	}

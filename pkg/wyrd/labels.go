@@ -69,16 +69,19 @@ func (ls LabelSelector) AsLabels() (string, error) {
 
 	i := 0
 	for key, value := range ls.MatchLabels {
+		if i != 0 {
+			sb.WriteRune(',')
+		}
 		sb.WriteString(key)
 		sb.WriteString("=")
 		sb.WriteString(value)
-		if i != len(ls.MatchLabels) {
-			sb.WriteRune(',')
-		}
+		i += 1
 	}
 
 	for _, s := range ls.MatchSelector {
-		sb.WriteRune(',')
+		if sb.Len() > 0 {
+			sb.WriteRune(',')
+		}
 		switch s.Op {
 		case LabelSelectorOpExists:
 			sb.WriteString(s.Key)
@@ -87,15 +90,18 @@ func (ls LabelSelector) AsLabels() (string, error) {
 			sb.WriteString(s.Key)
 		case LabelSelectorOpIn:
 			sb.WriteString(s.Key)
-			sb.WriteString("in (")
+			sb.WriteString(" in (")
 			for _, value := range s.Values {
 				sb.WriteString(value)
 			}
 			sb.WriteString(")")
 		case LabelSelectorOpNotIn:
 			sb.WriteString(s.Key)
-			sb.WriteString("notIn (")
-			for _, value := range s.Values {
+			sb.WriteString(" notin (")
+			for i, value := range s.Values {
+				if i != 0 {
+					sb.WriteString(", ")
+				}
 				sb.WriteString(value)
 			}
 			sb.WriteString(")")
