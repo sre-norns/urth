@@ -3,9 +3,11 @@ import {useNavigate} from 'react-router-dom'
 
 
 const findHref = (element) => {
-  if (!element) return null
-  if (element.tagName === 'A') return element.href
-  return findHref(element.parentElement)
+  if (!element) {
+    return null
+  }
+
+  return element.href || findHref(element.parentElement)
 }
 
 const routed = (WrappedComponent, replace = false) => {

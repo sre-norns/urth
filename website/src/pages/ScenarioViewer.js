@@ -1,7 +1,7 @@
 import React, {useCallback} from 'react'
 import PropTypes from 'prop-types'
 import styled from '@emotion/styled'
-import {useParams} from 'react-router-dom'
+import {useNavigate, useParams} from 'react-router-dom'
 import {useDispatch, useSelector} from 'react-redux'
 import fetchScenario from '../actions/fetchScenario.js'
 import ErrorInlay from '../components/ErrorInlay.js'
@@ -69,6 +69,7 @@ const validateDescription = validateMaxLength(128)
 
 const ScenarioViewer = ({edit = false}) => {
   const {scenarioId} = useParams()
+  const navigate = useNavigate()
 
   const [isNew, setIsNew] = React.useState(false)
 
@@ -78,6 +79,9 @@ const ScenarioViewer = ({edit = false}) => {
   const [name, setName] = React.useState('')
   const [description, setDescription] = React.useState('')
 
+  const {id, fetching, updating, response, error} = useSelector(s => s.scenario)
+  const dispatch = useDispatch()
+
   const handleNameChange = useCallback((e) => {
     setName(e.target.value)
   }, [])
@@ -85,10 +89,6 @@ const ScenarioViewer = ({edit = false}) => {
   const handleDescriptionChange = useCallback((e) => {
     setDescription(e.target.value)
   }, [])
-
-  const {id, fetching, updating, response, error} = useSelector(s => s.scenario)
-
-  const dispatch = useDispatch()
 
   const handleSave = useCallback(() => {
     if (!formRef.current || !formRef.current.validate()) {
@@ -108,7 +108,7 @@ const ScenarioViewer = ({edit = false}) => {
         // active: response.spec.active,
         // prob: response.spec.prob,
         },
-    }))
+    }, () => navigate(`/scenarios/${scenarioId}`, {replace: true})))
   }, [name, description])
 
   React.useEffect(() => {
