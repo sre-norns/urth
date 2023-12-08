@@ -1,5 +1,10 @@
 package wyrd
 
+import (
+	"fmt"
+	"strings"
+)
+
 // Same as 	"k8s.io/apimachinery/pkg/labels".Set
 type Labels map[string]string
 
@@ -28,10 +33,19 @@ func MergeLabels(labl ...Labels) Labels {
 	return result
 }
 
+type LabelSelectorOperator string
+
+const (
+	LabelSelectorOpIn           LabelSelectorOperator = "In"
+	LabelSelectorOpNotIn        LabelSelectorOperator = "NotIn"
+	LabelSelectorOpExists       LabelSelectorOperator = "Exists"
+	LabelSelectorOpDoesNotExist LabelSelectorOperator = "DoesNotExist"
+)
+
 type Selector struct {
-	Key    string   `json:"key,omitempty" yaml:"key,omitempty" `
-	Op     string   `json:"operator,omitempty" yaml:"operator,omitempty" `
-	Values []string `json:"values,omitempty" yaml:"values,omitempty" `
+	Key    string                `json:"key,omitempty" yaml:"key,omitempty" `
+	Op     LabelSelectorOperator `json:"operator,omitempty" yaml:"operator,omitempty" `
+	Values []string              `json:"values,omitempty" yaml:"values,omitempty" `
 }
 
 // LabelSelector is a part of model that holds label-based requirements for on other resources
@@ -49,3 +63,46 @@ type LabelSelector struct {
 
 // 	return true
 // }
+
+func (ls LabelSelector) AsLabels() (string, error) {
+	sb := strings.Builder{}
+
+	i := 0
+	for key, value := range ls.MatchLabels {
+		sb.WriteString(key)
+		sb.WriteString("=")
+		sb.WriteString(value)
+		if i != len(ls.MatchLabels) {
+			sb.WriteRune(',')
+		}
+	}
+
+	for _, s := range ls.MatchSelector {
+		sb.WriteRune(',')
+		switch s.Op {
+		case LabelSelectorOpExists:
+			sb.WriteString(s.Key)
+		case LabelSelectorOpDoesNotExist:
+			sb.WriteString("!")
+			sb.WriteString(s.Key)
+		case LabelSelectorOpIn:
+			sb.WriteString(s.Key)
+			sb.WriteString("in (")
+			for _, value := range s.Values {
+				sb.WriteString(value)
+			}
+			sb.WriteString(")")
+		case LabelSelectorOpNotIn:
+			sb.WriteString(s.Key)
+			sb.WriteString("notIn (")
+			for _, value := range s.Values {
+				sb.WriteString(value)
+			}
+			sb.WriteString(")")
+		default:
+			return sb.String(), fmt.Errorf("unsupported op value: %q", s.Op)
+		}
+	}
+
+	return sb.String(), nil
+}
