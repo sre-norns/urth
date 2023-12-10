@@ -55,7 +55,7 @@ class FormGroup extends Component {
     }
   }
 
-  notifyValidated(error) {
+  notifyValidated(value, error) {
     this.setState(state => ({
       context: {
         ...state.context,
@@ -64,7 +64,7 @@ class FormGroup extends Component {
     }))
 
     if (this.context && this.context.validated && this.props.controlId) {
-      this.context.validated(this.props.controlId, error)
+      this.context.validated(this.props.controlId, value, error)
     }
   }
 
@@ -76,11 +76,13 @@ class FormGroup extends Component {
       const result = onValidate(value, prevValue, force)
       if (result instanceof Promise) {
         result.then((error) => {
-          this.notifyValidated(error)
+          this.notifyValidated(value, error)
         })
       } else {
-        this.notifyValidated(result)
+        this.notifyValidated(value, result)
       }
+    } else {
+      this.notifyValidated(value, undefined)
     }
   }
 

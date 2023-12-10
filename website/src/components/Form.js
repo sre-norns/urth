@@ -2,6 +2,7 @@ import React, {Component} from 'react'
 import PropTypes from 'prop-types'
 import styled from '@emotion/styled'
 import FormContext from './FormContext.js'
+import {isEmpty} from '../utils/objects.js'
 
 
 const FormContainer = styled.form``
@@ -18,6 +19,9 @@ class Form extends Component {
 
     this.validators = {}
     this.errors = {}
+
+    this.initialValues = {}
+    this.changedValues = {}
   }
 
   get isValid() {
@@ -30,6 +34,15 @@ class Form extends Component {
     }
 
     return this.isValid
+  }
+
+  get hasChanges() {
+    return !isEmpty(this.changedValues)
+  }
+
+  resetChangeTracking() {
+    this.initialValues = {...this.initialValues, ...this.changedValues}
+    this.changedValues = {}
   }
 
   onRegister = (controlId, validate) => {
@@ -48,7 +61,7 @@ class Form extends Component {
     delete this.validators[controlId]
   }
 
-  onValidated = (controlId, error) => {
+  onValidated = (controlId, value, error) => {
     if (this.validators[controlId] === undefined) {
       console.warn('Validation result from unknown controlId', controlId)
     }
@@ -59,8 +72,18 @@ class Form extends Component {
       delete this.errors[controlId]
     }
 
+    if (this.initialValues.hasOwnProperty(controlId)) {
+      if (this.initialValues[controlId] === value) {
+        delete this.changedValues[controlId]
+      } else {
+        this.changedValues[controlId] = value
+      }
+    } else {
+      this.initialValues[controlId] = value
+    }
+
     if (this.props.onValidated) {
-      this.props.onValidated(this.isValid)
+      this.props.onValidated(this.isValid, this.hasChanges)
     }
   }
 
