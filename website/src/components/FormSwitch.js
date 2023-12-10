@@ -1,4 +1,4 @@
-import React, {forwardRef, useContext, useEffect, useState} from 'react'
+import React, {forwardRef, useCallback, useContext, useEffect, useState} from 'react'
 import PropTypes from 'prop-types'
 import styled from '@emotion/styled'
 import FormGroupContext from './FormGroupContext.js'
@@ -41,7 +41,7 @@ const focusShadowColor = (props) => {
 
 const focusBoxShadow = (props) => {
   const shade = focusShadowColor(props)[props.theme.dark ? 300 : 700]
-  return `0 0 0 0.125rem ${shade}`
+  return props.readOnly ? 'none' : `0 0 0 0.125rem ${shade}`
 }
 
 const FormSwitchComponent = styled.button`
@@ -84,7 +84,7 @@ const FormSwitchComponent = styled.button`
   }
 `
 
-const FormSwitch = forwardRef(({id, checked, ...props}, ref) => {
+const FormSwitch = forwardRef(({id, checked, onClick, ...props}, ref) => {
   const {controlId, error, validate} = useContext(FormGroupContext)
 
   const [prevChecked, setPrevChecked] = useState(checked)
@@ -96,11 +96,17 @@ const FormSwitch = forwardRef(({id, checked, ...props}, ref) => {
     setPrevChecked(checked)
   }, [checked, validate])
 
+  const handleClick = useCallback((e) => {
+    e.preventDefault()
+    onClick && onClick(e)
+  }, [onClick])
+
   return (
     <FormSwitchComponent
       id={id || controlId}
       error={error}
       checked={checked}
+      onClick={handleClick}
       {...props}
       ref={ref}
     />

@@ -117,7 +117,6 @@ const ScenarioViewer = ({edit = false}) => {
   }, [])
 
   const handleActiveClick = useCallback((e) => {
-    e.preventDefault()
     setActive(!e.target.checked)
   }, [])
 
