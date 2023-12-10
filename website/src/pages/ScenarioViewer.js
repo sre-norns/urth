@@ -18,6 +18,7 @@ import routed from '../utils/routed.js'
 import updateScenario from '../actions/updateScenario.js'
 import ObjectCapsules from '../components/ObjectCapsules.js'
 import FormSwitch from '../components/FormSwitch.js'
+import { useTrackedState, useTracker } from '../utils/tracking.js'
 
 
 const PageContainer = styled.div`
@@ -92,31 +93,26 @@ const ScenarioViewer = ({edit = false}) => {
 
   const formRef = React.useRef(null)
   const [isValid, setIsValid] = React.useState(true)
-  const [hasChanges, setHasChanges] = React.useState(false)
 
-  const [name, setName] = React.useState('')
-  const [description, setDescription] = React.useState('')
-  const [active, setActive] = React.useState(false)
+  const tracker = useTracker()
+  const [name, setName] = useTrackedState(tracker, '')
+  const [description, setDescription] = useTrackedState(tracker, '')
+  const [active, setActive] = useTrackedState(tracker, false)
 
   const {id, fetching, updating, response, error} = useSelector(s => s.scenario)
   const dispatch = useDispatch()
 
   const handleResponse = useCallback((response) => {
     if (response) {
-      if (formRef.current) {
-        formRef.current.resetChangeTracking()
-        setHasChanges(false)
-      }
-
       setName(response.metadata.name)
       setDescription(response.spec.description)
       setActive(response.spec.active)
+      tracker.reset()
     }
   }, [])
 
-  const handleValidated = useCallback((isValid, hasChanges) => {
+  const handleValidated = useCallback((isValid) => {
     setIsValid(isValid)
-    setHasChanges(hasChanges)
   }, [])
 
   const handleNameChange = useCallback((e) => {
@@ -192,7 +188,7 @@ const ScenarioViewer = ({edit = false}) => {
           {!edit && <EditButton href={`/scenarios/${scenarioId}/edit`}>
             <i className="fi fi-page-edit"></i>&nbsp;Edit</EditButton>}
           {edit && <HeaderButton onClick={handleCancel} color="neutral"><i className="fi fi-trash"></i>&nbsp;Cancel</HeaderButton>}
-          {edit && <HeaderButton onClick={handleSave} disabled={!isValid || !hasChanges}><i className="fi fi-save"></i>&nbsp;Save</HeaderButton>}
+          {edit && <HeaderButton onClick={handleSave} disabled={!isValid || !tracker.changed}><i className="fi fi-save"></i>&nbsp;Save</HeaderButton>}
         </HeaderPanel>
         <PageForm ref={formRef} onValidated={handleValidated}>
           {edit &&

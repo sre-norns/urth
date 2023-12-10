@@ -64,7 +64,7 @@ class FormGroup extends Component {
     }))
 
     if (this.context && this.context.validated && this.props.controlId) {
-      this.context.validated(this.props.controlId, value, error)
+      this.context.validated(this.props.controlId, error)
     }
   }
 

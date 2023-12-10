@@ -19,9 +19,6 @@ class Form extends Component {
 
     this.validators = {}
     this.errors = {}
-
-    this.initialValues = {}
-    this.changedValues = {}
   }
 
   get isValid() {
@@ -34,15 +31,6 @@ class Form extends Component {
     }
 
     return this.isValid
-  }
-
-  get hasChanges() {
-    return !isEmpty(this.changedValues)
-  }
-
-  resetChangeTracking() {
-    this.initialValues = {...this.initialValues, ...this.changedValues}
-    this.changedValues = {}
   }
 
   onRegister = (controlId, validate) => {
@@ -61,7 +49,7 @@ class Form extends Component {
     delete this.validators[controlId]
   }
 
-  onValidated = (controlId, value, error) => {
+  onValidated = (controlId, error) => {
     if (this.validators[controlId] === undefined) {
       console.warn('Validation result from unknown controlId', controlId)
     }
@@ -72,18 +60,8 @@ class Form extends Component {
       delete this.errors[controlId]
     }
 
-    if (this.initialValues.hasOwnProperty(controlId)) {
-      if (this.initialValues[controlId] === value) {
-        delete this.changedValues[controlId]
-      } else {
-        this.changedValues[controlId] = value
-      }
-    } else {
-      this.initialValues[controlId] = value
-    }
-
     if (this.props.onValidated) {
-      this.props.onValidated(this.isValid, this.hasChanges)
+      this.props.onValidated(this.isValid)
     }
   }
 
