@@ -17,6 +17,7 @@ import Button from '../components/Button.js'
 import routed from '../utils/routed.js'
 import updateScenario from '../actions/updateScenario.js'
 import ObjectCapsules from '../components/ObjectCapsules.js'
+import FormSwitch from '../components/FormSwitch.js'
 
 
 const PageContainer = styled.div`
@@ -59,13 +60,25 @@ const HeaderButton = styled(Button)`
   min-width: 96px;
 `
 
+const EditButton = routed(HeaderButton.withComponent('a'), true)
+
 const PageForm = styled(Form)`
   display: flex;
   flex-direction: column;
   gap: 1rem;
 `
 
-const EditButton = routed(HeaderButton.withComponent('a'), true)
+const HorizontalFormGroup = styled(FormGroup)`
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 1rem;
+`
+
+const HorizontalLabel = styled(FormLabel)`
+  padding: 0;
+  flex-grow: 1;
+`
 
 const validateName = (...args) => validateNotEmpty(...args) || validateMaxLength(32)(...args)
 
@@ -82,6 +95,7 @@ const ScenarioViewer = ({edit = false}) => {
 
   const [name, setName] = React.useState('')
   const [description, setDescription] = React.useState('')
+  const [active, setActive] = React.useState(false)
 
   const {id, fetching, updating, response, error} = useSelector(s => s.scenario)
   const dispatch = useDispatch()
@@ -90,6 +104,7 @@ const ScenarioViewer = ({edit = false}) => {
     if (response) {
       setName(response.metadata.name)
       setDescription(response.spec.description)
+      setActive(response.spec.active)
     }
   }, [])
 
@@ -99,6 +114,10 @@ const ScenarioViewer = ({edit = false}) => {
 
   const handleDescriptionChange = useCallback((e) => {
     setDescription(e.target.value)
+  }, [])
+
+  const handleActiveClick = useCallback((e) => {
+    setActive(!e.target.checked)
   }, [])
 
   const handleCancel = useCallback(() => {
@@ -120,12 +139,13 @@ const ScenarioViewer = ({edit = false}) => {
       spec: {
         ...response.spec,
         description,
+        active,
         // requirements: response.spec.requirements,
         // active: response.spec.active,
         // prob: response.spec.prob,
-        },
+      },
     }, () => navigate(`/scenarios/${scenarioId}`, {replace: true})))
-  }, [name, description])
+  }, [name, description, active])
 
   React.useEffect(() => {
     if (scenarioId === 'new') {
@@ -185,6 +205,10 @@ const ScenarioViewer = ({edit = false}) => {
               <ObjectCapsules value={response.metadata.labels}/>
             </FormGroup>
           }
+          <HorizontalFormGroup controlId="scenario-active">
+            <HorizontalLabel>Active</HorizontalLabel>
+            <FormSwitch checked={active} readOnly={!edit} onClick={edit && handleActiveClick || null}/>
+          </HorizontalFormGroup>
         </PageForm>
       </PagePanel>
     </PageContainer>
