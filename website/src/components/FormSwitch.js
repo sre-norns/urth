@@ -10,6 +10,8 @@ const inactiveColor = (props) => props.theme.color[props.inactiveColor || 'neutr
 
 const errorColor = (props) => props.theme.color[props.errorColor || 'error']
 
+const focusColor = (props) => props.theme.color[props.focusColor || 'primary']
+
 const color = (props, state) => {
   const hasError = !!props.error
   if (hasError) {
@@ -31,7 +33,18 @@ const foregroundColor = (props, state) => {
   return props.theme.dark ? _color[100] : _color[50]
 }
 
-const FormSwitchComponent = styled.div`
+const focusShadowColor = (props) => {
+  const hasError = !!props.error
+  return hasError && errorColor(props) ||
+    focusColor(props)
+}
+
+const focusBoxShadow = (props) => {
+  const shade = focusShadowColor(props)[props.theme.dark ? 300 : 700]
+  return `0 0 0 0.125rem ${shade}`
+}
+
+const FormSwitchComponent = styled.button`
   width: ${props => props.readOnly ? '24px' : '48px'};
   height: 24px;
   background: ${background};
@@ -46,6 +59,7 @@ const FormSwitchComponent = styled.div`
   color: ${foregroundColor};
   font-size: 12px;
   pointer-events: ${props => props.readOnly ? 'none' : 'auto'};
+  outline: none;
 
   &:before {
     content: ${props => props.readOnly ? "none" : "''"};
@@ -63,6 +77,10 @@ const FormSwitchComponent = styled.div`
     content: ${props => props.checked ? "'✓'" : "'✕'"};
     position: relative;
     padding: 0 4px;
+  }
+
+  &:focus {
+    box-shadow: ${focusBoxShadow};
   }
 `
 
@@ -96,6 +114,7 @@ FormSwitch.propTypes = {
   activeColor: PropTypes.string,
   inactiveColor: PropTypes.string,
   errorColor: PropTypes.string,
+  focusColor: PropTypes.string,
 }
 
 export default FormSwitch
