@@ -15,7 +15,7 @@ const color = (props, state) => {
   if (hasError) {
     return errorColor(props)
   }
-  
+
   const active = !!props.checked
   const disabled = state === 'disabled'
   return (active && !disabled) ? activeColor(props) : inactiveColor(props)
@@ -38,7 +38,7 @@ const FormSwitchComponent = styled.div`
   border-radius: 24px;
   position: relative;
   cursor: ${props => props.readOnly ? 'default' : 'pointer'};
-  transition: background 0.3s;
+  transition: background .3s, color .3s, background-color .3s;
   display: flex;
   justify-content: ${props => props.readOnly ? 'center' : (props.checked? 'flex-start' : 'flex-end')};
   align-items: center;
@@ -56,7 +56,7 @@ const FormSwitchComponent = styled.div`
     height: 20px;
     border-radius: 50%;
     background: ${foregroundColor};
-    transition: left 0.3s;
+    transition: left .3s;
   }
 
   &:after {
