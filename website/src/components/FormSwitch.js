@@ -93,7 +93,9 @@ FormSwitch.propTypes = {
   id: PropTypes.string,
   checked: PropTypes.bool,
   readOnly: PropTypes.bool,
-  onChange: PropTypes.func,
+  activeColor: PropTypes.string,
+  inactiveColor: PropTypes.string,
+  errorColor: PropTypes.string,
 }
 
 export default FormSwitch
