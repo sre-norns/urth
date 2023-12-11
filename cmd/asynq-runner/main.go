@@ -60,7 +60,7 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 	// FIXME: Worker must use its credentials jwt
 	// Authorize this worker to pick up this job:
 	log.Print("jobID: ", runID, " requesting authorization to execute")
-	runAuth, err := resultsApiClient.Auth(ctx, job.RunID, urth.AuthRunRequest{
+	runAuth, err := resultsApiClient.Auth(ctx, job.RunID, urth.AuthJobRequest{
 		RunnerID: w.identity.GetVersionedID(),
 		Timeout:  timeout,
 		Labels: wyrd.MergeLabels(

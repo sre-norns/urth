@@ -155,7 +155,7 @@ type ScenarioSpec struct {
 	IsActive bool `form:"active" json:"active" yaml:"active" xml:"active"`
 
 	// Script is the actual test scenario that a qualified runner executes
-	Prob ProbManifest `form:"prob" json:"prob,omitempty" yaml:"prob,omitempty" xml:"prob" gorm:"embedded;embeddedPrefix:prob_"`
+	Prob ProbManifest `form:"prob" json:"prob,omitempty" yaml:"prob,omitempty" xml:"prob" gorm:"serializer:json"`
 
 	// Computed fields
 	NextRun    *time.Time  `json:"nextScheduledRunTime,omitempty" yaml:"nextScheduledRunTime,omitempty" gorm:"-"`

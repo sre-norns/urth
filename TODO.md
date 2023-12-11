@@ -51,10 +51,11 @@
 [] For manual runs - trigger identity of the who triggered the run as job labels, such that all jobs triggered by a given user can be found!
 [] Add visual indicator around STATUS circle for time for time before the next run: `(next_run - previous_run) / (delta_between_runs)`
 
-## Workers / Script Runners
-[x] Add .HTTP/.REST file runner into its own package
-[] Worker should check puppeteer availability and add labels it available
-[] Workers should be annotated with the type of puppeteer available: JS or Python and versions
+## Workers / Prob Runners
+[] Workers should talk to API servers over gRPC
+[X] Add .HTTP/.REST file runner into its own package
+[X] Worker should check puppeteer availability and add labels it available
+[X] Workers should be annotated with the type of puppeteer available: JS or Python and versions
 [x] Web Request runner: integrate WEB listener to produce HTTP log + HAR file as artifacts
 [] Web request runner must inject trancing context / Jaeger / OpenTelemetry
 [] Puppeteer Worker: export HAR File as run artifacts

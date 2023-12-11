@@ -50,7 +50,7 @@ type ProbManifest struct {
 	Timeout time.Duration `form:"timeout" json:"timeout,omitempty" yaml:"timeout,omitempty" xml:"timeout,omitempty"`
 
 	// Actual script, of a 'kind' type
-	Spec interface{} `json:"-" yaml:"-" gorm:"serializer:json"`
+	Spec interface{} `json:"-" yaml:"-"`
 }
 
 func (u ProbManifest) MarshalJSON() ([]byte, error) {
@@ -79,7 +79,7 @@ func (s *ProbManifest) UnmarshalJSON(data []byte) error {
 	}
 
 	s.Kind = aux.Kind
-	s.Spec, err = wyrd.UnmarshalJsonWithRegister(aux.Kind, aux.Spec, InstanceOf)
+	s.Spec, err = wyrd.UnmarshalJsonWithRegister(aux.Kind, InstanceOf, aux.Spec)
 	return err
 }
 

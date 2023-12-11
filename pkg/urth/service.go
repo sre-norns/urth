@@ -65,7 +65,7 @@ type RunResultApi interface {
 
 	Create(ctx context.Context, entry wyrd.ResourceManifest) (PartialObjectMetadata, error)
 
-	Auth(ctx context.Context, runID VersionedResourceId, authRequest AuthRunRequest) (CreatedRunResponse, error)
+	Auth(ctx context.Context, runID VersionedResourceId, authRequest AuthJobRequest) (AuthJobResponse, error)
 
 	// TODO: Token can be used to look-up ID!
 	Update(ctx context.Context, id VersionedResourceId, token ApiToken, entry FinalRunResults) (CreatedResponse, error)
@@ -433,20 +433,20 @@ func (m *resultsApiImpl) Create(ctx context.Context, newEntry wyrd.ResourceManif
 	return entry.asManifest(), err
 }
 
-func (m *resultsApiImpl) Auth(ctx context.Context, id VersionedResourceId, authRequest AuthRunRequest) (CreatedRunResponse, error) {
+func (m *resultsApiImpl) Auth(ctx context.Context, id VersionedResourceId, authRequest AuthJobRequest) (AuthJobResponse, error) {
 	var entry Result
 	ok, err := m.store.GetWithVersion(ctx, &entry, id)
 	if err != nil {
-		return CreatedRunResponse{}, ErrResourceNotFound
+		return AuthJobResponse{}, ErrResourceNotFound
 	}
 	if !ok {
-		return CreatedRunResponse{}, ErrResourceUnauthorized
+		return AuthJobResponse{}, ErrResourceUnauthorized
 	}
 
 	// Check that no one else took this job
 	// Note: This means that no re-try is possible!
 	if entry.UpdateToken != "" {
-		return CreatedRunResponse{}, ErrResourceUnauthorized
+		return AuthJobResponse{}, ErrResourceUnauthorized
 	}
 
 	// TODO: Record expected deadline and JWT's exp claim
@@ -464,13 +464,13 @@ func (m *resultsApiImpl) Auth(ctx context.Context, id VersionedResourceId, authR
 	log.Print("authorizing worker ", authRequest.RunnerID, " to execute ", entry.Name, " for at most ", authRequest.Timeout)
 	ok, err = m.store.Update(ctx, &entry, entry.GetVersionedID())
 	if err != nil {
-		return CreatedRunResponse{}, err
+		return AuthJobResponse{}, err
 	}
 	if !ok {
-		return CreatedRunResponse{}, ErrResourceVersionConflict
+		return AuthJobResponse{}, ErrResourceVersionConflict
 	}
 
-	return CreatedRunResponse{
+	return AuthJobResponse{
 		CreatedResponse: CreatedResponse{
 			VersionedResourceId: entry.GetVersionedID(),
 		},

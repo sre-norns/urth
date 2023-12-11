@@ -527,7 +527,7 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 
 			versionedInfo := ctx.MustGet(versionInfoKey).(urth.VersionQuery)
 
-			var authRequest urth.AuthRunRequest
+			var authRequest urth.AuthJobRequest
 			if err := ctx.ShouldBind(&authRequest); err != nil {
 				abortWithError(ctx, http.StatusBadRequest, err)
 				return

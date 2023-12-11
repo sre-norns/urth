@@ -110,7 +110,7 @@ func (u ResourceManifest) MarshalJSON() ([]byte, error) {
 	})
 }
 
-func UnmarshalJsonWithRegister(kind Kind, specData json.RawMessage, factory KindFactory) (any, error) {
+func UnmarshalJsonWithRegister(kind Kind, factory KindFactory, specData json.RawMessage) (any, error) {
 	spec, err := factory(kind)
 	if err != nil { // Kind is not known, get raw message if not-nil
 		if len(specData) != 0 { // No spec to parse
@@ -144,7 +144,7 @@ func (s *ResourceManifest) UnmarshalJSON(data []byte) error {
 
 	s.TypeMeta = aux.TypeMeta
 	s.Metadata = aux.Metadata
-	s.Spec, err = UnmarshalJsonWithRegister(aux.Kind, aux.Spec, InstanceOf)
+	s.Spec, err = UnmarshalJsonWithRegister(aux.Kind, InstanceOf, aux.Spec)
 	return err
 }
 

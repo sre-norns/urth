@@ -295,3 +295,59 @@ spec:
 		})
 	}
 }
+
+func TestCustomUnmarshaling_JSON(t *testing.T) {
+	type TestSpec struct {
+		Value int    `yaml:"value"`
+		Name  string `yaml:"name"`
+	}
+	testKind := wyrd.Kind("testSpec")
+
+	err := wyrd.RegisterKind(testKind, &TestSpec{})
+	require.NoError(t, err)
+	defer wyrd.UnregisterKind(testKind)
+
+	testCases := map[string]struct {
+		givenKind   wyrd.Kind
+		givenData   json.RawMessage
+		expect      any
+		expectError bool
+	}{
+		"unknown-kind-nil-data": {
+			givenKind: "",
+			givenData: nil,
+			expect:    nil,
+		},
+		"unknown-kind-empty-data": {
+			givenKind: "",
+			givenData: json.RawMessage{},
+			expect:    nil,
+		},
+		"known-kind-no-data": {
+			givenKind: "testSpec",
+			givenData: json.RawMessage{},
+			expect:    nil,
+		},
+		"known-kind-with-data": {
+			givenKind: "testSpec",
+			givenData: json.RawMessage(`{"value":321,"name":"que"}`),
+			expect: &TestSpec{
+				Value: 321,
+				Name:  "que",
+			},
+		},
+	}
+
+	for name, tc := range testCases {
+		test := tc
+		t.Run(name, func(t *testing.T) {
+			got, err := wyrd.UnmarshalJsonWithRegister(test.givenKind, wyrd.InstanceOf, test.givenData)
+			if test.expectError {
+				require.Error(t, err, "expected error: %v", test.expectError)
+			} else {
+				require.NoError(t, err, "expected error: %v", test.expectError)
+				require.Equal(t, test.expect, got)
+			}
+		})
+	}
+}

@@ -57,16 +57,17 @@ type (
 		VersionedResourceId `json:",inline" yaml:",inline"`
 	}
 
-	CreatedRunResponse struct {
-		CreatedResponse `uri:",inline" form:",inline"`
-		Token           ApiToken `form:"token" json:"token" yaml:"token" xml:"token"`
-	}
-
-	AuthRunRequest struct {
+	// Job authorization request
+	// Worker sends this authZ request to take a job, if allowed
+	AuthJobRequest struct {
 		RunnerID VersionedResourceId `form:"runnerId" json:"runnerId" yaml:"runnerId" xml:"runnerId"`
 		Timeout  time.Duration       `form:"timeout" json:"timeout" yaml:"timeout" xml:"timeout"`
 		Labels   wyrd.Labels         `form:"labels,omitempty" json:"labels,omitempty" yaml:"labels,omitempty" xml:"labels,omitempty"`
-		// Token    ApiToken   `form:"token" json:"token" yaml:"token" xml:"token"`
+	}
+
+	AuthJobResponse struct {
+		CreatedResponse `uri:",inline" form:",inline"`
+		Token           ApiToken `form:"token" json:"token" yaml:"token" xml:"token"`
 	}
 )
 

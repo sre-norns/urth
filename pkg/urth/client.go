@@ -422,8 +422,8 @@ func (c *resultsApiRestClient) Create(ctx context.Context, newEntry wyrd.Resourc
 	return c.createResource(fmt.Sprintf("v1/scenarios/%v/results", c.ScenarioId), &newEntry)
 }
 
-func (c *resultsApiRestClient) Auth(ctx context.Context, id VersionedResourceId, authRequest AuthRunRequest) (CreatedRunResponse, error) {
-	var result CreatedRunResponse
+func (c *resultsApiRestClient) Auth(ctx context.Context, id VersionedResourceId, authRequest AuthJobRequest) (AuthJobResponse, error) {
+	var result AuthJobResponse
 	data, err := json.Marshal(authRequest)
 	if err != nil {
 		return result, err
