@@ -10,7 +10,8 @@ import (
 )
 
 var (
-	ErrUnknownKind = fmt.Errorf("unknown kind")
+	ErrUnknownKind        = fmt.Errorf("unknown kind")
+	ErrUnexpectedSpecType = fmt.Errorf("unexpected spec type")
 )
 
 // Type to represent an ID of a resource
@@ -94,15 +95,15 @@ type ObjectMeta struct {
 
 type ResourceManifest struct {
 	TypeMeta `json:",inline" yaml:",inline"`
-	Metadata ObjectMeta  `json:"metadata" yaml:"metadata"`
-	Spec     interface{} `json:"-" yaml:"-"`
+	Metadata ObjectMeta `json:"metadata" yaml:"metadata"`
+	Spec     any        `json:"-" yaml:"-"`
 }
 
 func (u ResourceManifest) MarshalJSON() ([]byte, error) {
 	return json.Marshal(&struct {
 		TypeMeta `json:",inline"`
-		Metadata ObjectMeta  `json:"metadata"`
-		Spec     interface{} `json:"spec,omitempty"` // needed to strip any json tags
+		Metadata ObjectMeta `json:"metadata"`
+		Spec     any        `json:"spec,omitempty"` // needed to strip any json tags
 	}{
 		TypeMeta: u.TypeMeta,
 		Metadata: u.Metadata,
@@ -151,8 +152,8 @@ func (s *ResourceManifest) UnmarshalJSON(data []byte) error {
 func (u ResourceManifest) MarshalYAML() (interface{}, error) {
 	return struct {
 		TypeMeta `json:",inline" yaml:",inline"`
-		Metadata ObjectMeta  `json:"metadata" yaml:"metadata"`
-		Spec     interface{} `json:"spec" yaml:"spec,omitempty"` // needed to strip any json tags
+		Metadata ObjectMeta `json:"metadata" yaml:"metadata"`
+		Spec     any        `json:"spec" yaml:"spec,omitempty"` // needed to strip any json tags
 	}{
 		TypeMeta: u.TypeMeta,
 		Metadata: u.Metadata,

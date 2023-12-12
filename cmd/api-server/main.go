@@ -614,7 +614,7 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 			}
 
 			// TODO: Find a better way to not-expand content
-			artifact := resource.Spec.(*urth.ArtifactSpec)
+			artifact := resource.Spec.(urth.ArtifactSpec) // FIXME: Unchecked cast!
 			artifact.Content = nil
 			marshalResponse(ctx, http.StatusOK, resource)
 		})

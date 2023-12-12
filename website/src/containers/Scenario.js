@@ -80,13 +80,14 @@ function scheduleBreakdown(expression) {
 
 const Scenario = ({data, odd}) => {
   const {ID, name, labels} = data.metadata
-  const {active, description, schedule} = data.spec
+  const {active, description, schedule, prob} = data.spec
 
   const lastRunStatus = 'unknown'
   const statusColor = statusToColor(lastRunStatus)
 
-  const playDisabled = !active
-  const stopDisabled = !active
+  const executable = !!(prob?.kind)
+  const playDisabled = !(active && executable)
+  const stopDisabled = !(active && executable)
 
   const scenarioActions = useSelector(s => s.scenarioActions)
   const {fetching, response, error} = scenarioActions[ID] || {}

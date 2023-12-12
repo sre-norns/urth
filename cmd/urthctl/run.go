@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"time"
 
@@ -97,7 +98,7 @@ func getScenarioProb(kind wyrd.Kind, scenarioSpec any) (urth.ProbManifest, error
 
 	spec, ok := scenarioSpec.(*urth.ScenarioSpec)
 	if !ok {
-		return urth.ProbManifest{}, fmt.Errorf("unexpected type of Spec for the resource (kind=%q)", kind)
+		return urth.ProbManifest{}, fmt.Errorf("unexpected Spec type %q for the resource (kind=%q)", reflect.TypeOf(scenarioSpec), kind)
 	}
 
 	return spec.Prob, nil
@@ -132,11 +133,8 @@ func jobFromFile(filename string, kindHint string) (urth.ProbManifest, error) {
 		// Fallthrough: Not a recognized format for scenario file
 	}
 
-	var kind urth.ProbKind
-	// Kind guessing
-	if kindHint != "" {
-		kind = urth.ProbKind(kindHint)
-	} else {
+	kind := urth.ProbKind(kindHint)
+	if kindHint == "" { // Kind guessing
 		switch ext {
 		case ".js", ".mjs":
 			kind = puppeteer.Kind
@@ -151,6 +149,7 @@ func jobFromFile(filename string, kindHint string) (urth.ProbManifest, error) {
 		}
 	}
 
+	// Did we guess anything?
 	if string(kind) == "" {
 		return urth.ProbManifest{}, fmt.Errorf("no kind provided for the input file (ext: %q)", ext)
 	}
@@ -159,21 +158,21 @@ func jobFromFile(filename string, kindHint string) (urth.ProbManifest, error) {
 	case puppeteer.Kind:
 		return urth.ProbManifest{
 			Kind: kind,
-			Spec: puppeteer.Spec{
+			Spec: &puppeteer.Spec{
 				Script: string(content),
 			},
 		}, nil
 	case http.Kind:
 		return urth.ProbManifest{
 			Kind: kind,
-			Spec: http.Spec{
+			Spec: &http.Spec{
 				Script: string(content),
 			},
 		}, nil
 	case har.Kind:
 		return urth.ProbManifest{
 			Kind: kind,
-			Spec: har.Spec{
+			Spec: &har.Spec{
 				Script: string(content),
 			},
 		}, nil

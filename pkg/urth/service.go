@@ -126,8 +126,8 @@ type (
 		store       Store
 		scenarioId  wyrd.ResourceID
 		scheduler   Scheduler
-		scenarioApi ScenarioApi
-		workersApi  RunnersApi
+		scenarioApi *scenarioApiImpl
+		workersApi  *runnersApiImpl
 	}
 
 	labelsApiImpl struct {
@@ -149,11 +149,15 @@ func (s *serviceImpl) GetScenarioAPI() ScenarioApi {
 
 func (s *serviceImpl) GetResultsAPI(id wyrd.ResourceID) RunResultApi {
 	return &resultsApiImpl{
-		store:       s.store,
-		scenarioId:  id,
-		scheduler:   s.scheduler,
-		scenarioApi: s.GetScenarioAPI(),
-		workersApi:  s.GetRunnerAPI(),
+		store:      s.store,
+		scenarioId: id,
+		scheduler:  s.scheduler,
+		scenarioApi: &scenarioApiImpl{
+			store: s.store,
+		},
+		workersApi: &runnersApiImpl{
+			store: s.store,
+		},
 	}
 }
 
@@ -213,7 +217,7 @@ func (m *scenarioApiImpl) Create(ctx context.Context, newEntry wyrd.ResourceMani
 	}
 	spec, ok := newEntry.Spec.(*ScenarioSpec)
 	if !ok {
-		return PartialObjectMetadata{}, ErrResourceSpecTypeInvalid
+		return PartialObjectMetadata{}, fmt.Errorf("user provided %w", ErrResourceSpecTypeInvalid)
 	}
 
 	entry := Scenario{
@@ -226,12 +230,17 @@ func (m *scenarioApiImpl) Create(ctx context.Context, newEntry wyrd.ResourceMani
 	return entry.asManifest(), err
 }
 
-func (m *scenarioApiImpl) Get(ctx context.Context, id wyrd.ResourceID) (PartialObjectMetadata, bool, error) {
+func (m *scenarioApiImpl) getScenario(ctx context.Context, id wyrd.ResourceID) (Scenario, bool, error) {
 	var result Scenario
 	ok, err := m.store.Get(ctx, &result, id)
-	return result.asManifest(),
+	return result,
 		ok && result.GetID() == id && !result.IsDeleted(),
 		err
+}
+
+func (m *scenarioApiImpl) Get(ctx context.Context, id wyrd.ResourceID) (PartialObjectMetadata, bool, error) {
+	result, ok, err := m.getScenario(ctx, id)
+	return result.asManifest(), ok, err
 }
 
 func (m *scenarioApiImpl) Delete(ctx context.Context, id VersionedResourceId) (bool, error) {
@@ -259,14 +268,14 @@ func (m *scenarioApiImpl) UpdateScript(ctx context.Context, id VersionedResource
 	}, ok, err
 }
 
-func (m *scenarioApiImpl) Update(ctx context.Context, id VersionedResourceId, entry wyrd.ResourceManifest) (PartialObjectMetadata, error) {
+func (m *scenarioApiImpl) Update(ctx context.Context, id VersionedResourceId, newEntry wyrd.ResourceManifest) (PartialObjectMetadata, error) {
 	// Precondition: entry.Spec != nil
-	if entry.Spec == nil {
+	if newEntry.Spec == nil {
 		return PartialObjectMetadata{}, ErrResourceSpecIsNil
 	}
-	spec, ok := entry.Spec.(*ScenarioSpec)
+	spec, ok := newEntry.Spec.(*ScenarioSpec)
 	if !ok {
-		return PartialObjectMetadata{}, ErrResourceSpecTypeInvalid
+		return PartialObjectMetadata{}, fmt.Errorf("user provided %w", ErrResourceSpecTypeInvalid)
 	}
 
 	var result Scenario
@@ -279,11 +288,11 @@ func (m *scenarioApiImpl) Update(ctx context.Context, id VersionedResourceId, en
 	}
 
 	// Identity check
-	if result.Name != entry.Metadata.Name {
+	if result.Name != newEntry.Metadata.Name {
 		return PartialObjectMetadata{}, ErrResourceNotFound
 	}
 
-	result.Labels = entry.Metadata.Labels
+	result.Labels = newEntry.Metadata.Labels
 	result.ScenarioSpec = *spec
 
 	ok, err = m.store.Update(ctx, &result, result.GetVersionedID())
@@ -362,10 +371,10 @@ func (m *resultsApiImpl) Create(ctx context.Context, newEntry wyrd.ResourceManif
 	// Precondition: entry.Spec != nil
 	spec, ok := newEntry.Spec.(*InitialRunResults)
 	if !ok {
-		return PartialObjectMetadata{}, ErrResourceSpecTypeInvalid
+		return PartialObjectMetadata{}, fmt.Errorf("user provided %w", ErrResourceSpecTypeInvalid)
 	}
 
-	scenarioManifest, ok, err := m.scenarioApi.Get(ctx, m.scenarioId)
+	scenario, ok, err := m.scenarioApi.getScenario(ctx, m.scenarioId)
 	if err != nil {
 		return PartialObjectMetadata{}, err
 	}
@@ -373,23 +382,19 @@ func (m *resultsApiImpl) Create(ctx context.Context, newEntry wyrd.ResourceManif
 		return PartialObjectMetadata{}, ErrResourceNotFound
 	}
 
-	scenario, ok := scenarioManifest.Spec.(*ScenarioSpec)
-	if !ok {
-		return PartialObjectMetadata{}, ErrResourceSpecTypeInvalid
-	}
-	if !scenario.IsActive {
+	if !scenario.ScenarioSpec.IsActive {
 		return PartialObjectMetadata{}, ErrForbidden
 	}
 
 	if newEntry.Metadata.Name == "" || strings.HasPrefix(newEntry.Metadata.Name, "manual-") { // Generate run name for scheduled runs
 		log.Print("manual run, prefix: ", newEntry.Metadata.Name)
-		newEntry.Metadata.Name = fmt.Sprintf("%v%v-v%v-%v", newEntry.Metadata.Name, scenarioManifest.Name, scenarioManifest.Version, randToken(32))
+		newEntry.Metadata.Name = fmt.Sprintf("%v%v-v%v-%v", newEntry.Metadata.Name, scenario.Name, scenario.Version, randToken(32))
 		log.Print("...generated name: ", newEntry.Metadata.Name)
 	}
 
 	// Ensure labels are set correctly
 	newEntry.Metadata.Labels = wyrd.MergeLabels(
-		scenarioManifest.Labels,
+		scenario.Labels,
 		newEntry.Metadata.Labels,
 		wyrd.Labels{
 			LabelScenarioId: scenarioIdLabelValue,
@@ -416,7 +421,7 @@ func (m *resultsApiImpl) Create(ctx context.Context, newEntry wyrd.ResourceManif
 		return PartialObjectMetadata{}, err
 	}
 
-	_, err = m.scheduleRun(ctx, entry, scenarioManifest.ResourceMeta, scenario)
+	_, err = m.scheduleRun(ctx, entry, scenario.ResourceMeta, &scenario.ScenarioSpec)
 	if err != nil {
 		// Well, scheduling failed. Might as well cancel it:
 		entry.Status = JobErrored
@@ -600,14 +605,14 @@ func (m *runnersApiImpl) Delete(ctx context.Context, id VersionedResourceId) (bo
 	return m.store.Delete(ctx, &Runner{}, id)
 }
 
-func (m *runnersApiImpl) Update(ctx context.Context, id VersionedResourceId, entry wyrd.ResourceManifest) (PartialObjectMetadata, error) {
+func (m *runnersApiImpl) Update(ctx context.Context, id VersionedResourceId, newEntry wyrd.ResourceManifest) (PartialObjectMetadata, error) {
 	// Precondition: entry.Spec != nil
-	if entry.Spec == nil {
+	if newEntry.Spec == nil {
 		return PartialObjectMetadata{}, ErrResourceSpecIsNil
 	}
-	spec, ok := entry.Spec.(*RunnerDefinition)
+	spec, ok := newEntry.Spec.(*RunnerDefinition)
 	if !ok {
-		return PartialObjectMetadata{}, ErrResourceSpecTypeInvalid
+		return PartialObjectMetadata{}, fmt.Errorf("user provided %w", ErrResourceSpecTypeInvalid)
 	}
 
 	var result Runner
@@ -620,11 +625,11 @@ func (m *runnersApiImpl) Update(ctx context.Context, id VersionedResourceId, ent
 	}
 
 	// Identity check
-	if result.Name != entry.Metadata.Name {
+	if result.Name != newEntry.Metadata.Name {
 		return PartialObjectMetadata{}, ErrResourceNotFound
 	}
 
-	result.Labels = entry.Metadata.Labels
+	result.Labels = newEntry.Metadata.Labels
 	result.RunnerDefinition = *spec
 
 	// Persist changes
@@ -707,7 +712,7 @@ func (m *artifactApiImp) Create(ctx context.Context, newEntry wyrd.ResourceManif
 	}
 	spec, ok := newEntry.Spec.(*ArtifactSpec)
 	if !ok {
-		return PartialObjectMetadata{}, ErrResourceSpecTypeInvalid
+		return PartialObjectMetadata{}, fmt.Errorf("user provided %w", ErrResourceSpecTypeInvalid)
 	}
 
 	entry := Artifact{

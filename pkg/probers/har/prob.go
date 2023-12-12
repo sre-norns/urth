@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"reflect"
 	"runtime/debug"
 
 	"github.com/sre-norns/urth/pkg/probers/http"
 	"github.com/sre-norns/urth/pkg/runner"
 	"github.com/sre-norns/urth/pkg/urth"
+	"github.com/sre-norns/urth/pkg/wyrd"
 )
 
 const (
@@ -42,7 +44,7 @@ func init() {
 func RunScript(ctx context.Context, probSpec any, logger *runner.RunLog, options runner.RunOptions) (urth.FinalRunResults, []urth.ArtifactSpec, error) {
 	prob, ok := probSpec.(*Spec)
 	if !ok {
-		return urth.NewRunResults(urth.RunFinishedError), logger.Package(), fmt.Errorf("invalid spec")
+		return urth.NewRunResults(urth.RunFinishedError), logger.Package(), fmt.Errorf("%w: got %q, expected %q", wyrd.ErrUnexpectedSpecType, reflect.TypeOf(probSpec), reflect.TypeOf(&Spec{}))
 	}
 	logger.Log("replaying HAR file")
 

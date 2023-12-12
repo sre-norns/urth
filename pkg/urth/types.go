@@ -87,7 +87,7 @@ type PartialObjectMetadata struct {
 	// Standard resource's metadata.
 	ResourceMeta `json:"metadata,omitempty" yaml:"metadata,omitempty"`
 
-	Spec interface{} `json:"spec,omitempty" yaml:"spec,omitempty"`
+	Spec any `json:"spec,omitempty" yaml:"spec,omitempty"`
 }
 
 // RunnerDefinition holds information about a runner as supplied by the administrator to register one
@@ -134,7 +134,7 @@ func (s *Runner) asManifest() PartialObjectMetadata {
 	return PartialObjectMetadata{
 		TypeMeta:     wyrd.TypeMeta{Kind: kind},
 		ResourceMeta: s.ResourceMeta,
-		Spec:         &s.RunnerDefinition,
+		Spec:         s.RunnerDefinition,
 	}
 }
 
@@ -176,7 +176,7 @@ func (s *Scenario) asManifest() PartialObjectMetadata {
 	return PartialObjectMetadata{
 		TypeMeta:     wyrd.TypeMeta{Kind: kind},
 		ResourceMeta: s.ResourceMeta,
-		Spec:         &s.ScenarioSpec,
+		Spec:         s.ScenarioSpec,
 	}
 }
 
@@ -234,7 +234,7 @@ func (s *Artifact) asManifest() PartialObjectMetadata {
 	return PartialObjectMetadata{
 		TypeMeta:     wyrd.TypeMeta{Kind: kind},
 		ResourceMeta: s.ResourceMeta,
-		Spec:         &s.ArtifactSpec,
+		Spec:         s.ArtifactSpec,
 	}
 }
 
@@ -301,7 +301,7 @@ func (s *Result) asManifest() PartialObjectMetadata {
 	return PartialObjectMetadata{
 		TypeMeta:     wyrd.TypeMeta{Kind: kind},
 		ResourceMeta: s.ResourceMeta,
-		Spec:         &s.InitialRunResults,
+		Spec:         s.InitialRunResults,
 	}
 }
 

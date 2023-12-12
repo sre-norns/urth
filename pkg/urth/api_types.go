@@ -7,9 +7,8 @@ import (
 	"github.com/sre-norns/urth/pkg/wyrd"
 )
 
+// Common domain-agnostic types used to create rich APIs
 type (
-
-	// TODO: Replace with GORM pagination middleware
 	Pagination struct {
 		Offset uint `uri:"offset" form:"offset" json:"offset" yaml:"offset" xml:"offset"`
 		Limit  uint `uri:"limit" form:"limit" json:"limit" yaml:"limit" xml:"limit"`

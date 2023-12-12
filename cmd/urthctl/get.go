@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"reflect"
 	"time"
 
 	"github.com/sre-norns/urth/pkg/urth"
@@ -156,9 +157,10 @@ func (c *Artifact) Run(cfg *commandContext) error {
 		return cfg.OutputFormatter(&resource)
 	}
 
-	artifact, ok := resource.Spec.(*urth.ArtifactSpec)
+	// FIXME: Broken!
+	artifact, ok := resource.Spec.(urth.ArtifactSpec)
 	if !ok {
-		return fmt.Errorf("unexpected type of Spec for the resource %q (kind=%q)", resource.Name, resource.Kind)
+		return fmt.Errorf("unexpected type %q of Spec for the resource %q (kind=%q)", reflect.TypeOf(resource.Spec), resource.Name, resource.Kind)
 	}
 
 	_, err = os.Stdout.Write(artifact.Content)
