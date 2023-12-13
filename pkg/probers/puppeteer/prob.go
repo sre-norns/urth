@@ -3,9 +3,11 @@ package puppeteer
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path"
+	"path/filepath"
 	"reflect"
 	"runtime/debug"
 
@@ -50,7 +52,7 @@ func setupNodeDir(dir string) error {
 }
 
 func installPuppeteer(dir string) error {
-	cmd := exec.Command("npm", "install", "puppeteer")
+	cmd := exec.Command("npm", "install", "puppeteer", "puppeteer-har")
 	cmd.Dir = dir
 
 	return cmd.Run()
@@ -108,8 +110,16 @@ func RunScript(ctx context.Context, probSpec any, logger *runner.RunLog, options
 	}
 
 	cmd := exec.Command("node", "-")
-	cmd.Env = append(cmd.Env, fmt.Sprintf("PUPPETEER_HEADLESS=%t", options.Puppeteer.Headless))
-	cmd.Env = append(cmd.Env, fmt.Sprintf("PUPPETEER_PAGE_WAIT=%d", options.Puppeteer.PageWaitSeconds))
+	// cmd.Env = append(cmd.Env, fmt.Sprintf("PUPPETEER_CACHE_DIR=%v", options.Puppeteer.WorkingDirectory))
+	hasDisplay := os.Getenv("DISPLAY")
+	if hasDisplay != "" {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("DISPLAY=%v", hasDisplay))
+	}
+	cmd.Env = append(cmd.Env, fmt.Sprintf("URTH_PUPPETEER_HEADLESS=%t", options.Puppeteer.Headless))
+	if options.Puppeteer.PageWaitSeconds != 0 {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("URTH_PUPPETEER_PAGE_WAIT=%d", options.Puppeteer.PageWaitSeconds))
+	}
+
 	cmd.Dir = workDir
 
 	inPipe, err := cmd.StdinPipe()
@@ -139,5 +149,35 @@ func RunScript(ctx context.Context, probSpec any, logger *runner.RunLog, options
 		runResult = urth.RunFinishedError
 	}
 
-	return urth.NewRunResults(runResult), []urth.ArtifactSpec{logger.ToArtifact()}, nil
+	// Capture artifacts:
+	artifacts := make([]urth.ArtifactSpec, 0)
+	workDirEntries, err := os.ReadDir(workDir)
+	if err != nil {
+		logger.Log("Failed to open working directory. No artifacts will be captured: ", err)
+	} else {
+		for _, entry := range workDirEntries {
+			if entry.Name() == "node_modules" || entry.Name() == "package.json" {
+				continue
+			}
+
+			if entry.IsDir() {
+				logger.Log("skipping artifact directory ", entry.Name())
+				continue
+			}
+
+			data, err := os.ReadFile(filepath.Join(workDir, entry.Name()))
+			if err != nil {
+				logger.Log("failed to capture artifact ", entry.Name(), ": ", err)
+				continue
+			}
+
+			artifacts = append(artifacts, urth.ArtifactSpec{
+				Rel:      filepath.Ext(entry.Name()),
+				MimeType: http.DetectContentType(data),
+				Content:  data,
+			})
+		}
+	}
+
+	return urth.NewRunResults(runResult), append(artifacts, logger.ToArtifact()), nil
 }

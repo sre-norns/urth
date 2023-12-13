@@ -31,9 +31,10 @@ type RunCmd struct {
 
 	ScenarioId wyrd.ResourceID `help:"Id of the scenario" name:"scenario" xor:"file"`
 
-	KeepTemp bool `help:"If true, temporary work directory is kept after run is complete"`
-	SaveHAR  bool `help:"If true, save HAR recording of HTTP scripts if applicable"`
-	Headless bool `help:"If true, puppeteer scripts are run in a headless mode"`
+	KeepTemp        bool `help:"If true, temporary work directory is kept after run is complete"`
+	SaveHAR         bool `help:"If true, save HAR recording of HTTP scripts if applicable"`
+	Headless        bool `help:"If true, puppeteer scripts are run in a headless mode"`
+	PageSlowSeconds int  `help:"For browser-based probs, slowdown page loads in seconds"`
 }
 
 func (c *RunCmd) runScenario(cmdCtx context.Context, sourceName string, prob urth.ProbManifest, workingDir string, timeout time.Duration) error {
@@ -43,6 +44,7 @@ func (c *RunCmd) runScenario(cmdCtx context.Context, sourceName string, prob urt
 	runResult, artifacts, err := runner.Play(ctx, prob, runner.RunOptions{
 		Puppeteer: runner.PuppeteerOptions{
 			Headless:         c.Headless,
+			PageWaitSeconds:  c.PageSlowSeconds,
 			WorkingDirectory: workingDir,
 			TempDirPrefix:    fmt.Sprintf("run-%v-%v-", sourceName, 0),
 			KeepTempDir:      c.KeepTemp,
