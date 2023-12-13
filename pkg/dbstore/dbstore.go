@@ -27,8 +27,8 @@ func NewDbStore(db *gorm.DB) urth.Store {
 	}
 }
 
-func (s *DbStore) Create(ctx context.Context, value any) (bool, error) {
-	return true, s.db.WithContext(ctx).Create(value).Error
+func (s *DbStore) Create(ctx context.Context, value any) error {
+	return s.db.WithContext(ctx).Create(value).Error
 }
 
 func (s *DbStore) Get(ctx context.Context, dest any, id wyrd.ResourceID) (bool, error) {

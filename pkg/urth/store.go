@@ -7,7 +7,7 @@ import (
 )
 
 type Store interface {
-	Create(ctx context.Context, value any) (bool, error)
+	Create(ctx context.Context, value any) error
 	Get(ctx context.Context, value any, id wyrd.ResourceID) (bool, error)
 	Delete(ctx context.Context, value any, id VersionedResourceId) (bool, error)
 	Update(ctx context.Context, value any, id VersionedResourceId) (bool, error)

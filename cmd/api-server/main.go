@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"reflect"
 	"runtime/debug"
 	"strings"
 
@@ -51,10 +52,11 @@ func filterFlags(content string) string {
 
 func selectAcceptedType(header http.Header) []string {
 	accepts := header.Values("Accept")
-	result := make([]string, len(accepts))
-	for i, a := range result {
-		result[i] = filterFlags(a)
+	result := make([]string, 0, len(accepts))
+	for _, a := range accepts {
+		result = append(result, filterFlags(a))
 	}
+
 	return result
 }
 
@@ -384,7 +386,6 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 				abortWithError(ctx, http.StatusBadRequest, err)
 				return
 			}
-
 			if !exists {
 				abortWithError(ctx, http.StatusNotFound, urth.ErrResourceNotFound)
 				return
@@ -421,25 +422,48 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 
 			marshalResponse(ctx, http.StatusCreated, updateResponse)
 		})
+
+		v1.GET("/scenarios/:id/script", resourceIdApi(), func(ctx *gin.Context) {
+			resourceId := ctx.MustGet(resourceIdKey).(urth.ResourceRequest)
+
+			resource, exists, err := srv.GetScenarioAPI().Get(ctx.Request.Context(), resourceId.ID)
+			if err != nil {
+				abortWithError(ctx, http.StatusBadRequest, err)
+				return
+			}
+			if !exists {
+				abortWithError(ctx, http.StatusNotFound, urth.ErrResourceNotFound)
+				return
+			}
+
+			scenario, ok := resource.Spec.(*urth.ScenarioSpec)
+			if !ok || scenario == nil || scenario.Prob.Spec == nil {
+				abortWithError(ctx, http.StatusNotFound, fmt.Errorf("scenario %w", urth.ErrResourceSpecIsNil))
+				return
+			}
+
+			data, ok := scenario.Prob.Spec.(map[string]any)
+			if !ok || data == nil || len(data) == 0 {
+				abortWithError(ctx, http.StatusNotFound, fmt.Errorf("prob spec %q is %w", reflect.TypeOf(scenario.Prob.Spec), urth.ErrResourceSpecIsNil))
+				return
+			}
+
+			scriptData, ok := data["Script"]
+			if !ok {
+				abortWithError(ctx, http.StatusNotFound, fmt.Errorf("prod has no 'Script' field"))
+				return
+			}
+			script, ok := scriptData.(string)
+			if !ok {
+				abortWithError(ctx, http.StatusNotFound, fmt.Errorf("prod 'Script' field is not a string"))
+				return
+			}
+
+			ctx.Header("Content-Type", gin.MIMEPlain)
+			ctx.Writer.Write([]byte(script))
+		})
+
 		/*
-			v1.GET("/scenarios/:id/script", resourceIdApi(), func(ctx *gin.Context) {
-				resourceId := ctx.MustGet(resourceIdKey).(urth.ResourceRequest)
-
-				resource, exists, err := srv.GetScenarioAPI().Get(ctx.Request.Context(), resourceId.ID)
-				if err != nil {
-					abortWithError(ctx, http.StatusBadRequest, err)
-					return
-				}
-				if !exists {
-					abortWithError(ctx, http.StatusNotFound, urth.ErrResourceNotFound)
-					return
-				}
-
-				script := resource.Spec.(*urth.ScenarioSpec).Script
-				ctx.Header("Content-Type", urth.ScriptKindToMimeType(script.Kind))
-				ctx.Writer.Write(script.Content)
-			})
-
 			v1.PUT("/scenarios/:id/script", resourceIdApi(), contentTypeApi(), versionedResourceApi(), func(ctx *gin.Context) {
 				versionedId := ctx.MustGet(versionedIdKey).(urth.VersionedResourceId)
 

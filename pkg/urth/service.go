@@ -225,8 +225,7 @@ func (m *scenarioApiImpl) Create(ctx context.Context, newEntry wyrd.ResourceMani
 		ScenarioSpec: *spec,
 	}
 
-	_, err := m.store.Create(ctx, &entry)
-
+	err := m.store.Create(ctx, &entry)
 	return entry.asPartialMetadata(), err
 }
 
@@ -364,12 +363,12 @@ func (m *resultsApiImpl) Create(ctx context.Context, newEntry wyrd.ResourceManif
 		return PartialObjectMetadata{}, fmt.Errorf("invalid scenario ID for the given results entry")
 	}
 
-	// Precondition: newEntry.Spec is either nil or of type &InitialRunResults{}
+	// Precondition: newEntry.Spec is either nil or of type &ResultSpec{}
 	if newEntry.Spec == nil {
-		newEntry.Spec = &InitialRunResults{}
+		newEntry.Spec = &ResultSpec{}
 	}
 	// Precondition: entry.Spec != nil
-	spec, ok := newEntry.Spec.(*InitialRunResults)
+	spec, ok := newEntry.Spec.(*ResultSpec)
 	if !ok {
 		return PartialObjectMetadata{}, fmt.Errorf("user provided %w", ErrResourceSpecTypeInvalid)
 	}
@@ -407,16 +406,16 @@ func (m *resultsApiImpl) Create(ctx context.Context, newEntry wyrd.ResourceManif
 		spec.TimeStarted = &now
 	}
 
+	// Ensure initial status is set to pending
+	spec.Status = JobPending
+
 	// TODO: Validate that request is from an authentic worker that is allowed to take jobs!
 	entry := Result{
 		ResourceMeta: GetResourceMetadata(newEntry),
-		ResultSpec: ResultSpec{
-			Status:            JobPending, // Ensure initial status is set
-			InitialRunResults: *spec,
-		},
+		ResultSpec:   *spec,
 	}
 
-	_, err = m.store.Create(ctx, &entry)
+	err = m.store.Create(ctx, &entry)
 	if err != nil {
 		return PartialObjectMetadata{}, err
 	}
@@ -485,11 +484,6 @@ func (m *resultsApiImpl) Auth(ctx context.Context, id VersionedResourceId, authR
 
 func (m *resultsApiImpl) Update(ctx context.Context, id VersionedResourceId, token ApiToken, runResults FinalRunResults) (CreatedResponse, error) {
 	var entry Result
-	kind, ok := wyrd.KindOf(&entry.InitialRunResults)
-	if !ok {
-		return CreatedResponse{}, wyrd.ErrUnknownKind
-	}
-
 	ok, err := m.store.GetWithVersion(ctx, &entry, id)
 	if err != nil {
 		return CreatedResponse{}, ErrResourceNotFound
@@ -520,7 +514,7 @@ func (m *resultsApiImpl) Update(ctx context.Context, id VersionedResourceId, tok
 	}
 
 	return CreatedResponse{
-		TypeMeta:            wyrd.TypeMeta{Kind: kind},
+		TypeMeta:            entry.asResourceManifest().TypeMeta,
 		VersionedResourceId: entry.GetVersionedID(),
 	}, err
 }
@@ -578,8 +572,7 @@ func (m *runnersApiImpl) Create(ctx context.Context, newEntry wyrd.ResourceManif
 		IdToken: randToken(16),
 	}
 
-	_, err := m.store.Create(ctx, &entry)
-
+	err := m.store.Create(ctx, &entry)
 	return entry.asPartialMetadata(), err
 }
 
@@ -702,7 +695,7 @@ func (m *artifactApiImp) Create(ctx context.Context, newEntry wyrd.ResourceManif
 		ArtifactSpec: *spec,
 	}
 
-	_, err := m.store.Create(ctx, &entry)
+	err := m.store.Create(ctx, &entry)
 	return entry.asPartialMetadata(), err
 }
 

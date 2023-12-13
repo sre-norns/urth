@@ -75,6 +75,15 @@ func KindOf(maybeManifest any) (result Kind, known bool) {
 	return
 }
 
+func MustKnowKindOf(maybeManifest any) (kind Kind) {
+	kind, ok := KindOf(maybeManifest)
+	if !ok {
+		panic(ErrUnknownKind)
+	}
+
+	return
+}
+
 // TypeMeta describe individual objects returned by API
 type TypeMeta struct {
 	APIVersion string `json:"apiVersion,omitempty" yaml:"apiVersion,omitempty"`
@@ -84,6 +93,10 @@ type TypeMeta struct {
 type ObjectMeta struct {
 	// System generated unique identified of this object
 	UUID ResourceID `json:"uid,omitempty" yaml:"uid,omitempty"`
+
+	// A sequence number representing a specific generation of the resource.
+	// Populated by the system. Read-only.
+	Version uint64 `form:"version" json:"version" yaml:"version" xml:"version" gorm:"default:1"`
 
 	// Name is a unique human-readable identifier of a resource
 	Name string `json:"name" yaml:"name" binding:"required" gorm:"uniqueIndex"`
@@ -114,10 +127,15 @@ func (u ResourceManifest) MarshalJSON() ([]byte, error) {
 func UnmarshalJsonWithRegister(kind Kind, factory KindFactory, specData json.RawMessage) (any, error) {
 	spec, err := factory(kind)
 	if err != nil { // Kind is not known, get raw message if not-nil
-		if len(specData) != 0 { // No spec to parse
-			spec = specData
+		if len(specData) != 0 { // Is there a spec to parse
+			t := make(map[string]any)
+			if err := json.Unmarshal(specData, &t); err == nil {
+				spec = t
+			} else {
+				spec = specData
+			}
 		}
-		return spec, nil // err
+		return spec, nil
 	}
 
 	if len(specData) == 0 { // No spec to parse
@@ -128,8 +146,8 @@ func UnmarshalJsonWithRegister(kind Kind, factory KindFactory, specData json.Raw
 	return spec, err
 }
 
-func (s *ResourceManifest) UnmarshalJSON(data []byte) error {
-	aux := &struct {
+func (s *ResourceManifest) UnmarshalJSON(data []byte) (err error) {
+	aux := struct {
 		TypeMeta `json:",inline"`
 		Metadata ObjectMeta `json:"metadata"`
 		Spec     json.RawMessage
@@ -138,15 +156,14 @@ func (s *ResourceManifest) UnmarshalJSON(data []byte) error {
 		Metadata: s.Metadata,
 	}
 
-	err := json.Unmarshal(data, aux)
-	if err != nil {
+	if err := json.Unmarshal(data, &aux); err != nil {
 		return err
 	}
 
 	s.TypeMeta = aux.TypeMeta
 	s.Metadata = aux.Metadata
 	s.Spec, err = UnmarshalJsonWithRegister(aux.Kind, InstanceOf, aux.Spec)
-	return err
+	return
 }
 
 func (u ResourceManifest) MarshalYAML() (interface{}, error) {

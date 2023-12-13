@@ -70,19 +70,36 @@ func (meta *ResourceMeta) GetVersionedID() VersionedResourceId {
 	return NewVersionedId(wyrd.ResourceID(meta.ID), meta.Version)
 }
 
+func (m *ResourceMeta) asObjectMeta() wyrd.ObjectMeta {
+	return wyrd.ObjectMeta{
+		UUID:    wyrd.ResourceID(m.ID),
+		Version: m.Version,
+		Name:    m.Name,
+		Labels:  m.Labels,
+	}
+}
+
+func (m *ResourceMeta) asPartialMetadata(kind wyrd.Kind, spec any) PartialObjectMetadata {
+	return PartialObjectMetadata{
+		TypeMeta:     wyrd.TypeMeta{Kind: kind},
+		ResourceMeta: *m,
+		Spec:         spec,
+	}
+}
+
+func (m *ResourceMeta) asResourceManifest(kind wyrd.Kind, spec any) wyrd.ResourceManifest {
+	return wyrd.ResourceManifest{
+		TypeMeta: wyrd.TypeMeta{Kind: kind},
+		Metadata: m.asObjectMeta(),
+		Spec:     spec,
+	}
+}
+
 func GetResourceMetadata(m wyrd.ResourceManifest) ResourceMeta {
 	return ResourceMeta{
 		// ID: m.Metadata.UUID,
 		Name:   m.Metadata.Name,
 		Labels: m.Metadata.Labels,
-	}
-}
-
-func (m *ResourceMeta) asObjectMeta() wyrd.ObjectMeta {
-	return wyrd.ObjectMeta{
-		UUID:   wyrd.ResourceID(m.ID),
-		Name:   m.Name,
-		Labels: m.Labels,
 	}
 }
 
@@ -134,30 +151,12 @@ type Runner struct {
 }
 
 func (s *Runner) asPartialMetadata() PartialObjectMetadata {
-	kind, ok := wyrd.KindOf(&s.RunnerDefinition)
-	if !ok {
-		panic(wyrd.ErrUnknownKind)
-	}
-
-	return PartialObjectMetadata{
-		TypeMeta:     wyrd.TypeMeta{Kind: kind},
-		ResourceMeta: s.ResourceMeta,
-		Spec:         s.RunnerDefinition,
-	}
+	return s.ResourceMeta.asPartialMetadata(wyrd.MustKnowKindOf(&s.RunnerDefinition), s.RunnerDefinition)
 }
 
 func (s *Runner) asResourceManifest() wyrd.ResourceManifest {
-	kind, ok := wyrd.KindOf(&s.RunnerDefinition)
-	if !ok {
-		panic(wyrd.ErrUnknownKind)
-	}
-
 	spec := s.RunnerDefinition
-	return wyrd.ResourceManifest{
-		TypeMeta: wyrd.TypeMeta{Kind: kind},
-		Metadata: s.ResourceMeta.asObjectMeta(),
-		Spec:     &spec,
-	}
+	return s.ResourceMeta.asResourceManifest(wyrd.MustKnowKindOf(&s.RunnerDefinition), &spec)
 }
 
 // Type to represent cron-like schedule
@@ -190,30 +189,12 @@ type Scenario struct {
 }
 
 func (s *Scenario) asPartialMetadata() PartialObjectMetadata {
-	kind, ok := wyrd.KindOf(&s.ScenarioSpec)
-	if !ok {
-		panic(wyrd.ErrUnknownKind)
-	}
-
-	return PartialObjectMetadata{
-		TypeMeta:     wyrd.TypeMeta{Kind: kind},
-		ResourceMeta: s.ResourceMeta,
-		Spec:         s.ScenarioSpec,
-	}
+	return s.ResourceMeta.asPartialMetadata(wyrd.MustKnowKindOf(&s.ScenarioSpec), s.ScenarioSpec)
 }
 
 func (s *Scenario) asResourceManifest() wyrd.ResourceManifest {
-	kind, ok := wyrd.KindOf(&s.ScenarioSpec)
-	if !ok {
-		panic(wyrd.ErrUnknownKind)
-	}
-
 	spec := s.ScenarioSpec
-	return wyrd.ResourceManifest{
-		TypeMeta: wyrd.TypeMeta{Kind: kind},
-		Metadata: s.ResourceMeta.asObjectMeta(),
-		Spec:     &spec,
-	}
+	return s.ResourceMeta.asResourceManifest(wyrd.MustKnowKindOf(&s.ScenarioSpec), &spec)
 }
 
 type JobStatus string
@@ -262,30 +243,12 @@ type Artifact struct {
 }
 
 func (s *Artifact) asPartialMetadata() PartialObjectMetadata {
-	kind, ok := wyrd.KindOf(&s.ArtifactSpec)
-	if !ok {
-		panic(wyrd.ErrUnknownKind)
-	}
-
-	return PartialObjectMetadata{
-		TypeMeta:     wyrd.TypeMeta{Kind: kind},
-		ResourceMeta: s.ResourceMeta,
-		Spec:         s.ArtifactSpec,
-	}
+	return s.ResourceMeta.asPartialMetadata(wyrd.MustKnowKindOf(&s.ArtifactSpec), s.ArtifactSpec)
 }
 
 func (s *Artifact) asResourceManifest() wyrd.ResourceManifest {
-	kind, ok := wyrd.KindOf(&s.ArtifactSpec)
-	if !ok {
-		panic(wyrd.ErrUnknownKind)
-	}
-
 	spec := s.ArtifactSpec
-	return wyrd.ResourceManifest{
-		TypeMeta: wyrd.TypeMeta{Kind: kind},
-		Metadata: s.ResourceMeta.asObjectMeta(),
-		Spec:     &spec,
-	}
+	return s.ResourceMeta.asResourceManifest(wyrd.MustKnowKindOf(&s.ArtifactSpec), &spec)
 }
 
 // Final results of the script run
@@ -343,30 +306,12 @@ type Result struct {
 }
 
 func (s *Result) asPartialMetadata() PartialObjectMetadata {
-	kind, ok := wyrd.KindOf(&s.InitialRunResults)
-	if !ok {
-		panic(wyrd.ErrUnknownKind)
-	}
-
-	return PartialObjectMetadata{
-		TypeMeta:     wyrd.TypeMeta{Kind: kind},
-		ResourceMeta: s.ResourceMeta,
-		Spec:         s.ResultSpec,
-	}
+	return s.ResourceMeta.asPartialMetadata(wyrd.MustKnowKindOf(&s.ResultSpec), s.ResultSpec)
 }
 
 func (s *Result) asResourceManifest() wyrd.ResourceManifest {
-	kind, ok := wyrd.KindOf(&s.InitialRunResults)
-	if !ok {
-		panic(wyrd.ErrUnknownKind)
-	}
-
-	spec := s.InitialRunResults
-	return wyrd.ResourceManifest{
-		TypeMeta: wyrd.TypeMeta{Kind: kind},
-		Metadata: s.ResourceMeta.asObjectMeta(),
-		Spec:     &spec,
-	}
+	spec := s.ResultSpec
+	return s.ResourceMeta.asResourceManifest(wyrd.MustKnowKindOf(&s.ResultSpec), &spec)
 }
 
 // GORM hook to auto-increment resource version on each save
@@ -389,7 +334,7 @@ func init() {
 	if err := wyrd.RegisterKind(KindRunner, &RunnerDefinition{}); err != nil {
 		panic(err)
 	}
-	if err := wyrd.RegisterKind(KindResult, &InitialRunResults{}); err != nil {
+	if err := wyrd.RegisterKind(KindResult, &ResultSpec{}); err != nil {
 		panic(err)
 	}
 	if err := wyrd.RegisterKind(KindArtifact, &ArtifactSpec{}); err != nil {

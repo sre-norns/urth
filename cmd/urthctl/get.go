@@ -23,8 +23,8 @@ type (
 	}
 
 	Results struct {
-		ScenarioId wyrd.ResourceID `help:"Id of the scenario" arg:"" name:"scenario" `
-		RunId      wyrd.ResourceID `help:"Id of the run results" arg:"" name:"result" `
+		ScenarioId wyrd.ResourceID   `help:"Id of the scenario" arg:"" name:"scenario" `
+		RunId      []wyrd.ResourceID `help:"Id of the run results" arg:"" optional:"" name:"result" `
 	}
 
 	Runner struct {
@@ -120,7 +120,7 @@ func (c *Results) Run(cfg *commandContext) error {
 		return err
 	}
 
-	return cfg.OutputFormatter(&resource)
+	return cfg.OutputFormatter(resource)
 }
 
 func (c *Labels) Run(cfg *commandContext) error {

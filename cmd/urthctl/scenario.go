@@ -41,18 +41,34 @@ func fetchScenario(ctx context.Context, id wyrd.ResourceID, apiServerAddress str
 	return resource, err
 }
 
-func fetchResults(ctx context.Context, scenarioId, id wyrd.ResourceID, apiServerAddress string) (wyrd.ResourceManifest, error) {
+func fetchResults(ctx context.Context, scenarioId wyrd.ResourceID, ids []wyrd.ResourceID, apiServerAddress string) ([]wyrd.ResourceManifest, error) {
 	apiClient, err := urth.NewRestApiClient(apiServerAddress)
 	if err != nil {
-		return wyrd.ResourceManifest{}, fmt.Errorf("failed to initialize API Client: %w", err)
+		return nil, fmt.Errorf("failed to initialize API Client: %w", err)
 	}
 
-	resource, ok, err := apiClient.GetResultsAPI(scenarioId).Get(ctx, id)
-	if !ok && err == nil {
-		err = fmt.Errorf("%w: scenarioId=%v, runId=%v", ErrResourceNotFound, scenarioId, id)
+	if len(ids) == 0 {
+		resources, err := apiClient.GetResultsAPI(scenarioId).List(ctx, urth.SearchQuery{})
+		if err != nil {
+			return nil, err
+		}
+
+		for _, resource := range resources {
+			ids = append(ids, resource.GetID())
+		}
 	}
 
-	return resource, err
+	results := make([]wyrd.ResourceManifest, 0, len(ids))
+	for _, rid := range ids {
+		resource, ok, err := apiClient.GetResultsAPI(scenarioId).Get(ctx, rid)
+		if !ok && err == nil {
+			return nil, fmt.Errorf("%w: scenarioId=%v, runId=%v", ErrResourceNotFound, scenarioId, ids)
+		}
+
+		results = append(results, resource)
+	}
+
+	return results, err
 }
 
 func fetchArtifact(ctx context.Context, id wyrd.ResourceID, apiServerAddress string) (wyrd.ResourceManifest, error) {
