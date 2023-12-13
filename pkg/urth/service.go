@@ -28,7 +28,7 @@ type ReadableResourceApi[T interface{}] interface {
 	// Get a single resource given its unique ID,
 	// Returns a resource if it exists, false, if resource doesn't exists
 	// error if there was communication error with the storage
-	Get(ctx context.Context, id wyrd.ResourceID) (resource PartialObjectMetadata, exists bool, commError error)
+	Get(ctx context.Context, id wyrd.ResourceID) (resource wyrd.ResourceManifest, exists bool, commError error)
 }
 
 type ScenarioApi interface {
@@ -204,7 +204,7 @@ func (m *scenarioApiImpl) List(ctx context.Context, query SearchQuery) ([]Partia
 	for _, resource := range resources {
 		// TODO: Script should be moved into a separate table, that way we won't have to filter it out here
 		resource.Prob.Spec = nil
-		results = append(results, resource.asManifest())
+		results = append(results, resource.asPartialMetadata())
 	}
 
 	return results, nil
@@ -221,13 +221,13 @@ func (m *scenarioApiImpl) Create(ctx context.Context, newEntry wyrd.ResourceMani
 	}
 
 	entry := Scenario{
-		ResourceMeta: GetMetadata(newEntry),
+		ResourceMeta: GetResourceMetadata(newEntry),
 		ScenarioSpec: *spec,
 	}
 
 	_, err := m.store.Create(ctx, &entry)
 
-	return entry.asManifest(), err
+	return entry.asPartialMetadata(), err
 }
 
 func (m *scenarioApiImpl) getScenario(ctx context.Context, id wyrd.ResourceID) (Scenario, bool, error) {
@@ -238,9 +238,9 @@ func (m *scenarioApiImpl) getScenario(ctx context.Context, id wyrd.ResourceID) (
 		err
 }
 
-func (m *scenarioApiImpl) Get(ctx context.Context, id wyrd.ResourceID) (PartialObjectMetadata, bool, error) {
+func (m *scenarioApiImpl) Get(ctx context.Context, id wyrd.ResourceID) (wyrd.ResourceManifest, bool, error) {
 	result, ok, err := m.getScenario(ctx, id)
-	return result.asManifest(), ok, err
+	return result.asResourceManifest(), ok, err
 }
 
 func (m *scenarioApiImpl) Delete(ctx context.Context, id VersionedResourceId) (bool, error) {
@@ -300,7 +300,7 @@ func (m *scenarioApiImpl) Update(ctx context.Context, id VersionedResourceId, ne
 		return PartialObjectMetadata{}, ErrResourceVersionConflict
 	}
 
-	return result.asManifest(), err
+	return result.asPartialMetadata(), err
 }
 
 //------------------------------
@@ -352,7 +352,7 @@ func (m *resultsApiImpl) List(ctx context.Context, searchQuery SearchQuery) ([]P
 
 	results := make([]PartialObjectMetadata, 0, len(resources))
 	for _, resource := range resources {
-		results = append(results, resource.asManifest())
+		results = append(results, resource.asPartialMetadata())
 	}
 
 	return results, nil
@@ -409,7 +409,7 @@ func (m *resultsApiImpl) Create(ctx context.Context, newEntry wyrd.ResourceManif
 
 	// TODO: Validate that request is from an authentic worker that is allowed to take jobs!
 	entry := Result{
-		ResourceMeta: GetMetadata(newEntry),
+		ResourceMeta: GetResourceMetadata(newEntry),
 		ResultSpec: ResultSpec{
 			Status:            JobPending, // Ensure initial status is set
 			InitialRunResults: *spec,
@@ -435,7 +435,7 @@ func (m *resultsApiImpl) Create(ctx context.Context, newEntry wyrd.ResourceManif
 		return PartialObjectMetadata{}, err
 	}
 
-	return entry.asManifest(), err
+	return entry.asPartialMetadata(), err
 }
 
 func (m *resultsApiImpl) Auth(ctx context.Context, id VersionedResourceId, authRequest AuthJobRequest) (AuthJobResponse, error) {
@@ -525,20 +525,11 @@ func (m *resultsApiImpl) Update(ctx context.Context, id VersionedResourceId, tok
 	}, err
 }
 
-func (m *resultsApiImpl) Get(ctx context.Context, id wyrd.ResourceID) (PartialObjectMetadata, bool, error) {
+func (m *resultsApiImpl) Get(ctx context.Context, id wyrd.ResourceID) (wyrd.ResourceManifest, bool, error) {
 	var result Result
-	kind, ok := wyrd.KindOf(&result.InitialRunResults)
-	if !ok {
-		return PartialObjectMetadata{}, ok, wyrd.ErrUnknownKind
-	}
-
 	ok, err := m.store.Get(ctx, &result, id)
 	// Note, cant' use asManifest yet. Manifest only includes initial results
-	return PartialObjectMetadata{
-			TypeMeta:     wyrd.TypeMeta{Kind: kind},
-			ResourceMeta: result.ResourceMeta,
-			Spec:         &result.ResultSpec,
-		},
+	return result.asResourceManifest(),
 		ok && result.GetID() == id && !result.IsDeleted(),
 		err
 }
@@ -555,25 +546,16 @@ func (m *runnersApiImpl) List(ctx context.Context, searchQuery SearchQuery) ([]P
 
 	results := make([]PartialObjectMetadata, 0, len(resources))
 	for _, resource := range resources {
-		results = append(results, resource.asManifest())
+		results = append(results, resource.asPartialMetadata())
 	}
 
 	return results, nil
 }
 
-func (m *runnersApiImpl) Get(ctx context.Context, id wyrd.ResourceID) (PartialObjectMetadata, bool, error) {
+func (m *runnersApiImpl) Get(ctx context.Context, id wyrd.ResourceID) (wyrd.ResourceManifest, bool, error) {
 	var result Runner
-	kind, ok := wyrd.KindOf(&result.RunnerDefinition)
-	if !ok {
-		return PartialObjectMetadata{}, ok, wyrd.ErrUnknownKind
-	}
-
 	ok, err := m.store.Get(ctx, &result, id)
-	return PartialObjectMetadata{
-			TypeMeta:     wyrd.TypeMeta{Kind: kind},
-			ResourceMeta: result.ResourceMeta,
-			Spec:         &result.RunnerSpec,
-		},
+	return result.asResourceManifest(),
 		ok && result.GetID() == id && !result.IsDeleted(),
 		err
 }
@@ -589,7 +571,7 @@ func (m *runnersApiImpl) Create(ctx context.Context, newEntry wyrd.ResourceManif
 	}
 
 	entry := Runner{
-		ResourceMeta: GetMetadata(newEntry),
+		ResourceMeta: GetResourceMetadata(newEntry),
 		RunnerSpec: RunnerSpec{
 			RunnerDefinition: *spec,
 		},
@@ -598,7 +580,7 @@ func (m *runnersApiImpl) Create(ctx context.Context, newEntry wyrd.ResourceManif
 
 	_, err := m.store.Create(ctx, &entry)
 
-	return entry.asManifest(), err
+	return entry.asPartialMetadata(), err
 }
 
 func (m *runnersApiImpl) Delete(ctx context.Context, id VersionedResourceId) (bool, error) {
@@ -638,7 +620,7 @@ func (m *runnersApiImpl) Update(ctx context.Context, id VersionedResourceId, new
 		return PartialObjectMetadata{}, ErrResourceVersionConflict
 	}
 
-	return result.asManifest(), err
+	return result.asPartialMetadata(), err
 }
 
 func (m *runnersApiImpl) Auth(ctx context.Context, token ApiToken, entry RunnerRegistration) (Runner, error) {
@@ -685,16 +667,16 @@ func (m *artifactApiImp) List(ctx context.Context, query SearchQuery) ([]Partial
 	for _, resource := range resources {
 		// Note: Do not return artifact value when listing
 		resource.ArtifactSpec.Content = nil
-		results = append(results, resource.asManifest())
+		results = append(results, resource.asPartialMetadata())
 	}
 
 	return results, nil
 }
 
-func (m *artifactApiImp) Get(ctx context.Context, id wyrd.ResourceID) (PartialObjectMetadata, bool, error) {
+func (m *artifactApiImp) Get(ctx context.Context, id wyrd.ResourceID) (wyrd.ResourceManifest, bool, error) {
 	var result Artifact
 	ok, err := m.store.Get(ctx, &result, id)
-	return result.asManifest(),
+	return result.asResourceManifest(),
 		ok && result.GetID() == id && !result.IsDeleted(),
 		err
 }
@@ -716,12 +698,12 @@ func (m *artifactApiImp) Create(ctx context.Context, newEntry wyrd.ResourceManif
 	}
 
 	entry := Artifact{
-		ResourceMeta: GetMetadata(newEntry),
+		ResourceMeta: GetResourceMetadata(newEntry),
 		ArtifactSpec: *spec,
 	}
 
 	_, err := m.store.Create(ctx, &entry)
-	return entry.asManifest(), err
+	return entry.asPartialMetadata(), err
 }
 
 func (m *artifactApiImp) Delete(ctx context.Context, id VersionedResourceId) (bool, error) {

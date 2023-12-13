@@ -160,7 +160,7 @@ func (c *Artifact) Run(cfg *commandContext) error {
 	// FIXME: Broken!
 	artifact, ok := resource.Spec.(urth.ArtifactSpec)
 	if !ok {
-		return fmt.Errorf("unexpected type %q of Spec for the resource %q (kind=%q)", reflect.TypeOf(resource.Spec), resource.Name, resource.Kind)
+		return fmt.Errorf("unexpected type %q of Spec for the resource %q (kind=%q)", reflect.TypeOf(resource.Spec), resource.Metadata.Name, resource.Kind)
 	}
 
 	_, err = os.Stdout.Write(artifact.Content)

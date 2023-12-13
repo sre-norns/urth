@@ -199,7 +199,7 @@ func (c *RunCmd) Run(cfg *commandContext) error {
 		if err != nil {
 			return err
 		}
-		return c.runScenario(cfg.Context, resource.Name, prob, cfg.WorkingDirectory, cfg.Timeout)
+		return c.runScenario(cfg.Context, resource.Metadata.Name, prob, cfg.WorkingDirectory, cfg.Timeout)
 	}
 
 	for _, filename := range c.Files {

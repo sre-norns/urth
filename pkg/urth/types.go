@@ -70,11 +70,19 @@ func (meta *ResourceMeta) GetVersionedID() VersionedResourceId {
 	return NewVersionedId(wyrd.ResourceID(meta.ID), meta.Version)
 }
 
-func GetMetadata(m wyrd.ResourceManifest) ResourceMeta {
+func GetResourceMetadata(m wyrd.ResourceManifest) ResourceMeta {
 	return ResourceMeta{
 		// ID: m.Metadata.UUID,
 		Name:   m.Metadata.Name,
 		Labels: m.Metadata.Labels,
+	}
+}
+
+func (m *ResourceMeta) asObjectMeta() wyrd.ObjectMeta {
+	return wyrd.ObjectMeta{
+		UUID:   wyrd.ResourceID(m.ID),
+		Name:   m.Name,
+		Labels: m.Labels,
 	}
 }
 
@@ -116,7 +124,7 @@ type RunnerSpec struct {
 }
 
 // Runner is a resource manager by Urth service that represents
-// an instance of a job processing worker
+// an instance of a worker capable to take on some probs job for execution
 type Runner struct {
 	ResourceMeta `json:",inline" yaml:",inline"`
 
@@ -125,7 +133,7 @@ type Runner struct {
 	IdToken ApiToken `form:"-" json:"-" yaml:"-" xml:"-"`
 }
 
-func (s *Runner) asManifest() PartialObjectMetadata {
+func (s *Runner) asPartialMetadata() PartialObjectMetadata {
 	kind, ok := wyrd.KindOf(&s.RunnerDefinition)
 	if !ok {
 		panic(wyrd.ErrUnknownKind)
@@ -135,6 +143,20 @@ func (s *Runner) asManifest() PartialObjectMetadata {
 		TypeMeta:     wyrd.TypeMeta{Kind: kind},
 		ResourceMeta: s.ResourceMeta,
 		Spec:         s.RunnerDefinition,
+	}
+}
+
+func (s *Runner) asResourceManifest() wyrd.ResourceManifest {
+	kind, ok := wyrd.KindOf(&s.RunnerDefinition)
+	if !ok {
+		panic(wyrd.ErrUnknownKind)
+	}
+
+	spec := s.RunnerDefinition
+	return wyrd.ResourceManifest{
+		TypeMeta: wyrd.TypeMeta{Kind: kind},
+		Metadata: s.ResourceMeta.asObjectMeta(),
+		Spec:     &spec,
 	}
 }
 
@@ -167,7 +189,7 @@ type Scenario struct {
 	ScenarioSpec `json:",inline" yaml:",inline"`
 }
 
-func (s *Scenario) asManifest() PartialObjectMetadata {
+func (s *Scenario) asPartialMetadata() PartialObjectMetadata {
 	kind, ok := wyrd.KindOf(&s.ScenarioSpec)
 	if !ok {
 		panic(wyrd.ErrUnknownKind)
@@ -177,6 +199,20 @@ func (s *Scenario) asManifest() PartialObjectMetadata {
 		TypeMeta:     wyrd.TypeMeta{Kind: kind},
 		ResourceMeta: s.ResourceMeta,
 		Spec:         s.ScenarioSpec,
+	}
+}
+
+func (s *Scenario) asResourceManifest() wyrd.ResourceManifest {
+	kind, ok := wyrd.KindOf(&s.ScenarioSpec)
+	if !ok {
+		panic(wyrd.ErrUnknownKind)
+	}
+
+	spec := s.ScenarioSpec
+	return wyrd.ResourceManifest{
+		TypeMeta: wyrd.TypeMeta{Kind: kind},
+		Metadata: s.ResourceMeta.asObjectMeta(),
+		Spec:     &spec,
 	}
 }
 
@@ -225,7 +261,7 @@ type Artifact struct {
 	ArtifactSpec `json:",inline" yaml:",inline"`
 }
 
-func (s *Artifact) asManifest() PartialObjectMetadata {
+func (s *Artifact) asPartialMetadata() PartialObjectMetadata {
 	kind, ok := wyrd.KindOf(&s.ArtifactSpec)
 	if !ok {
 		panic(wyrd.ErrUnknownKind)
@@ -235,6 +271,20 @@ func (s *Artifact) asManifest() PartialObjectMetadata {
 		TypeMeta:     wyrd.TypeMeta{Kind: kind},
 		ResourceMeta: s.ResourceMeta,
 		Spec:         s.ArtifactSpec,
+	}
+}
+
+func (s *Artifact) asResourceManifest() wyrd.ResourceManifest {
+	kind, ok := wyrd.KindOf(&s.ArtifactSpec)
+	if !ok {
+		panic(wyrd.ErrUnknownKind)
+	}
+
+	spec := s.ArtifactSpec
+	return wyrd.ResourceManifest{
+		TypeMeta: wyrd.TypeMeta{Kind: kind},
+		Metadata: s.ResourceMeta.asObjectMeta(),
+		Spec:     &spec,
 	}
 }
 
@@ -292,7 +342,7 @@ type Result struct {
 	UpdateToken ApiToken `uri:"-" form:"-" json:"-" yaml:"-" xml:"-"`
 }
 
-func (s *Result) asManifest() PartialObjectMetadata {
+func (s *Result) asPartialMetadata() PartialObjectMetadata {
 	kind, ok := wyrd.KindOf(&s.InitialRunResults)
 	if !ok {
 		panic(wyrd.ErrUnknownKind)
@@ -301,7 +351,21 @@ func (s *Result) asManifest() PartialObjectMetadata {
 	return PartialObjectMetadata{
 		TypeMeta:     wyrd.TypeMeta{Kind: kind},
 		ResourceMeta: s.ResourceMeta,
-		Spec:         s.InitialRunResults,
+		Spec:         s.ResultSpec,
+	}
+}
+
+func (s *Result) asResourceManifest() wyrd.ResourceManifest {
+	kind, ok := wyrd.KindOf(&s.InitialRunResults)
+	if !ok {
+		panic(wyrd.ErrUnknownKind)
+	}
+
+	spec := s.InitialRunResults
+	return wyrd.ResourceManifest{
+		TypeMeta: wyrd.TypeMeta{Kind: kind},
+		Metadata: s.ResourceMeta.asObjectMeta(),
+		Spec:     &spec,
 	}
 }
 
