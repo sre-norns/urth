@@ -103,6 +103,7 @@ const FormSwitch = forwardRef(({id, checked, onClick, ...props}, ref) => {
 
   return (
     <FormSwitchComponent
+      type="button"
       id={id || controlId}
       error={error}
       checked={checked}

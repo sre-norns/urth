@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { isEmpty } from './objects.js';
+import { deepEqual, isEmpty } from './objects.js';
 
 class Tracker {
   constructor() {
@@ -31,7 +31,7 @@ class Tracker {
   }
 
   track(id, value) {
-    if (this.initialValues[id] !== value) {
+    if (!deepEqual(this.initialValues[id], value)) {
       this.currentValues[id] = value
     } else {
       delete this.currentValues[id]
@@ -45,7 +45,6 @@ export const useTracker = () => {
 
   return tracker
 }
-
 
 export const useTrackedState = (tracker, initialState) => {
   const [state, setState] = useState(initialState)

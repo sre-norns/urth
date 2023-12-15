@@ -19,6 +19,8 @@ import updateScenario from '../actions/updateScenario.js'
 import ObjectCapsules from '../components/ObjectCapsules.js'
 import FormSwitch from '../components/FormSwitch.js'
 import { useTrackedState, useTracker } from '../utils/tracking.js'
+import { isEmpty } from '../utils/objects.js'
+import FormPropertiesEditor from '../components/FormPropertiesEditor.js'
 
 
 const PageContainer = styled.div`
@@ -81,6 +83,8 @@ const HorizontalLabel = styled(FormLabel)`
   flex-grow: 1;
 `
 
+
+
 const validateName = (...args) => validateNotEmpty(...args) || validateMaxLength(32)(...args)
 
 const validateDescription = validateMaxLength(128)
@@ -96,6 +100,7 @@ const ScenarioViewer = ({edit = false}) => {
 
   const tracker = useTracker()
   const [name, setName] = useTrackedState(tracker, '')
+  const [labels, setLabels] = useTrackedState(tracker, {})
   const [description, setDescription] = useTrackedState(tracker, '')
   const [active, setActive] = useTrackedState(tracker, false)
 
@@ -105,6 +110,7 @@ const ScenarioViewer = ({edit = false}) => {
   const handleResponse = useCallback((response) => {
     if (response) {
       setName(response.metadata.name)
+      setLabels(response.metadata.labels || {})
       setDescription(response.spec.description)
       setActive(response.spec.active)
       tracker.reset()
@@ -141,7 +147,7 @@ const ScenarioViewer = ({edit = false}) => {
       // kind: response.kind,
       metadata: {
         name,
-        labels: response.metadata.labels,
+        labels,
       },
       spec: {
         ...response.spec,
@@ -152,7 +158,14 @@ const ScenarioViewer = ({edit = false}) => {
         // prob: response.spec.prob,
       },
     }, () => navigate(`/scenarios/${scenarioId}`, {replace: true})))
-  }, [name, description, active])
+  }, [name, labels, description, active])
+
+  const handleSubmit = useCallback((e) => {
+    e.preventDefault()
+    if (edit) {
+      handleSave()
+    }
+  }, [edit, handleSave])
 
   React.useEffect(() => {
     if (scenarioId === 'new') {
@@ -190,7 +203,7 @@ const ScenarioViewer = ({edit = false}) => {
           {edit && <HeaderButton onClick={handleCancel} color="neutral"><i className="fi fi-trash"></i>&nbsp;Cancel</HeaderButton>}
           {edit && <HeaderButton onClick={handleSave} disabled={!isValid || !tracker.changed}><i className="fi fi-save"></i>&nbsp;Save</HeaderButton>}
         </HeaderPanel>
-        <PageForm ref={formRef} onValidated={handleValidated}>
+        <PageForm ref={formRef} onSubmit={handleSubmit} onValidated={handleValidated}>
           {edit &&
             <FormGroup controlId="scenario-name" onValidate={validateName}>
               <FormLabel required>Name</FormLabel>
@@ -206,12 +219,18 @@ const ScenarioViewer = ({edit = false}) => {
             </> || <div>{description}</div>
             }
           </FormGroup>
-          {!edit && Object.keys(response.metadata.labels || {}).length &&
+          {!edit && !isEmpty(response.metadata.labels) &&
             <FormGroup controlId="scenario-labels">
               <FormLabel>Labels</FormLabel>
               <ObjectCapsules value={response.metadata.labels}/>
             </FormGroup>
           }
+          {/* {edit &&
+            <FormGroup controlId="scenario-labels">
+              <FormLabel>Labels</FormLabel>
+              <FormPropertiesEditor value={labels} onChange={setLabels}/>
+            </FormGroup>
+          } */}
           <HorizontalFormGroup controlId="scenario-active">
             <HorizontalLabel>Active</HorizontalLabel>
             <FormSwitch checked={active} readOnly={!edit} onClick={edit && handleActiveClick || null}/>
