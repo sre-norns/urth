@@ -225,12 +225,12 @@ const ScenarioViewer = ({edit = false}) => {
               <ObjectCapsules value={response.metadata.labels}/>
             </FormGroup>
           }
-          {/* {edit &&
+          {edit &&
             <FormGroup controlId="scenario-labels">
               <FormLabel>Labels</FormLabel>
               <FormPropertiesEditor value={labels} onChange={setLabels}/>
             </FormGroup>
-          } */}
+          }
           <HorizontalFormGroup controlId="scenario-active">
             <HorizontalLabel>Active</HorizontalLabel>
             <FormSwitch checked={active} readOnly={!edit} onClick={edit && handleActiveClick || null}/>
