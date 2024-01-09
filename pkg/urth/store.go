@@ -15,6 +15,4 @@ type Store interface {
 	GetByToken(ctx context.Context, value any, token ApiToken) (bool, error)
 	GetWithVersion(ctx context.Context, dest any, id VersionedResourceId) (bool, error)
 	FindResources(ctx context.Context, dest any, searchQuery SearchQuery, maxLimit uint) (count uint, err error)
-
-	// GuessKind(value reflect.Value) (TypeMeta, error)
 }

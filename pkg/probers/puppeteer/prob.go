@@ -21,6 +21,11 @@ const (
 	ScriptMimeType = "text/javascript"
 )
 
+var nodeSystemFiles = []string{
+	"package.json",
+	"node_modules",
+}
+
 type Spec struct {
 	Port   int
 	Script string
@@ -58,15 +63,17 @@ func installPuppeteer(dir string) error {
 	return cmd.Run()
 }
 
-func SetupRunEnv(workDir string) error {
+func SetupRunEnv(workDir string, logger *runner.RunLog) error {
 	if _, err := os.Stat(path.Join(workDir, "package.json")); err == nil {
 		return nil
 	}
 
+	logger.Logf("Creating node working directory at %q", workDir)
 	if err := setupNodeDir(workDir); err != nil {
 		return err
 	}
 
+	logger.Logf("installing Puppeteer and dependecies %q", workDir)
 	if err := installPuppeteer(workDir); err != nil {
 		return err
 	}
@@ -82,7 +89,7 @@ func RunScript(ctx context.Context, probSpec any, logger *runner.RunLog, options
 	logger.Log("Running puppeteer script")
 
 	// TODO: Check that working directory exists and writable!
-	if err := SetupRunEnv(options.Puppeteer.WorkingDirectory); err != nil {
+	if err := SetupRunEnv(options.Puppeteer.WorkingDirectory, logger); err != nil {
 		err = fmt.Errorf("failed to initialize work directory: %w", err)
 		logger.Log(err)
 
@@ -101,15 +108,9 @@ func RunScript(ctx context.Context, probSpec any, logger *runner.RunLog, options
 			os.RemoveAll(dir)
 		}
 	}(workDir, options.Puppeteer.KeepTempDir)
-	logger.Logf("working directory: %q (will be kept: %t)", workDir, options.Puppeteer.KeepTempDir)
+	logger.Logf("working directory: %q (will be kept?: %t)", workDir, options.Puppeteer.KeepTempDir)
 
-	if err := SetupRunEnv(options.Puppeteer.WorkingDirectory); err != nil {
-		err = fmt.Errorf("failed setup run-time environment: %w", err)
-		logger.Log(err)
-		return urth.NewRunResults(urth.RunFinishedError), logger.Package(), nil
-	}
-
-	cmd := exec.Command("node", "-")
+	cmd := exec.CommandContext(ctx, "node", "-")
 	// cmd.Env = append(cmd.Env, fmt.Sprintf("PUPPETEER_CACHE_DIR=%v", options.Puppeteer.WorkingDirectory))
 	hasDisplay := os.Getenv("DISPLAY")
 	if hasDisplay != "" {
@@ -139,13 +140,15 @@ func RunScript(ctx context.Context, probSpec any, logger *runner.RunLog, options
 		logger.Logf("script loaded: %d bytes", n)
 	}()
 
-	out, err := cmd.CombinedOutput()
-	// TODO: Capture and store HAR file
-	logger.Log(string(out))
-
+	// TODO: Capture artifacts and store HAR file
 	runResult := urth.RunFinishedSuccess
-	if err != nil {
-		logger.Log(err)
+
+	cmd.Stderr = logger
+	cmd.Stdout = logger
+
+	// Run the proces
+	if err := cmd.Run(); err != nil {
+		logger.Log("failed to execture cmd: ", err)
 		runResult = urth.RunFinishedError
 	}
 

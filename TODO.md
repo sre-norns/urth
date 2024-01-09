@@ -3,8 +3,8 @@
 
 
 ## Code quality
-[x] Switch to make
-[] Add `go vet ` to go-lang build pipeline
+[X] Switch to make
+[X] Add `go vet ` to go-lang build pipeline
 [] Add static `testtool` to go-lang build pipeline
 
 # Feature:
@@ -23,8 +23,8 @@
 - Regexp to match response body for TCP request
 - Response code for HTTP request
 [] Validate labels names!
-[] Labels returned by a worked for a job-results / artifacts must be immutable
-[] Add API to find workers give a set of labels and requirements - to enable better UX where user can see how many probers will qualify for a given set of labels.
+[] Labels returned by a worker for a job-results / artifacts must be immutable
+[X] Add API to find workers give a set of labels and requirements - to enable better UX where user can see how many probers will qualify for a given set of labels. (NOTE: This is a statdards label-besed search API)
 [X] A run results object with an update time-limited JWT token must be created when a job is scheduled. Worker can only update, within a time alloted, an already `pending` run. 
 [] Restore labels API: Extract labels from JSON field
 [] Create API must return metadata for a newly created object as `names` may be generated.
@@ -41,7 +41,6 @@
 [ ] `urthctl` `get run artifact` command to fetch artifacts produces during script run
 
 ## Web UI
-[] UI: Allow _authenticated_ users to "bookmark" resources in their profiles!
 [] UI: Integrate with HAR viewer for artifacts of HAR-kind
 [] HAR viewer should offer an option to diff with previous runs!!
 [] Web Request runner: if response contains headers about the TRACE-ID, produce an artifact with a link to a trace viewer (configurable for installation)
@@ -50,6 +49,9 @@
 [X] A RUN must be in `pending` state when a message been posted into the queue but before being picked up by a worker.
 [] For manual runs - trigger identity of the who triggered the run as job labels, such that all jobs triggered by a given user can be found!
 [] Add visual indicator around STATUS circle for time for time before the next run: `(next_run - previous_run) / (delta_between_runs)`
+[] UX: Allow _authenticated_ users to "bookmark" resources in their profiles!
+[] UX: Add option for _authenticated_ users to save 'favourite' scenarios and filters based on tags. Personalized "folders" based on multiple tags should help navigation.
+"As a user, I want to be save a set of tags that can be quickly acceessed when I use the app UI"
 
 ## Workers / Prob Runners
 [] Workers should talk to API servers over gRPC
@@ -58,7 +60,7 @@
 [X] Workers should be annotated with the type of puppeteer available: JS or Python and versions
 [x] Web Request runner: integrate WEB listener to produce HTTP log + HAR file as artifacts
 [] Web request runner must inject trancing context / Jaeger / OpenTelemetry
-[] Puppeteer Worker: export HAR File as run artifacts
+[] Puppeteer Worker: export HAR File as run artifacts (Per each test?)
 [] Puppeteer Worker: Inject tracing context
 [] New prober: DNS prober
 [] New prober: TCP runner that checks payload

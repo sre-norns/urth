@@ -12,12 +12,17 @@ type RunLog struct {
 	content strings.Builder
 }
 
+// RunLog implements io.Writer
+func (l *RunLog) Write(p []byte) (n int, err error) {
+	n, err = l.content.Write(p)
+	log.Writer().Write(p)
+
+	return
+}
+
 func (l *RunLog) Log(v ...any) {
-	// logLine := fmt.Sprint(v...)
 	fmt.Fprint(&l.content, v...)
 	fmt.Fprint(&l.content, "\n")
-	// _, _ = l.content.WriteString(logLine)
-	// _, _ = l.content.WriteString("\n")
 
 	log.Print(v...)
 }
