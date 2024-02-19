@@ -1,7 +1,7 @@
 import React, {useCallback} from 'react'
 import PropTypes from 'prop-types'
 import styled from '@emotion/styled'
-import {useNavigate, useParams} from 'react-router-dom'
+import {useLocation} from 'wouter'
 import {useDispatch, useSelector} from 'react-redux'
 import fetchScenario from '../actions/fetchScenario.js'
 import ErrorInlay from '../components/ErrorInlay.js'
@@ -90,9 +90,8 @@ const validateName = (...args) => validateNotEmpty(...args) || validateMaxLength
 
 const validateDescription = validateMaxLength(128)
 
-const ScenarioViewer = ({edit = false}) => {
-  const {scenarioId} = useParams()
-  const navigate = useNavigate()
+const ScenarioViewer = ({scenarioId, edit = false}) => {
+  const [location, setLocation] = useLocation()
 
   const [isNew, setIsNew] = React.useState(false)
 
@@ -136,7 +135,7 @@ const ScenarioViewer = ({edit = false}) => {
 
   const handleCancel = useCallback(() => {
     handleResponse(response)
-    navigate(`/scenarios/${scenarioId}`, {replace: true})
+    setLocation(`/scenarios/${scenarioId}`, {replace: true})
   }, [response])
 
   const handleSave = useCallback(() => {
@@ -163,7 +162,7 @@ const ScenarioViewer = ({edit = false}) => {
             // prob: response.spec.prob,
           },
         },
-        () => navigate(`/scenarios/${scenarioId}`, {replace: true})
+        () => setLocation(`/scenarios/${scenarioId}`, {replace: true})
       )
     )
   }, [name, labels, description, active])

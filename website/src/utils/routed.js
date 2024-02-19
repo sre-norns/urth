@@ -1,6 +1,5 @@
 import React from 'react'
-import {useNavigate} from 'react-router-dom'
-
+import {useLocation} from 'wouter'
 
 const findHref = (element) => {
   if (!element) {
@@ -12,14 +11,14 @@ const findHref = (element) => {
 
 const routed = (WrappedComponent, replace = false) => {
   return React.forwardRef((props, ref) => {
-    const navigate = useNavigate()
+    const [location, setLocation] = useLocation()
     const handleClick = (e) => {
       const href = findHref(e.target)
       if (href) {
         const url = new URL(href)
         if (url.origin === window.location.origin) {
           e.preventDefault()
-          navigate(url.pathname, {replace})
+          setLocation(url.pathname, {replace})
         }
       }
     }

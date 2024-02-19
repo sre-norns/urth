@@ -1,11 +1,11 @@
 import React, {Fragment, useMemo} from 'react'
 import {useMediaQuery} from '@react-hook/media-query'
 import {ThemeProvider} from '@emotion/react'
-import {Navigate, Route, Routes} from 'react-router-dom'
 import {createTheme} from './theme/index.js'
-import HeaderMock from './containers/HeaderMock.js'
+import Header from './containers/Header.js'
 import Scenarios from './pages/Scenarios.js'
 import ScenarioViewer from './pages/ScenarioViewer.js'
+import {Redirect, Route, Switch} from 'wouter'
 
 export default () => {
   const dark = useMediaQuery('(prefers-color-scheme: dark)')
@@ -13,18 +13,18 @@ export default () => {
 
   return (
     <ThemeProvider theme={theme}>
-      <Fragment>
-        <HeaderMock />
-        <Routes>
-          <Route path="/">
-            <Route index element={<Navigate to="/scenarios"/>}/>
-            <Route path="scenarios" element={<Scenarios/>}/>
-            <Route path="scenarios/:scenarioId" element={<ScenarioViewer/>}/>
-            <Route path="scenarios/:scenarioId/edit" element={<ScenarioViewer edit/>}/>
-            <Route path="*" element={<p>Unknown</p>}/>
+      <>
+        <Header />
+        <Switch>
+          <Route path="/">{() => <Redirect to="/scenarios" />}</Route>
+          <Route path="/scenarios">{() => <Scenarios />}</Route>
+          <Route path="/scenarios/:scenarioId">{(params) => <ScenarioViewer scenarioId={params.scenarioId} />}</Route>
+          <Route path="/scenarios/:scenarioId/edit">
+            {(params) => <ScenarioViewer scenarioId={params.scenarioId} edit />}
           </Route>
-        </Routes>
-      </Fragment>
+          <Route>{() => <p>Unknown</p>}</Route>
+        </Switch>
+      </>
     </ThemeProvider>
-  );
+  )
 }
