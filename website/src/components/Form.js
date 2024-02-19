@@ -4,7 +4,6 @@ import styled from '@emotion/styled'
 import FormContext from './FormContext.js'
 import {isEmpty} from '../utils/objects.js'
 
-
 const FormContainer = styled.form``
 
 class Form extends Component {
@@ -47,6 +46,7 @@ class Form extends Component {
     }
 
     delete this.validators[controlId]
+    delete this.errors[controlId]
   }
 
   onValidated = (controlId, error) => {

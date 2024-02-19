@@ -18,10 +18,10 @@ import routed from '../utils/routed.js'
 import updateScenario from '../actions/updateScenario.js'
 import ObjectCapsules from '../components/ObjectCapsules.js'
 import FormSwitch from '../components/FormSwitch.js'
-import { useTrackedState, useTracker } from '../utils/tracking.js'
-import { isEmpty } from '../utils/objects.js'
+import {useTrackedState, useTracker} from '../utils/tracking.js'
+import {isEmpty} from '../utils/objects.js'
 import FormPropertiesEditor from '../components/FormPropertiesEditor.js'
-
+import Label from '../components/Label.js'
 
 const PageContainer = styled.div`
   width: 100%;
@@ -61,6 +61,9 @@ const HeaderPanel = styled(Panel)`
 
 const HeaderButton = styled(Button)`
   min-width: 96px;
+  i {
+    padding: 0 0.5rem 0 0;
+  }
 `
 
 const EditButton = routed(HeaderButton.withComponent('a'), true)
@@ -83,8 +86,6 @@ const HorizontalLabel = styled(FormLabel)`
   flex-grow: 1;
 `
 
-
-
 const validateName = (...args) => validateNotEmpty(...args) || validateMaxLength(32)(...args)
 
 const validateDescription = validateMaxLength(128)
@@ -104,7 +105,7 @@ const ScenarioViewer = ({edit = false}) => {
   const [description, setDescription] = useTrackedState(tracker, '')
   const [active, setActive] = useTrackedState(tracker, false)
 
-  const {id, fetching, updating, response, error} = useSelector(s => s.scenario)
+  const {id, fetching, updating, response, error} = useSelector((s) => s.scenario)
   const dispatch = useDispatch()
 
   const handleResponse = useCallback((response) => {
@@ -143,29 +144,39 @@ const ScenarioViewer = ({edit = false}) => {
       return
     }
 
-    dispatch(updateScenario(scenarioId, response.metadata.version, {
-      // kind: response.kind,
-      metadata: {
-        name,
-        labels,
-      },
-      spec: {
-        ...response.spec,
-        description,
-        active,
-        // requirements: response.spec.requirements,
-        // active: response.spec.active,
-        // prob: response.spec.prob,
-      },
-    }, () => navigate(`/scenarios/${scenarioId}`, {replace: true})))
+    dispatch(
+      updateScenario(
+        scenarioId,
+        response.metadata.version,
+        {
+          // kind: response.kind,
+          metadata: {
+            name,
+            labels,
+          },
+          spec: {
+            ...response.spec,
+            description,
+            active,
+            // requirements: response.spec.requirements,
+            // active: response.spec.active,
+            // prob: response.spec.prob,
+          },
+        },
+        () => navigate(`/scenarios/${scenarioId}`, {replace: true})
+      )
+    )
   }, [name, labels, description, active])
 
-  const handleSubmit = useCallback((e) => {
-    e.preventDefault()
-    if (edit) {
-      handleSave()
-    }
-  }, [edit, handleSave])
+  const handleSubmit = useCallback(
+    (e) => {
+      e.preventDefault()
+      if (edit) {
+        handleSave()
+      }
+    },
+    [edit, handleSave]
+  )
 
   React.useEffect(() => {
     if (scenarioId === 'new') {
@@ -184,11 +195,11 @@ const ScenarioViewer = ({edit = false}) => {
   }
 
   if (error) {
-    return <ErrorInlay message="Error" details={error.message || ""}/>
+    return <ErrorInlay message="Error" details={error.message || ''} />
   }
 
   if (fetching || updating) {
-    return <SpinnerInlay/>
+    return <SpinnerInlay />
   }
 
   const title = edit ? (isNew ? 'New Scenario' : `Edit Scenario`) : name
@@ -198,42 +209,54 @@ const ScenarioViewer = ({edit = false}) => {
       <PagePanel>
         <HeaderPanel level={2}>
           <h3>{title}</h3>
-          {!edit && <EditButton href={`/scenarios/${scenarioId}/edit`}>
-            <i className="fi fi-page-edit"></i>&nbsp;Edit</EditButton>}
-          {edit && <HeaderButton onClick={handleCancel} color="neutral"><i className="fi fi-trash"></i>&nbsp;Cancel</HeaderButton>}
-          {edit && <HeaderButton onClick={handleSave} disabled={!isValid || !tracker.changed}><i className="fi fi-save"></i>&nbsp;Save</HeaderButton>}
+          {!edit && (
+            <EditButton href={`/scenarios/${scenarioId}/edit`}>
+              <i className="fi fi-page-edit"></i> Edit
+            </EditButton>
+          )}
+          {edit && (
+            <HeaderButton onClick={handleCancel} color="neutral">
+              <i className="fi fi-trash"></i> Cancel
+            </HeaderButton>
+          )}
+          {edit && (
+            <HeaderButton onClick={handleSave} disabled={!isValid || !tracker.changed}>
+              <i className="fi fi-save"></i> Save
+            </HeaderButton>
+          )}
         </HeaderPanel>
         <PageForm ref={formRef} onSubmit={handleSubmit} onValidated={handleValidated}>
-          {edit &&
+          {edit && (
             <FormGroup controlId="scenario-name" onValidate={validateName}>
               <FormLabel required>Name</FormLabel>
-              <FormControl type="text" value={name} onChange={handleNameChange}/>
-              <FormGroupError/>
+              <FormControl type="text" value={name} onChange={handleNameChange} />
+              <FormGroupError />
             </FormGroup>
-          }
+          )}
           <FormGroup controlId="scenario-description" onValidate={validateDescription}>
             <FormLabel>Description</FormLabel>
-            {edit && <>
-              <FormControl as="textarea" rows="5" value={description} onChange={handleDescriptionChange}/>
-              <FormGroupError/>
-            </> || <div>{description}</div>
-            }
+            {(edit && (
+              <>
+                <FormControl as="textarea" rows="5" value={description} onChange={handleDescriptionChange} />
+                <FormGroupError />
+              </>
+            )) || <div>{description}</div>}
           </FormGroup>
-          {!edit && !isEmpty(response.metadata.labels) &&
+          {!edit && !isEmpty(response.metadata.labels) && (
             <FormGroup controlId="scenario-labels">
               <FormLabel>Labels</FormLabel>
-              <ObjectCapsules value={response.metadata.labels}/>
+              <ObjectCapsules value={response.metadata.labels} />
             </FormGroup>
-          }
-          {edit &&
-            <FormGroup controlId="scenario-labels">
-              <FormLabel>Labels</FormLabel>
-              <FormPropertiesEditor value={labels} onChange={setLabels}/>
-            </FormGroup>
-          }
+          )}
+          {edit && (
+            <div>
+              <Label>Labels</Label>
+              <FormPropertiesEditor controlId="scenario-labels" value={labels} onChange={setLabels} />
+            </div>
+          )}
           <HorizontalFormGroup controlId="scenario-active">
             <HorizontalLabel>Active</HorizontalLabel>
-            <FormSwitch checked={active} readOnly={!edit} onClick={edit && handleActiveClick || null}/>
+            <FormSwitch checked={active} readOnly={!edit} onClick={(edit && handleActiveClick) || null} />
           </HorizontalFormGroup>
         </PageForm>
       </PagePanel>
