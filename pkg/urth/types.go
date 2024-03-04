@@ -1,7 +1,6 @@
 package urth
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/sre-norns/urth/pkg/wyrd"
@@ -12,31 +11,9 @@ import (
 // ApiToken is opaque datum used for auth purposes
 type ApiToken string
 
-type VersionedResourceId struct {
-	ID      wyrd.ResourceID `form:"id" json:"id" yaml:"id" xml:"id"`
-	Version uint64          `form:"version" json:"version" yaml:"version" xml:"version"`
-}
-
-func NewVersionedId(id wyrd.ResourceID, version uint64) VersionedResourceId {
-	return VersionedResourceId{
-		ID:      id,
-		Version: version,
-	}
-}
-
-func (r VersionedResourceId) String() string {
-	return fmt.Sprintf("%v@%d", r.ID, r.Version)
-}
-
 type ResourceLabel struct {
 	Key   string
 	Value string
-}
-
-type Resourceable interface {
-	GetID() wyrd.ResourceID
-	GetVersionedID() VersionedResourceId
-	IsDeleted() bool
 }
 
 // ResourceMeta represents common data for all resources managed by the service
@@ -48,7 +25,7 @@ type ResourceMeta struct {
 
 	// A sequence number representing a specific generation of the resource.
 	// Populated by the system. Read-only.
-	Version uint64 `form:"version" json:"version" yaml:"version" xml:"version" gorm:"default:1"`
+	Version wyrd.Version `form:"version" json:"version" yaml:"version" xml:"version" gorm:"default:1"`
 
 	// Name is a human readable name of the resource used for display in UI
 	Name string `form:"name" json:"name" yaml:"name" xml:"name"  binding:"required" gorm:"uniqueIndex"`
@@ -66,8 +43,8 @@ func (meta *ResourceMeta) IsDeleted() bool {
 	return meta.DeletedAt.Valid
 }
 
-func (meta *ResourceMeta) GetVersionedID() VersionedResourceId {
-	return NewVersionedId(wyrd.ResourceID(meta.ID), meta.Version)
+func (meta *ResourceMeta) GetVersionedID() wyrd.VersionedResourceId {
+	return wyrd.NewVersionedId(wyrd.ResourceID(meta.ID), meta.Version)
 }
 
 func (m *ResourceMeta) asObjectMeta() wyrd.ObjectMeta {

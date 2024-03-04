@@ -74,10 +74,11 @@ func TestCustomUnmarshaling_JSON(t *testing.T) {
 			expect: urth.ProbManifest{},
 		},
 		"unknown-kind": {
-			given: `{"kind":"unknownSpec", "metadata":{"name":""},"spec":{"field":"xyz","desc":"unknown"}}`,
+			given: `{"kind":"unknownSpec","metadata":{"name":""},"spec":{"field":"xyz","desc":"unknown"}}`,
 			expect: urth.ProbManifest{
 				Kind: wyrd.Kind("unknownSpec"),
-				Spec: json.RawMessage(`{"field":"xyz","desc":"unknown"}`),
+				// Spec: json.RawMessage(`{"field":"xyz","desc":"unknown"}`),
+				Spec: map[string]any{"field": "xyz", "desc": "unknown"},
 			},
 			expectError: false,
 		},

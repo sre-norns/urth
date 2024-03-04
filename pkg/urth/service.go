@@ -7,23 +7,24 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sre-norns/urth/pkg/bark"
 	"github.com/sre-norns/urth/pkg/wyrd"
 )
 
 const paginationLimit = 512
 
 var (
-	ErrResourceUnauthorized    = &ErrorResponse{Code: 401, Message: "resource access unauthorized"}
-	ErrForbidden               = &ErrorResponse{Code: 403, Message: "forbidden"}
-	ErrResourceNotFound        = &ErrorResponse{Code: 404, Message: "requested resource not found"}
-	ErrResourceVersionConflict = &ErrorResponse{Code: 409, Message: "resource version conflict"}
-	ErrResourceSpecIsNil       = &ErrorResponse{Code: 400, Message: "resource has no spec"}
-	ErrResourceSpecTypeInvalid = &ErrorResponse{Code: 400, Message: "resource spec type is invalid"}
+	ErrResourceUnauthorized    = &bark.ErrorResponse{Code: 401, Message: "resource access unauthorized"}
+	ErrForbidden               = &bark.ErrorResponse{Code: 403, Message: "forbidden"}
+	ErrResourceNotFound        = &bark.ErrorResponse{Code: 404, Message: "requested resource not found"}
+	ErrResourceVersionConflict = &bark.ErrorResponse{Code: 409, Message: "resource version conflict"}
+	ErrResourceSpecIsNil       = &bark.ErrorResponse{Code: 400, Message: "resource has no spec"}
+	ErrResourceSpecTypeInvalid = &bark.ErrorResponse{Code: 400, Message: "resource spec type is invalid"}
 )
 
 type ReadableResourceApi[T interface{}] interface {
 	// List all resources matching given search query
-	List(ctx context.Context, searchQuery SearchQuery) ([]PartialObjectMetadata, error)
+	List(ctx context.Context, searchQuery bark.SearchQuery) ([]PartialObjectMetadata, error)
 
 	// Get a single resource given its unique ID,
 	// Returns a resource if it exists, false, if resource doesn't exists
@@ -37,15 +38,15 @@ type ScenarioApi interface {
 	Create(ctx context.Context, entry wyrd.ResourceManifest) (PartialObjectMetadata, error)
 
 	// Delete a single resource identified by a unique ID
-	Delete(ctx context.Context, id VersionedResourceId) (bool, error)
+	Delete(ctx context.Context, id wyrd.VersionedResourceId) (bool, error)
 
 	// Update a single resource identified by a unique ID
-	Update(ctx context.Context, id VersionedResourceId, entry wyrd.ResourceManifest) (PartialObjectMetadata, error)
+	Update(ctx context.Context, id wyrd.VersionedResourceId, entry wyrd.ResourceManifest) (PartialObjectMetadata, error)
 
-	UpdateScript(ctx context.Context, id VersionedResourceId, entry ProbManifest) (CreatedResponse, bool, error)
+	UpdateScript(ctx context.Context, id wyrd.VersionedResourceId, entry ProbManifest) (bark.CreatedResponse, bool, error)
 
 	// ClientAPI: Can it be done using filters?
-	ListRunnable(ctx context.Context, query SearchQuery) ([]Scenario, error)
+	ListRunnable(ctx context.Context, query bark.SearchQuery) ([]Scenario, error)
 }
 
 type ArtifactApi interface {
@@ -55,7 +56,7 @@ type ArtifactApi interface {
 	Create(ctx context.Context, entry wyrd.ResourceManifest) (PartialObjectMetadata, error)
 
 	// Delete a single resource identified by a unique ID
-	Delete(ctx context.Context, id VersionedResourceId) (bool, error)
+	Delete(ctx context.Context, id wyrd.VersionedResourceId) (bool, error)
 
 	GetContent(ctx context.Context, id wyrd.ResourceID) (resource ArtifactSpec, exists bool, commError error)
 }
@@ -65,10 +66,10 @@ type RunResultApi interface {
 
 	Create(ctx context.Context, entry wyrd.ResourceManifest) (PartialObjectMetadata, error)
 
-	Auth(ctx context.Context, runID VersionedResourceId, authRequest AuthJobRequest) (AuthJobResponse, error)
+	Auth(ctx context.Context, runID wyrd.VersionedResourceId, authRequest AuthJobRequest) (AuthJobResponse, error)
 
 	// TODO: Token can be used to look-up ID!
-	Update(ctx context.Context, id VersionedResourceId, token ApiToken, entry FinalRunResults) (CreatedResponse, error)
+	Update(ctx context.Context, id wyrd.VersionedResourceId, token ApiToken, entry FinalRunResults) (bark.CreatedResponse, error)
 }
 
 // RunnersApi encapsulate APIs to interacting with `Runners`
@@ -79,17 +80,17 @@ type RunnersApi interface {
 	Create(ctx context.Context, entry wyrd.ResourceManifest) (PartialObjectMetadata, error)
 
 	// Delete a single resource identified by a unique ID
-	Delete(ctx context.Context, id VersionedResourceId) (bool, error)
+	Delete(ctx context.Context, id wyrd.VersionedResourceId) (bool, error)
 
 	// Update a single resource identified by a unique ID
-	Update(ctx context.Context, id VersionedResourceId, entry wyrd.ResourceManifest) (PartialObjectMetadata, error)
+	Update(ctx context.Context, id wyrd.VersionedResourceId, entry wyrd.ResourceManifest) (PartialObjectMetadata, error)
 
 	// Authenticate a worker and receive Identity from the server
 	Auth(ctx context.Context, token ApiToken, entry RunnerRegistration) (Runner, error)
 }
 
 type LabelsApi interface {
-	List(ctx context.Context, searchQuery SearchQuery) ([]ResourceLabel, error)
+	List(ctx context.Context, searchQuery bark.SearchQuery) ([]ResourceLabel, error)
 }
 
 type Service interface {
@@ -181,10 +182,10 @@ func (s *serviceImpl) GetLabels() LabelsApi {
 
 // }
 
-//------------------------------
-/// Scenarios API
-//------------------------------
-func (m *scenarioApiImpl) ListRunnable(ctx context.Context, query SearchQuery) ([]Scenario, error) {
+// ------------------------------
+// / Scenarios API
+// ------------------------------
+func (m *scenarioApiImpl) ListRunnable(ctx context.Context, query bark.SearchQuery) ([]Scenario, error) {
 	var resources []Scenario
 	_, err := m.store.FindResources(ctx, &resources, query, paginationLimit)
 	if err != nil {
@@ -193,7 +194,7 @@ func (m *scenarioApiImpl) ListRunnable(ctx context.Context, query SearchQuery) (
 	return resources, err
 }
 
-func (m *scenarioApiImpl) List(ctx context.Context, query SearchQuery) ([]PartialObjectMetadata, error) {
+func (m *scenarioApiImpl) List(ctx context.Context, query bark.SearchQuery) ([]PartialObjectMetadata, error) {
 	var resources []Scenario
 	_, err := m.store.FindResources(ctx, &resources, query, paginationLimit)
 	if err != nil {
@@ -242,32 +243,32 @@ func (m *scenarioApiImpl) Get(ctx context.Context, id wyrd.ResourceID) (wyrd.Res
 	return result.asResourceManifest(), ok, err
 }
 
-func (m *scenarioApiImpl) Delete(ctx context.Context, id VersionedResourceId) (bool, error) {
+func (m *scenarioApiImpl) Delete(ctx context.Context, id wyrd.VersionedResourceId) (bool, error) {
 	return m.store.Delete(ctx, &Scenario{}, id)
 }
 
-func (m *scenarioApiImpl) UpdateScript(ctx context.Context, id VersionedResourceId, prob ProbManifest) (CreatedResponse, bool, error) {
+func (m *scenarioApiImpl) UpdateScript(ctx context.Context, id wyrd.VersionedResourceId, prob ProbManifest) (bark.CreatedResponse, bool, error) {
 	var result Scenario
 	kind, ok := wyrd.KindOf(&result.ScenarioSpec)
 	if !ok {
-		return CreatedResponse{}, false, wyrd.ErrUnknownKind
+		return bark.CreatedResponse{}, false, wyrd.ErrUnknownKind
 	}
 
 	ok, err := m.store.GetWithVersion(ctx, &result, id)
 	if !ok || err != nil {
-		return CreatedResponse{}, ok, err
+		return bark.CreatedResponse{}, ok, err
 	}
 
 	result.Prob = prob
 	ok, err = m.store.Update(ctx, &result, result.GetVersionedID())
 
-	return CreatedResponse{
+	return bark.CreatedResponse{
 		TypeMeta:            wyrd.TypeMeta{Kind: kind},
 		VersionedResourceId: result.GetVersionedID(),
 	}, ok, err
 }
 
-func (m *scenarioApiImpl) Update(ctx context.Context, id VersionedResourceId, newEntry wyrd.ResourceManifest) (PartialObjectMetadata, error) {
+func (m *scenarioApiImpl) Update(ctx context.Context, id wyrd.VersionedResourceId, newEntry wyrd.ResourceManifest) (PartialObjectMetadata, error) {
 	// Precondition: entry.Spec != nil
 	if newEntry.Spec == nil {
 		return PartialObjectMetadata{}, ErrResourceSpecIsNil
@@ -323,8 +324,8 @@ func (s *resultsApiImpl) scheduleRun(ctx context.Context, runResult Result, scen
 	}
 
 	log.Printf("Scheduling scenario: looking for workers that match: %q", requirement)
-	workers, err := s.workersApi.List(ctx, SearchQuery{
-		Labels: requirement,
+	workers, err := s.workersApi.List(ctx, bark.SearchQuery{
+		Filter: requirement,
 	})
 	if err != nil {
 		return InvalidRunId, fmt.Errorf("failed to list workers to schedule a scenario: %w", err)
@@ -334,14 +335,14 @@ func (s *resultsApiImpl) scheduleRun(ctx context.Context, runResult Result, scen
 	return s.scheduler.Schedule(ctx, scenarioToRunnable(runResult, scenarioMeta, scenario))
 }
 
-func (m *resultsApiImpl) List(ctx context.Context, searchQuery SearchQuery) ([]PartialObjectMetadata, error) {
+func (m *resultsApiImpl) List(ctx context.Context, searchQuery bark.SearchQuery) ([]PartialObjectMetadata, error) {
 	var resources []Result
 
 	// Fixme: Should use typed requirements
-	if searchQuery.Labels == "" {
-		searchQuery.Labels = fmt.Sprintf("%v=%v", LabelScenarioId, m.scenarioId)
-	} else if !strings.Contains(searchQuery.Labels, LabelScenarioId) {
-		searchQuery.Labels = fmt.Sprintf("%v=%v,%v", LabelScenarioId, m.scenarioId, searchQuery.Labels)
+	if searchQuery.Filter == "" {
+		searchQuery.Filter = fmt.Sprintf("%v=%v", LabelScenarioId, m.scenarioId)
+	} else if !strings.Contains(searchQuery.Filter, LabelScenarioId) {
+		searchQuery.Filter = fmt.Sprintf("%v=%v,%v", LabelScenarioId, m.scenarioId, searchQuery.Filter)
 	}
 
 	_, err := m.store.FindResources(ctx, &resources, searchQuery, paginationLimit)
@@ -437,7 +438,7 @@ func (m *resultsApiImpl) Create(ctx context.Context, newEntry wyrd.ResourceManif
 	return entry.asPartialMetadata(), err
 }
 
-func (m *resultsApiImpl) Auth(ctx context.Context, id VersionedResourceId, authRequest AuthJobRequest) (AuthJobResponse, error) {
+func (m *resultsApiImpl) Auth(ctx context.Context, id wyrd.VersionedResourceId, authRequest AuthJobRequest) (AuthJobResponse, error) {
 	var entry Result
 	ok, err := m.store.GetWithVersion(ctx, &entry, id)
 	if err != nil {
@@ -475,26 +476,26 @@ func (m *resultsApiImpl) Auth(ctx context.Context, id VersionedResourceId, authR
 	}
 
 	return AuthJobResponse{
-		CreatedResponse: CreatedResponse{
+		CreatedResponse: bark.CreatedResponse{
 			VersionedResourceId: entry.GetVersionedID(),
 		},
 		Token: entry.UpdateToken,
 	}, err
 }
 
-func (m *resultsApiImpl) Update(ctx context.Context, id VersionedResourceId, token ApiToken, runResults FinalRunResults) (CreatedResponse, error) {
+func (m *resultsApiImpl) Update(ctx context.Context, id wyrd.VersionedResourceId, token ApiToken, runResults FinalRunResults) (bark.CreatedResponse, error) {
 	var entry Result
 	ok, err := m.store.GetWithVersion(ctx, &entry, id)
 	if err != nil {
-		return CreatedResponse{}, ErrResourceNotFound
+		return bark.CreatedResponse{}, ErrResourceNotFound
 	}
 	if !ok {
-		return CreatedResponse{}, ErrResourceVersionConflict
+		return bark.CreatedResponse{}, ErrResourceVersionConflict
 	}
 
 	//FIXME: Validate API Token
 	if entry.UpdateToken != token {
-		return CreatedResponse{}, ErrResourceUnauthorized
+		return bark.CreatedResponse{}, ErrResourceUnauthorized
 	}
 
 	if runResults.TimeEnded == nil {
@@ -507,13 +508,13 @@ func (m *resultsApiImpl) Update(ctx context.Context, id VersionedResourceId, tok
 
 	ok, err = m.store.Update(ctx, &entry, entry.GetVersionedID())
 	if err != nil {
-		return CreatedResponse{}, err
+		return bark.CreatedResponse{}, err
 	}
 	if !ok {
-		return CreatedResponse{}, ErrResourceVersionConflict
+		return bark.CreatedResponse{}, ErrResourceVersionConflict
 	}
 
-	return CreatedResponse{
+	return bark.CreatedResponse{
 		TypeMeta:            entry.asResourceManifest().TypeMeta,
 		VersionedResourceId: entry.GetVersionedID(),
 	}, err
@@ -528,10 +529,10 @@ func (m *resultsApiImpl) Get(ctx context.Context, id wyrd.ResourceID) (wyrd.Reso
 		err
 }
 
-//------------------------------
-/// Scenarios run results
-//------------------------------
-func (m *runnersApiImpl) List(ctx context.Context, searchQuery SearchQuery) ([]PartialObjectMetadata, error) {
+// ------------------------------
+// / Scenarios run results
+// ------------------------------
+func (m *runnersApiImpl) List(ctx context.Context, searchQuery bark.SearchQuery) ([]PartialObjectMetadata, error) {
 	var resources []Runner
 	_, err := m.store.FindResources(ctx, &resources, searchQuery, paginationLimit)
 	if err != nil {
@@ -576,11 +577,11 @@ func (m *runnersApiImpl) Create(ctx context.Context, newEntry wyrd.ResourceManif
 	return entry.asPartialMetadata(), err
 }
 
-func (m *runnersApiImpl) Delete(ctx context.Context, id VersionedResourceId) (bool, error) {
+func (m *runnersApiImpl) Delete(ctx context.Context, id wyrd.VersionedResourceId) (bool, error) {
 	return m.store.Delete(ctx, &Runner{}, id)
 }
 
-func (m *runnersApiImpl) Update(ctx context.Context, id VersionedResourceId, newEntry wyrd.ResourceManifest) (PartialObjectMetadata, error) {
+func (m *runnersApiImpl) Update(ctx context.Context, id wyrd.VersionedResourceId, newEntry wyrd.ResourceManifest) (PartialObjectMetadata, error) {
 	// Precondition: entry.Spec != nil
 	if newEntry.Spec == nil {
 		return PartialObjectMetadata{}, ErrResourceSpecIsNil
@@ -642,14 +643,14 @@ func (m *runnersApiImpl) Auth(ctx context.Context, token ApiToken, entry RunnerR
 	return result, err
 }
 
-//------------------------------
-/// ArtifactsApis implementation
-//------------------------------
+// ------------------------------
+// / ArtifactsApis implementation
+// ------------------------------
 type artifactApiImp struct {
 	store Store
 }
 
-func (m *artifactApiImp) List(ctx context.Context, query SearchQuery) ([]PartialObjectMetadata, error) {
+func (m *artifactApiImp) List(ctx context.Context, query bark.SearchQuery) ([]PartialObjectMetadata, error) {
 	var resources []Artifact
 	_, err := m.store.FindResources(ctx, &resources, query, paginationLimit)
 	if err != nil {
@@ -699,7 +700,7 @@ func (m *artifactApiImp) Create(ctx context.Context, newEntry wyrd.ResourceManif
 	return entry.asPartialMetadata(), err
 }
 
-func (m *artifactApiImp) Delete(ctx context.Context, id VersionedResourceId) (bool, error) {
+func (m *artifactApiImp) Delete(ctx context.Context, id wyrd.VersionedResourceId) (bool, error) {
 	return m.store.Delete(ctx, &Artifact{}, id)
 }
 
@@ -707,7 +708,7 @@ func (m *artifactApiImp) Delete(ctx context.Context, id VersionedResourceId) (bo
 // Labels API
 //------------------------------
 
-func (api *labelsApiImpl) List(ctx context.Context, searchQuery SearchQuery) ([]ResourceLabel, error) {
+func (api *labelsApiImpl) List(ctx context.Context, searchQuery bark.SearchQuery) ([]ResourceLabel, error) {
 	var resources []ResourceLabel
 	// err := api.store.FindLabels(ctx, &ResourceLabelModel{}, &resources, searchQuery.Pagination)
 

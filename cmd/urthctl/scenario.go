@@ -7,6 +7,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/sre-norns/urth/pkg/bark"
 	"github.com/sre-norns/urth/pkg/urth"
 	"github.com/sre-norns/urth/pkg/wyrd"
 )
@@ -48,7 +49,7 @@ func fetchResults(ctx context.Context, scenarioId wyrd.ResourceID, ids []wyrd.Re
 	}
 
 	if len(ids) == 0 {
-		resources, err := apiClient.GetResultsAPI(scenarioId).List(ctx, urth.SearchQuery{})
+		resources, err := apiClient.GetResultsAPI(scenarioId).List(ctx, bark.SearchQuery{})
 		if err != nil {
 			return nil, err
 		}
@@ -104,8 +105,8 @@ func fetchLogs(ctx context.Context, apiServerAddress string, id wyrd.ResourceID,
 		labels = append(labels, customSelector)
 	}
 
-	resources, err := apiClient.GetArtifactsApi().List(ctx, urth.SearchQuery{
-		Labels: strings.Join(labels, ","),
+	resources, err := apiClient.GetArtifactsApi().List(ctx, bark.SearchQuery{
+		Filter: strings.Join(labels, ","),
 	})
 	if err != nil {
 		return nil, err

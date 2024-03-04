@@ -121,7 +121,7 @@ func ProberAsLabels() wyrd.Labels {
 	return result
 }
 
-func (c *RunnerConfig) LabelJob(runnerId urth.VersionedResourceId, job urth.RunScenarioJob) wyrd.Labels {
+func (c *RunnerConfig) LabelJob(runnerId wyrd.VersionedResourceId, job urth.RunScenarioJob) wyrd.Labels {
 
 	return wyrd.MergeLabels(
 		job.Labels,
