@@ -22,7 +22,7 @@ export default () => {
           <Route path="/scenarios/:scenarioId/edit">
             {(params) => <ScenarioViewer scenarioId={params.scenarioId} edit />}
           </Route>
-          <Route>{() => <p>Unknown</p>}</Route>
+          <Route>{() => <p>Not found</p>}</Route>
         </Switch>
       </>
     </ThemeProvider>

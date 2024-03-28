@@ -1,6 +1,6 @@
 import React from 'react'
 import styled from '@emotion/styled'
-import routed from '../utils/routed.js'
+import {routed, routeActivated} from '../utils/routing.js'
 
 const color = (props) => props.theme.color[props.color || 'neutral']
 
@@ -18,8 +18,8 @@ const textColor = (props, state) => {
 }
 
 const fontWeight = (props) => {
-    const _active = active(props)
-    return _active ? 700 : 400
+  const _active = active(props)
+  return _active ? 700 : 400
 }
 
 const cursor = (props) => {
@@ -46,10 +46,10 @@ const NavLink = styled.a`
   opacity: ${opacity};
   pointer-events: ${pointerEvents};
   text-decoration: none;
-  
+
   &:hover {
-    color: ${props => textColor(props, 'hover')};
+    color: ${(props) => textColor(props, 'hover')};
   }
 `
 
-export default routed(NavLink)
+export default routeActivated(routed(NavLink))

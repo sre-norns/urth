@@ -1,5 +1,6 @@
 import React from 'react'
 import PropTypes from 'prop-types'
+import {Route, Switch} from 'wouter'
 import styled from '@emotion/styled'
 import NavRow from '../components/NavRow.js'
 import NavBrand from '../components/NavBrand.js'
@@ -24,10 +25,10 @@ const Header = () => {
         <NavRowContainer size="large">
           <NavRow>
             <NavBrand href="/">Urth</NavBrand>
-            <NavLink href="/scenarios" active>
+            <NavLink href="/scenarios" activePattern="/scenarios/*?">
               Scenarios
             </NavLink>
-            <NavLink href="#" onClick={onNonClick}>
+            <NavLink href="/run-results" activePattern="/run-results/*?">
               Run Results
             </NavLink>
             <NavLink href="#" onClick={onNonClick}>
@@ -38,20 +39,26 @@ const Header = () => {
             </NavLink>
           </NavRow>
         </NavRowContainer>
-        <NavRowContainer size="medium">
-          <NavRow center>
-            <NavLink href="#" onClick={onNonClick}>
-              Active
-            </NavLink>
-            <NavLink href="#" onClick={onNonClick}>
-              Disabled
-            </NavLink>
-            <NavLink href="#" onClick={onNonClick} active>
-              All
-            </NavLink>
-            <SearchInput placeholder="Search" />
-          </NavRow>
-        </NavRowContainer>
+        <Switch>
+          <Route path="/scenarios">
+            {() => (
+              <NavRowContainer size="medium">
+                <NavRow center>
+                  <NavLink href="#" onClick={onNonClick}>
+                    Active
+                  </NavLink>
+                  <NavLink href="#" onClick={onNonClick}>
+                    Disabled
+                  </NavLink>
+                  <NavLink href="#" onClick={onNonClick} active>
+                    All
+                  </NavLink>
+                  <SearchInput placeholder="Search" />
+                </NavRow>
+              </NavRowContainer>
+            )}
+          </Route>
+        </Switch>
       </Nav>
     </>
   )
