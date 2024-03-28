@@ -23,4 +23,8 @@ go.work
 test.db
 .DS_Store
 
-website/dist
+website/dist/*
+
+# Temp worker directory
+worker
+

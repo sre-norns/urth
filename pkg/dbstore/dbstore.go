@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/sre-norns/urth/pkg/bark"
 	"github.com/sre-norns/urth/pkg/urth"
 	"github.com/sre-norns/urth/pkg/wyrd"
 	"gorm.io/gorm"
@@ -39,7 +40,7 @@ func (s *DbStore) Get(ctx context.Context, dest any, id wyrd.ResourceID) (bool, 
 	return tx.RowsAffected == 1, tx.Error
 }
 
-func (s *DbStore) GetWithVersion(ctx context.Context, dest any, id urth.VersionedResourceId) (bool, error) {
+func (s *DbStore) GetWithVersion(ctx context.Context, dest any, id wyrd.VersionedResourceId) (bool, error) {
 	tx := s.db.WithContext(ctx).Where("version = ?", id.Version).First(dest, id)
 	if errors.Is(tx.Error, gorm.ErrRecordNotFound) {
 		return false, nil
@@ -55,7 +56,7 @@ func (s *DbStore) GetByToken(ctx context.Context, dest any, token urth.ApiToken)
 	return tx.RowsAffected == 1, tx.Error
 }
 
-func (s *DbStore) Update(ctx context.Context, value any, id urth.VersionedResourceId) (bool, error) {
+func (s *DbStore) Update(ctx context.Context, value any, id wyrd.VersionedResourceId) (bool, error) {
 	tx := s.db.WithContext(ctx).Where("version = ?", id.Version).Save(value)
 	if errors.Is(tx.Error, gorm.ErrRecordNotFound) {
 		return false, nil
@@ -63,7 +64,7 @@ func (s *DbStore) Update(ctx context.Context, value any, id urth.VersionedResour
 	return tx.RowsAffected == 1, tx.Error
 }
 
-func (s *DbStore) Delete(ctx context.Context, value any, id urth.VersionedResourceId) (bool, error) {
+func (s *DbStore) Delete(ctx context.Context, value any, id wyrd.VersionedResourceId) (bool, error) {
 	tx := s.db.WithContext(ctx).Where("version = ?", id.Version).Delete(value, id.ID)
 	if errors.Is(tx.Error, gorm.ErrRecordNotFound) {
 		return false, nil
@@ -71,13 +72,13 @@ func (s *DbStore) Delete(ctx context.Context, value any, id urth.VersionedResour
 	return tx.RowsAffected == 1, tx.Error
 }
 
-func (s *DbStore) startPaginatedTx(ctx context.Context, pagination urth.Pagination, maxLimit uint) *gorm.DB {
-	pagination.ClampLimit(maxLimit)
+func (s *DbStore) startPaginatedTx(ctx context.Context, pagination bark.Pagination, maxLimit uint) *gorm.DB {
+	pagination = pagination.ClampLimit(maxLimit)
 	return s.db.WithContext(ctx).Offset(int(pagination.Offset)).Limit(int(pagination.Limit))
 }
 
-func (s *DbStore) FindResources(ctx context.Context, resources any, searchQuery urth.SearchQuery, maxLimit uint) (uint, error) {
-	selector, err := labels.Parse(searchQuery.Labels)
+func (s *DbStore) FindResources(ctx context.Context, resources any, searchQuery bark.SearchQuery, maxLimit uint) (uint, error) {
+	selector, err := labels.Parse(searchQuery.Filter)
 	if err != nil {
 		return 0, fmt.Errorf("error parsing labels selector: %w", err)
 	}

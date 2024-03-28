@@ -21,7 +21,7 @@ type RunScenarioJob struct {
 	RunSchedule CronSchedule `form:"schedule" json:"schedule,omitempty" yaml:"schedule,omitempty" xml:"schedule"`
 
 	// ID and version of the scenario that this results were produced for
-	ScenarioID VersionedResourceId `form:"play_id" json:"play_id" yaml:"play_id" xml:"play_id"  binding:"required" `
+	ScenarioID wyrd.VersionedResourceId `form:"play_id" json:"play_id" yaml:"play_id" xml:"play_id"  binding:"required" `
 
 	// Script of a job to be performed by a runner
 	Prob ProbManifest `form:"prob" json:"prob" yaml:"prob" xml:"prob" `
@@ -30,8 +30,8 @@ type RunScenarioJob struct {
 	IsKeepDirectory bool `form:"keepDir" json:"keepDir" yaml:"keepDir" xml:"keepDir" `
 
 	// Version and ID of the run to update results to
-	RunID   VersionedResourceId `json:"runId" yaml:"runId"`
-	RunName string              `json:"runName" yaml:"runName"`
+	RunID   wyrd.VersionedResourceId `json:"runId" yaml:"runId"`
+	RunName string                   `json:"runName" yaml:"runName"`
 }
 
 func scenarioToRunnable(run Result, scenarioMeta ResourceMeta, scenario *ScenarioSpec) RunScenarioJob {

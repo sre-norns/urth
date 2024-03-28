@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/sre-norns/urth/pkg/bark"
 	"github.com/sre-norns/urth/pkg/urth"
 	"github.com/sre-norns/urth/pkg/wyrd"
 	"gopkg.in/yaml.v3"
@@ -129,10 +130,9 @@ func (c *Labels) Run(cfg *commandContext) error {
 		return fmt.Errorf("failed to initialize API Client: %w", err)
 	}
 
-	var query urth.SearchQuery
-	query.Labels = c.Selector
-
-	labels, err := apiClient.GetLabels().List(cfg.Context, query)
+	labels, err := apiClient.GetLabels().List(cfg.Context, bark.SearchQuery{
+		Filter: c.Selector,
+	})
 	if err != nil {
 		return err
 	}

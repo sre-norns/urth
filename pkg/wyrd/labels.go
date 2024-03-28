@@ -2,6 +2,7 @@ package wyrd
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -48,7 +49,7 @@ type Selector struct {
 	Values []string              `json:"values,omitempty" yaml:"values,omitempty" `
 }
 
-// LabelSelector is a part of model that holds label-based requirements for on other resources
+// LabelSelector is a part of a resource model that holds label-based requirements for another resource
 type LabelSelector struct {
 	MatchLabels Labels `json:"matchLabels,omitempty" yaml:"matchLabels,omitempty" `
 
@@ -65,17 +66,25 @@ type LabelSelector struct {
 // }
 
 func (ls LabelSelector) AsLabels() (string, error) {
-	sb := strings.Builder{}
-
-	i := 0
+	spaceCapacity := 0
+	labelsKey := make(sort.StringSlice, 0, len(ls.MatchLabels))
 	for key, value := range ls.MatchLabels {
+		labelsKey = append(labelsKey, key)
+		spaceCapacity += len(key) + 1 + len(value) + 1
+	}
+	// Provides stable order for keys in a map
+	labelsKey.Sort()
+
+	sb := strings.Builder{}
+	sb.Grow(spaceCapacity)
+	for i, key := range labelsKey {
+		value := ls.MatchLabels[key]
 		if i != 0 {
 			sb.WriteRune(',')
 		}
 		sb.WriteString(key)
 		sb.WriteString("=")
 		sb.WriteString(value)
-		i += 1
 	}
 
 	for _, s := range ls.MatchSelector {

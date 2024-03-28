@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
-	"strconv"
 
 	"gopkg.in/yaml.v3"
 )
@@ -14,18 +13,10 @@ var (
 	ErrUnexpectedSpecType = fmt.Errorf("unexpected spec type")
 )
 
-// Type to represent an ID of a resource
-type ResourceID uint
-
-const InvalidResourceID ResourceID = 0
-
-func (r ResourceID) String() string {
-	return strconv.FormatInt(int64(r), 10)
-	// return string(r)
-}
-
+// Kind type to represent ID of a type that can be used as a spec in a manifest
 type Kind string
 
+// Registery of types that can be used in a manifest spec
 var metaKindRegistry = map[Kind]reflect.Type{}
 
 func RegisterKind(kind Kind, proto any) error {
@@ -96,7 +87,7 @@ type ObjectMeta struct {
 
 	// A sequence number representing a specific generation of the resource.
 	// Populated by the system. Read-only.
-	Version uint64 `form:"version" json:"version" yaml:"version" xml:"version" gorm:"default:1"`
+	Version Version `form:"version,omitempty" json:"version,omitempty" yaml:"version,omitempty" xml:"version,omitempty" gorm:"default:1"`
 
 	// Name is a unique human-readable identifier of a resource
 	Name string `json:"name" yaml:"name" binding:"required" gorm:"uniqueIndex"`
@@ -196,7 +187,7 @@ func (s *ResourceManifest) UnmarshalYAML(n *yaml.Node) (err error) {
 			s.Spec = nil
 			return nil
 		}
-		s.Spec = make(map[string]string)
+		s.Spec = make(map[string]any)
 	}
 
 	return obj.Spec.Decode(s.Spec)

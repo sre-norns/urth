@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/sre-norns/urth/pkg/bark"
 	"github.com/sre-norns/urth/pkg/wyrd"
 )
 
@@ -175,7 +176,7 @@ func (c *RestApiClient) delete(apiUrl *url.URL, version string) (*http.Response,
 
 func readApiError(resp *http.Response) error {
 	if resp.StatusCode >= 400 && resp.StatusCode < 500 {
-		errorResponse := &ErrorResponse{
+		errorResponse := &bark.ErrorResponse{
 			Code:    resp.StatusCode,
 			Message: resp.Status,
 		}
@@ -191,8 +192,8 @@ func readApiError(resp *http.Response) error {
 	return fmt.Errorf(resp.Status)
 }
 
-func (c *RestApiClient) deleteResource(uri string, version uint64) (bool, error) {
-	strVersion := strconv.FormatUint(version, 10)
+func (c *RestApiClient) deleteResource(uri string, version wyrd.Version) (bool, error) {
+	strVersion := version.String()
 	queryParams := url.Values{}
 	queryParams.Set("version", strVersion)
 
@@ -206,7 +207,7 @@ func (c *RestApiClient) deleteResource(uri string, version uint64) (bool, error)
 	return resp.StatusCode == http.StatusNoContent || resp.StatusCode == http.StatusOK, err
 }
 
-func (c *RestApiClient) listResources(uri string, searchQuery SearchQuery) ([]PartialObjectMetadata, error) {
+func (c *RestApiClient) listResources(uri string, searchQuery bark.SearchQuery) ([]PartialObjectMetadata, error) {
 	targetApi := urlForPath(c.baseUrl, uri, searchToQuery(searchQuery))
 	resp, err := c.get(targetApi)
 	if err != nil {
@@ -218,7 +219,7 @@ func (c *RestApiClient) listResources(uri string, searchQuery SearchQuery) ([]Pa
 		return nil, readApiError(resp)
 	}
 
-	var responseObject PaginatedResponse[PartialObjectMetadata]
+	var responseObject bark.PaginatedResponse[PartialObjectMetadata]
 	err = json.NewDecoder(resp.Body).Decode(&responseObject)
 	if err != nil {
 		return nil, err
@@ -300,7 +301,7 @@ func urlForPath(baseUrl *url.URL, apiPath string, query url.Values) *url.URL {
 	}
 }
 
-func searchToQuery(searchQuery SearchQuery) url.Values {
+func searchToQuery(searchQuery bark.SearchQuery) url.Values {
 	queryParams := url.Values{}
 	if searchQuery.Offset > 0 {
 		queryParams.Set("offset", strconv.FormatUint(uint64(searchQuery.Offset), 10))
@@ -308,8 +309,8 @@ func searchToQuery(searchQuery SearchQuery) url.Values {
 	if searchQuery.Limit > 0 {
 		queryParams.Set("limit", strconv.FormatUint(uint64(searchQuery.Limit), 10))
 	}
-	if len(searchQuery.Labels) > 0 {
-		queryParams.Set("labels", searchQuery.Labels)
+	if len(searchQuery.Filter) > 0 {
+		queryParams.Set("labels", searchQuery.Filter)
 	}
 
 	return queryParams
@@ -324,7 +325,7 @@ type runnersApiClient struct {
 }
 
 // List all resources matching given search query
-func (c *runnersApiClient) List(ctx context.Context, searchQuery SearchQuery) ([]PartialObjectMetadata, error) {
+func (c *runnersApiClient) List(ctx context.Context, searchQuery bark.SearchQuery) ([]PartialObjectMetadata, error) {
 	return c.listResources("v1/runners", searchQuery)
 }
 
@@ -340,18 +341,18 @@ func (c *runnersApiClient) Create(ctx context.Context, newEntry wyrd.ResourceMan
 	return c.createResource("v1/runners", &newEntry)
 }
 
-func (c *runnersApiClient) Delete(ctx context.Context, id VersionedResourceId) (bool, error) {
+func (c *runnersApiClient) Delete(ctx context.Context, id wyrd.VersionedResourceId) (bool, error) {
 	return c.deleteResource(fmt.Sprintf("v1/runners/%v", id.ID), id.Version)
 }
 
-func (c *runnersApiClient) Update(ctx context.Context, id VersionedResourceId, entry wyrd.ResourceManifest) (result PartialObjectMetadata, err error) {
+func (c *runnersApiClient) Update(ctx context.Context, id wyrd.VersionedResourceId, entry wyrd.ResourceManifest) (result PartialObjectMetadata, err error) {
 	data, err := json.Marshal(entry)
 	if err != nil {
 		return
 	}
 
 	queryParams := url.Values{}
-	queryParams.Set("version", strconv.FormatUint(id.Version, 10))
+	queryParams.Set("version", id.Version.String())
 
 	targetApi := urlForPath(c.baseUrl, fmt.Sprintf("v1/runners/%v", id), queryParams)
 	resp, err := c.put(targetApi,
@@ -406,7 +407,7 @@ type resultsApiRestClient struct {
 }
 
 // List all resources matching given search query
-func (c *resultsApiRestClient) List(ctx context.Context, searchQuery SearchQuery) ([]PartialObjectMetadata, error) {
+func (c *resultsApiRestClient) List(ctx context.Context, searchQuery bark.SearchQuery) ([]PartialObjectMetadata, error) {
 	return c.listResources(fmt.Sprintf("v1/scenarios/%v/results", c.ScenarioId), searchQuery)
 }
 
@@ -422,7 +423,7 @@ func (c *resultsApiRestClient) Create(ctx context.Context, newEntry wyrd.Resourc
 	return c.createResource(fmt.Sprintf("v1/scenarios/%v/results", c.ScenarioId), &newEntry)
 }
 
-func (c *resultsApiRestClient) Auth(ctx context.Context, id VersionedResourceId, authRequest AuthJobRequest) (AuthJobResponse, error) {
+func (c *resultsApiRestClient) Auth(ctx context.Context, id wyrd.VersionedResourceId, authRequest AuthJobRequest) (AuthJobResponse, error) {
 	var result AuthJobResponse
 	data, err := json.Marshal(authRequest)
 	if err != nil {
@@ -430,7 +431,7 @@ func (c *resultsApiRestClient) Auth(ctx context.Context, id VersionedResourceId,
 	}
 
 	queryParams := url.Values{}
-	queryParams.Set("version", strconv.FormatUint(id.Version, 10))
+	queryParams.Set("version", id.Version.String())
 
 	targetApi := urlForPath(c.baseUrl, fmt.Sprintf("v1/scenarios/%v/results/%v/auth", c.ScenarioId, id.ID), queryParams)
 	resp, err := c.post(targetApi,
@@ -453,15 +454,15 @@ func (c *resultsApiRestClient) Auth(ctx context.Context, id VersionedResourceId,
 	return result, err
 }
 
-func (c *resultsApiRestClient) Update(ctx context.Context, id VersionedResourceId, token ApiToken, runResults FinalRunResults) (CreatedResponse, error) {
-	var result CreatedResponse
+func (c *resultsApiRestClient) Update(ctx context.Context, id wyrd.VersionedResourceId, token ApiToken, runResults FinalRunResults) (bark.CreatedResponse, error) {
+	var result bark.CreatedResponse
 	data, err := json.Marshal(runResults)
 	if err != nil {
 		return result, err
 	}
 
 	queryParams := url.Values{}
-	queryParams.Set("version", strconv.FormatUint(id.Version, 10))
+	queryParams.Set("version", id.Version.String())
 
 	targetApi := urlForPath(c.baseUrl, fmt.Sprintf("v1/scenarios/%v/results/%v", c.ScenarioId, id.ID), queryParams)
 	resp, err := c.put(targetApi,
@@ -492,7 +493,7 @@ type artifactApiClient struct {
 	RestApiClient
 }
 
-func (c *artifactApiClient) List(ctx context.Context, searchQuery SearchQuery) ([]PartialObjectMetadata, error) {
+func (c *artifactApiClient) List(ctx context.Context, searchQuery bark.SearchQuery) ([]PartialObjectMetadata, error) {
 	return c.listResources("v1/artifacts", searchQuery)
 }
 
@@ -516,7 +517,7 @@ func (c *artifactApiClient) GetContent(ctx context.Context, id wyrd.ResourceID) 
 	return
 }
 
-func (c *artifactApiClient) Delete(ctx context.Context, id VersionedResourceId) (bool, error) {
+func (c *artifactApiClient) Delete(ctx context.Context, id wyrd.VersionedResourceId) (bool, error) {
 	return c.deleteResource(fmt.Sprintf("v1/artifacts/%v", id.ID), id.Version)
 }
 
@@ -528,7 +529,7 @@ type scenariosApiClient struct {
 	RestApiClient
 }
 
-func (c *scenariosApiClient) List(ctx context.Context, searchQuery SearchQuery) ([]PartialObjectMetadata, error) {
+func (c *scenariosApiClient) List(ctx context.Context, searchQuery bark.SearchQuery) ([]PartialObjectMetadata, error) {
 	return c.listResources("v1/scenarios", searchQuery)
 }
 
@@ -542,19 +543,19 @@ func (c *scenariosApiClient) Create(ctx context.Context, scenario wyrd.ResourceM
 }
 
 // Delete a single resource identified by a unique ID
-func (c *scenariosApiClient) Delete(ctx context.Context, id VersionedResourceId) (bool, error) {
+func (c *scenariosApiClient) Delete(ctx context.Context, id wyrd.VersionedResourceId) (bool, error) {
 	return c.deleteResource(fmt.Sprintf("v1/scenarios/%v", id.ID), id.Version)
 }
 
 // Update a single resource identified by a unique ID
-func (c *scenariosApiClient) Update(ctx context.Context, id VersionedResourceId, entry wyrd.ResourceManifest) (result PartialObjectMetadata, err error) {
+func (c *scenariosApiClient) Update(ctx context.Context, id wyrd.VersionedResourceId, entry wyrd.ResourceManifest) (result PartialObjectMetadata, err error) {
 	data, err := json.Marshal(entry)
 	if err != nil {
 		return
 	}
 
 	queryParams := url.Values{}
-	queryParams.Set("version", strconv.FormatUint(id.Version, 10))
+	queryParams.Set("version", id.Version.String())
 
 	targetApi := urlForPath(c.baseUrl, fmt.Sprintf("v1/scenarios/%v", id), queryParams)
 	resp, err := c.put(targetApi,
@@ -578,12 +579,12 @@ func (c *scenariosApiClient) Update(ctx context.Context, id VersionedResourceId,
 }
 
 // ClientAPI?
-func (c *scenariosApiClient) ListRunnable(ctx context.Context, query SearchQuery) ([]Scenario, error) {
+func (c *scenariosApiClient) ListRunnable(ctx context.Context, query bark.SearchQuery) ([]Scenario, error) {
 	return nil, nil
 }
 
-func (c *scenariosApiClient) UpdateScript(ctx context.Context, id VersionedResourceId, prob ProbManifest) (CreatedResponse, bool, error) {
-	return CreatedResponse{}, false, nil
+func (c *scenariosApiClient) UpdateScript(ctx context.Context, id wyrd.VersionedResourceId, prob ProbManifest) (bark.CreatedResponse, bool, error) {
+	return bark.CreatedResponse{}, false, nil
 }
 
 // --------
@@ -595,7 +596,7 @@ type LabelsApiClient struct {
 }
 
 // List all resources matching given search query
-func (c *LabelsApiClient) List(ctx context.Context, searchQuery SearchQuery) ([]ResourceLabel, error) {
+func (c *LabelsApiClient) List(ctx context.Context, searchQuery bark.SearchQuery) ([]ResourceLabel, error) {
 	targetApi := urlForPath(c.baseUrl, "v1/labels", searchToQuery(searchQuery))
 	resp, err := c.get(targetApi)
 	if err != nil {
@@ -607,7 +608,7 @@ func (c *LabelsApiClient) List(ctx context.Context, searchQuery SearchQuery) ([]
 		return nil, readApiError(resp)
 	}
 
-	var responseObject PaginatedResponse[ResourceLabel]
+	var responseObject bark.PaginatedResponse[ResourceLabel]
 	err = json.NewDecoder(resp.Body).Decode(&responseObject)
 	if err != nil {
 		return nil, err

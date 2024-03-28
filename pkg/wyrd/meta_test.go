@@ -78,9 +78,8 @@ func TestManifestUnmarshaling_JSON(t *testing.T) {
 		expectError bool
 	}{
 		"nothing": {
-			given:       `{"metadata":{"name":""}}`,
-			expect:      wyrd.ResourceManifest{},
-			expectError: false,
+			given:  `{"metadata":{"name":""}}`,
+			expect: wyrd.ResourceManifest{},
 		},
 		"unknown-kind": {
 			given: `{"kind":"unknownSpec", "metadata":{"name":""},"spec":{"field":"xyz","desc":"unknown"}}`,
@@ -89,9 +88,8 @@ func TestManifestUnmarshaling_JSON(t *testing.T) {
 					Kind: wyrd.Kind("unknownSpec"),
 				},
 				Metadata: wyrd.ObjectMeta{},
-				Spec:     json.RawMessage(`{"field":"xyz","desc":"unknown"}`),
+				Spec:     map[string]any{"field": "xyz", "desc": "unknown"},
 			},
-			expectError: false,
 		},
 		"min-spec": {
 			expect: wyrd.ResourceManifest{
@@ -241,8 +239,8 @@ spec:
 				TypeMeta: wyrd.TypeMeta{
 					Kind: wyrd.Kind("unknownSpec"),
 				},
-				Spec: map[string]string{
-					"value": "1",
+				Spec: map[string]any{
+					"value": 1,
 					"name":  "life",
 				},
 			},
