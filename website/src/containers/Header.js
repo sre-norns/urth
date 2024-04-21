@@ -8,6 +8,8 @@ import NavLink from '../components/NavLink.js'
 import Nav from '../components/Nav.js'
 import NavRowContainer from '../components/NavRowContainer.js'
 import TextInput from '../components/TextInput.js'
+import Button from '../components/Button.js'
+import {routed} from '../utils/routing.js'
 
 const onNonClick = (e) => {
   e.preventDefault()
@@ -16,6 +18,15 @@ const onNonClick = (e) => {
 const SearchInput = styled(TextInput)`
   flex-grow: 1;
 `
+
+const IconButtonLink = routed(
+  styled(Button)`
+    //padding: 1px 5px;
+    i {
+      padding: 0 4px;
+    }
+  `.withComponent('a')
+)
 
 const Header = () => {
   // const secondLevel = true
@@ -54,6 +65,9 @@ const Header = () => {
                     All
                   </NavLink>
                   <SearchInput placeholder="Search" />
+                  <IconButtonLink href="/scenarios/new/edit" size="small" color="secondary">
+                    <i className="fi fi-plus"></i>
+                  </IconButtonLink>
                 </NavRow>
               </NavRowContainer>
             )}

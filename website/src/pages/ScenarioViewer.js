@@ -3,7 +3,14 @@ import PropTypes from 'prop-types'
 import styled from '@emotion/styled'
 import {useLocation} from 'wouter'
 import {useDispatch, useSelector} from 'react-redux'
+import {useTrackedState, useTracker} from '../utils/tracking.js'
+import {validateMaxLength, validateNotEmpty} from '../utils/validators.js'
+import {routed} from '../utils/routing.js'
+import {isEmpty} from '../utils/objects.js'
 import fetchScenario from '../actions/fetchScenario.js'
+import createScenario from '../actions/createScenario.js'
+import updateScenario from '../actions/updateScenario.js'
+import deleteScenario from '../actions/deleteScenario.js'
 import ErrorInlay from '../components/ErrorInlay.js'
 import SpinnerInlay from '../components/SpinnerInlay.js'
 import Panel from '../components/Panel.js'
@@ -12,16 +19,12 @@ import FormGroup from '../components/FormGroup.js'
 import FormLabel from '../components/FormLabel.js'
 import FormControl from '../components/FormControl.js'
 import FormGroupError from '../components/FormGroupError.js'
-import {validateMaxLength, validateNotEmpty} from '../utils/validators.js'
 import Button from '../components/Button.js'
-import {routed} from '../utils/routing.js'
-import updateScenario from '../actions/updateScenario.js'
 import ObjectCapsules from '../components/ObjectCapsules.js'
 import FormSwitch from '../components/FormSwitch.js'
-import {useTrackedState, useTracker} from '../utils/tracking.js'
-import {isEmpty} from '../utils/objects.js'
 import FormPropertiesEditor from '../components/FormPropertiesEditor.js'
 import Label from '../components/Label.js'
+import PanelSplitter from '../components/PanelSplitter.js'
 
 const PageContainer = styled.div`
   width: 100%;
@@ -86,6 +89,17 @@ const HorizontalLabel = styled(FormLabel)`
   flex-grow: 1;
 `
 
+const DeleteButtonContainer = styled.div`
+  display: flex;
+  flex-direction: row-reverse;
+`
+
+const DeleteButton = styled(Button)`
+  i {
+    padding: 0 0.5rem 0 0;
+  }
+`
+
 const validateName = (...args) => validateNotEmpty(...args) || validateMaxLength(32)(...args)
 
 const validateDescription = validateMaxLength(128)
@@ -104,18 +118,21 @@ const ScenarioViewer = ({scenarioId, edit = false}) => {
   const [description, setDescription] = useTrackedState(tracker, '')
   const [active, setActive] = useTrackedState(tracker, false)
 
-  const {id, fetching, updating, response, error} = useSelector((s) => s.scenario)
+  const {id, fetching, creating, updating, deleting, response, error} = useSelector((s) => s.scenario)
   const dispatch = useDispatch()
 
-  const handleResponse = useCallback((response) => {
-    if (response) {
-      setName(response.metadata.name)
-      setLabels(response.metadata.labels || {})
-      setDescription(response.spec.description)
-      setActive(response.spec.active)
-      tracker.reset()
-    }
-  }, [])
+  const handleResponse = useCallback(
+    (response) => {
+      if (response && response.metadata.uid === parseInt(scenarioId)) {
+        setName(response.metadata.name)
+        setLabels(response.metadata.labels || {})
+        setDescription(response.spec.description)
+        setActive(response.spec.active)
+        tracker.reset()
+      }
+    },
+    [scenarioId]
+  )
 
   const handleValidated = useCallback((isValid) => {
     setIsValid(isValid)
@@ -134,38 +151,63 @@ const ScenarioViewer = ({scenarioId, edit = false}) => {
   }, [])
 
   const handleCancel = useCallback(() => {
-    handleResponse(response)
-    setLocation(`/scenarios/${scenarioId}`, {replace: true})
-  }, [response])
+    if (isNew) {
+      setLocation('/scenarios')
+    } else {
+      handleResponse(response)
+      setLocation(`/scenarios/${scenarioId}`, {replace: true})
+    }
+  }, [isNew, response])
 
   const handleSave = useCallback(() => {
     if (!formRef.current || !formRef.current.validate()) {
       return
     }
 
-    dispatch(
-      updateScenario(
-        scenarioId,
-        response.metadata.version,
-        {
-          // kind: response.kind,
-          metadata: {
-            name,
-            labels,
+    if (isNew) {
+      dispatch(
+        createScenario(
+          {
+            metadata: {
+              name,
+              labels,
+            },
+            spec: {
+              description,
+              active,
+            },
           },
-          spec: {
-            ...response.spec,
-            description,
-            active,
-            // requirements: response.spec.requirements,
-            // active: response.spec.active,
-            // prob: response.spec.prob,
-          },
-        },
-        () => setLocation(`/scenarios/${scenarioId}`, {replace: true})
+          (id) => {
+            setIsNew(false)
+            setLocation(`/scenarios/${id}`, {replace: true})
+          }
+        )
       )
-    )
-  }, [name, labels, description, active])
+    } else {
+      dispatch(
+        updateScenario(
+          scenarioId,
+          response.metadata.version,
+          {
+            // kind: response.kind,
+            metadata: {
+              name,
+              labels,
+            },
+            spec: {
+              ...response.spec,
+              description,
+              active,
+              // requirements: response.spec.requirements,
+              // active: response.spec.active,
+              // prob: response.spec.prob,
+            },
+          },
+          () => setLocation(`/scenarios/${scenarioId}`, {replace: true})
+        )
+      )
+    }
+  }, [isNew, name, labels, description, active, response])
 
   const handleSubmit = useCallback(
     (e) => {
@@ -177,9 +219,20 @@ const ScenarioViewer = ({scenarioId, edit = false}) => {
     [edit, handleSave]
   )
 
+  const handleDelete = useCallback(() => {
+    if (confirm('Are you sure you want to delete this scenario?')) {
+      dispatch(deleteScenario(scenarioId, response.metadata.version, () => setLocation('/scenarios')))
+    }
+  }, [scenarioId, response])
+
   React.useEffect(() => {
     if (scenarioId === 'new') {
       setIsNew(true)
+      setName('')
+      setLabels({})
+      setDescription('')
+      setActive(false)
+      tracker.reset()
     } else {
       dispatch(fetchScenario(scenarioId))
     }
@@ -197,11 +250,11 @@ const ScenarioViewer = ({scenarioId, edit = false}) => {
     return <ErrorInlay message="Error" details={error.message || ''} />
   }
 
-  if (fetching || updating) {
+  if (fetching || creating || updating || deleting) {
     return <SpinnerInlay />
   }
 
-  const title = edit ? (isNew ? 'New Scenario' : `Edit Scenario`) : name
+  const title = edit ? (isNew ? 'New Scenario' : name) : name
 
   return (
     <PageContainer>
@@ -225,7 +278,7 @@ const ScenarioViewer = ({scenarioId, edit = false}) => {
           )}
         </HeaderPanel>
         <PageForm ref={formRef} onSubmit={handleSubmit} onValidated={handleValidated}>
-          {edit && (
+          {edit && isNew && (
             <FormGroup controlId="scenario-name" onValidate={validateName}>
               <FormLabel required>Name</FormLabel>
               <FormControl type="text" value={name} onChange={handleNameChange} />
@@ -241,7 +294,7 @@ const ScenarioViewer = ({scenarioId, edit = false}) => {
               </>
             )) || <div>{description}</div>}
           </FormGroup>
-          {!edit && !isEmpty(response.metadata.labels) && (
+          {!edit && !isEmpty(response?.metadata?.labels) && (
             <FormGroup controlId="scenario-labels">
               <FormLabel>Labels</FormLabel>
               <ObjectCapsules value={response.metadata.labels} />
@@ -258,6 +311,16 @@ const ScenarioViewer = ({scenarioId, edit = false}) => {
             <FormSwitch checked={active} readOnly={!edit} onClick={(edit && handleActiveClick) || null} />
           </HorizontalFormGroup>
         </PageForm>
+        {edit && !isNew && (
+          <>
+            <PanelSplitter level={2} />
+            <DeleteButtonContainer>
+              <DeleteButton onClick={handleDelete} color="error">
+                <i className="fi fi-trash"></i> Delete
+              </DeleteButton>
+            </DeleteButtonContainer>
+          </>
+        )}
       </PagePanel>
     </PageContainer>
   )

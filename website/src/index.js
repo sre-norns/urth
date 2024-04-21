@@ -12,9 +12,9 @@ import App from './App.js'
 const container = document.getElementById('app')
 const root = createRoot(container)
 root.render(
-  <React.StrictMode>
-    <Provider store={store}>
-      <App />
-    </Provider>
-  </React.StrictMode>
+  // <React.StrictMode>
+  <Provider store={store}>
+    <App />
+  </Provider>
+  // </React.StrictMode>
 )

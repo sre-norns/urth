@@ -1,10 +1,11 @@
 import ActionType from '../actions/ActionType.js'
 
-
 const initialState = {
   id: '',
   fetching: false,
+  creating: false,
   updating: false,
+  deleting: false,
   response: '',
   error: null,
 }
@@ -21,16 +22,42 @@ export default (state = initialState, action) => {
       }
 
     case ActionType.SCENARIO_FETCHED:
-      return state.id !== action.id ? state : {
+      return state.id !== action.id
+        ? state
+        : {
+            ...state,
+            fetching: false,
+            response: action.response,
+          }
+
+    case ActionType.SCENARIO_FETCH_FAILED:
+      return state.id !== action.id
+        ? state
+        : {
+            ...state,
+            fetching: false,
+            error: action.error,
+          }
+
+    case ActionType.SCENARIO_CREATING:
+      return {
         ...state,
-        fetching: false,
+        creating: true,
+        error: null,
+      }
+
+    case ActionType.SCENARIO_CREATED:
+      return {
+        ...state,
+        creating: false,
+        id: action.id,
         response: action.response,
       }
 
-    case ActionType.SCENARIO_FETCH_FAILED:
-      return state.id !== action.id ? state : {
+    case ActionType.SCENARIO_CREATE_FAILED:
+      return {
         ...state,
-        fetching: false,
+        creating: false,
         error: action.error,
       }
 
@@ -43,18 +70,48 @@ export default (state = initialState, action) => {
       }
 
     case ActionType.SCENARIO_UPDATED:
-      return state.id !== action.id ? state : {
-        ...state,
-        updating: false,
-        response: action.response,
-      }
+      return state.id !== action.id
+        ? state
+        : {
+            ...state,
+            updating: false,
+            response: action.response,
+          }
 
     case ActionType.SCENARIO_UPDATE_FAILED:
-      return state.id !== action.id ? state : {
+      return state.id !== action.id
+        ? state
+        : {
+            ...state,
+            updating: false,
+            error: action.error,
+          }
+
+    case ActionType.SCENARIO_DELETING:
+      return {
         ...state,
-        updating: false,
-        error: action.error,
+        id: action.id,
+        deleting: true,
+        error: null,
       }
+
+    case ActionType.SCENARIO_DELETED:
+      return state.id !== action.id
+        ? state
+        : {
+            ...state,
+            deleting: false,
+            response: '',
+          }
+
+    case ActionType.SCENARIO_DELETE_FAILED:
+      return state.id !== action.id
+        ? state
+        : {
+            ...state,
+            deleting: false,
+            error: action.error,
+          }
 
     default:
       return state

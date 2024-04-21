@@ -4,14 +4,13 @@ import styled from '@emotion/styled'
 import Capsule from './Capsule.js'
 import {cyrb53} from '../utils/hash.js'
 
-
 const colors = ['primary', 'secondary', 'error', 'success', 'warning', 'neutral']
 
 const ObjectCapsulesContainer = styled.div`
   display: flex;
   flex-direction: row;
   flex-wrap: wrap;
-  gap: .25rem .5rem;
+  gap: 0.25rem 0.5rem;
 `
 
 const ObjectCapsules = forwardRef(({value, onCapsuleClick, ...props}, ref) => {
@@ -30,7 +29,7 @@ const ObjectCapsules = forwardRef(({value, onCapsuleClick, ...props}, ref) => {
 
   return (
     <ObjectCapsulesContainer {...props} ref={ref}>
-      { Object.entries(value || {}).map(([name, value], i) =>
+      {Object.entries(value || {}).map(([name, value], i) => (
         <Capsule
           key={name}
           name={name}
@@ -39,13 +38,13 @@ const ObjectCapsules = forwardRef(({value, onCapsuleClick, ...props}, ref) => {
           href="#"
           onClick={clickHandlers[name]}
         />
-      )}
+      ))}
     </ObjectCapsulesContainer>
   )
 })
 
 ObjectCapsules.propTypes = {
-  value: PropTypes.object.isRequired,
+  value: PropTypes.object,
   onCapsuleClick: PropTypes.func,
 }
 
