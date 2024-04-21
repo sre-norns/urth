@@ -13,8 +13,8 @@ const RagIndicator = styled.span`
   //position: relative;
   //top: .125em;
   display: inline-block;
-  width: .75em;
-  height: .75em;
+  width: 0.75em;
+  height: 0.75em;
   border-radius: 50%;
   background-color: ${backgroundColor};
   box-shadow: 0 0 1px 2px ${backgroundColor};

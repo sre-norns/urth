@@ -4,10 +4,14 @@ import styled from '@emotion/styled'
 
 const minHeight = (props) => {
   switch (props.size) {
-    case 'small': return '32px'
-    case 'medium': return '48px'
-    case 'large': return '64px'
-    default: return 'unset'
+    case 'small':
+      return '32px'
+    case 'medium':
+      return '48px'
+    case 'large':
+      return '64px'
+    default:
+      return 'unset'
   }
 }
 

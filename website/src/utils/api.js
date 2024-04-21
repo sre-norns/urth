@@ -24,15 +24,16 @@ const createRequestInit = (method, data) => {
     referrerPolicy: 'no-referrer',
   }
 
-  return typeof data !== 'undefined' ?
-    {
-      ...requestInit,
-      headers: {
-        ...requestInit.headers,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(data),
-    } : requestInit
+  return typeof data !== 'undefined'
+    ? {
+        ...requestInit,
+        headers: {
+          ...requestInit.headers,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
+      }
+    : requestInit
 }
 
 const readJson = async (response) => {

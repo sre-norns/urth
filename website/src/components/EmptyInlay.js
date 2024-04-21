@@ -1,6 +1,6 @@
-import React from "react";
+import React from 'react'
 import styled from '@emotion/styled'
-import Empty from "./Empty.js"
+import Empty from './Empty.js'
 
 const Container = styled.div`
   display: flex;
@@ -11,7 +11,7 @@ const Container = styled.div`
 
 const EmptyInlay = () => (
   <Container>
-    <Empty/>
+    <Empty />
   </Container>
 )
 

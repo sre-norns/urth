@@ -39,7 +39,7 @@ const TextInput = styled.input`
   background-color: ${backgroundColor};
   border: ${border};
   border-radius: 0.5rem;
-  
+
   ::placeholder {
     color: ${textColor};
   }

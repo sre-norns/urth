@@ -8,17 +8,25 @@ const tintedBackgroundColor = (props, state) => {
   const _color = color(props)
   if (props.theme.dark) {
     switch (state) {
-      case 'hover': return _color[300]
-      case 'active': return _color[500]
-      case 'disabled': return _color[800]
-      default: return _color[400]
+      case 'hover':
+        return _color[300]
+      case 'active':
+        return _color[500]
+      case 'disabled':
+        return _color[800]
+      default:
+        return _color[400]
     }
   } else {
     switch (state) {
-      case 'hover': return _color[600]
-      case 'active': return _color[700]
-      case 'disabled': return _color[200]
-      default: return _color[500]
+      case 'hover':
+        return _color[600]
+      case 'active':
+        return _color[700]
+      case 'disabled':
+        return _color[200]
+      default:
+        return _color[500]
     }
   }
 }
@@ -28,26 +36,38 @@ const invertedBackgroundColor = (props, state) => {
   const _background = props.theme.shade.background
   if (props.theme.dark) {
     switch (state) {
-      case 'hover': return _color[950]
-      case 'active': return _color[900]
-      case 'disabled': return _background
-      default: return _background
-      }
+      case 'hover':
+        return _color[950]
+      case 'active':
+        return _color[900]
+      case 'disabled':
+        return _background
+      default:
+        return _background
+    }
   } else {
     switch (state) {
-      case 'hover': return _color[50]
-      case 'active': return _color[100]
-      case 'disabled': return _background
-      default: return _background
-      }
+      case 'hover':
+        return _color[50]
+      case 'active':
+        return _color[100]
+      case 'disabled':
+        return _background
+      default:
+        return _background
+    }
   }
 }
 
 const tintedTextColor = (props, state) => {
   const _color = color(props)
-  return props.theme.dark ?
-    (state === 'disabled' ? _color[100] : _color[950]) :
-    (state === 'disabled' ? _color[700] : _color[50])
+  return props.theme.dark
+    ? state === 'disabled'
+      ? _color[100]
+      : _color[950]
+    : state === 'disabled'
+      ? _color[700]
+      : _color[50]
 }
 
 const invertedTextColor = (props, state) => {
@@ -61,11 +81,11 @@ const tintedBorder = (props, state) => {
 }
 
 const NameSpan = styled.span`
-  padding: 0 .25rem 0 .5rem;
+  padding: 0 0.25rem 0 0.5rem;
 `
 
 const ValueSpan = styled.span`
-  padding: 0 .5rem 0 .25rem;
+  padding: 0 0.5rem 0 0.25rem;
 `
 
 const CapsuleHref = styled.a`
@@ -77,37 +97,37 @@ const CapsuleHref = styled.a`
   border-radius: 0.75rem;
   margin: 1px 0;
   overflow: hidden;
-  
+
   ${NameSpan} {
     color: ${tintedTextColor};
   }
-  
+
   ${ValueSpan} {
     background-color: ${invertedBackgroundColor};
     color: ${invertedTextColor};
   }
-  
+
   &:hover {
-    border: ${props => tintedBorder(props, 'hover')};
-    
+    border: ${(props) => tintedBorder(props, 'hover')};
+
     ${NameSpan} {
-      background-color: ${props => tintedBackgroundColor(props, 'hover')};
+      background-color: ${(props) => tintedBackgroundColor(props, 'hover')};
     }
-    
+
     ${ValueSpan} {
-      background-color: ${props => invertedBackgroundColor(props, 'hover')};
+      background-color: ${(props) => invertedBackgroundColor(props, 'hover')};
     }
   }
-  
+
   &:active {
-    border: ${props => tintedBorder(props, 'active')};
-    
+    border: ${(props) => tintedBorder(props, 'active')};
+
     ${NameSpan} {
-      background-color: ${props => tintedBackgroundColor(props, 'active')};
+      background-color: ${(props) => tintedBackgroundColor(props, 'active')};
     }
-    
+
     ${ValueSpan} {
-      background-color: ${props => invertedBackgroundColor(props, 'active')};
+      background-color: ${(props) => invertedBackgroundColor(props, 'active')};
     }
   }
 `

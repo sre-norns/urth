@@ -1,6 +1,5 @@
 import ActionType from '../actions/ActionType.js'
 
-
 const initialState = {}
 
 export default (state = initialState, action) => {

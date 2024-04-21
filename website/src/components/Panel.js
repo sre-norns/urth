@@ -18,7 +18,7 @@ const backgroundColor = (props) => {
 }
 
 const Panel = styled.div`
-  border-radius: .5rem;
+  border-radius: 0.5rem;
   padding: 1rem;
   margin: 1rem;
   background-color: ${backgroundColor};
@@ -29,4 +29,3 @@ Panel.propTypes = {
 }
 
 export default Panel
-

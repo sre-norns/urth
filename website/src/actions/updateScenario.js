@@ -1,8 +1,7 @@
 import ActionType from './ActionType.js'
 import {apiPut} from '../utils/api.js'
 
-
-const updateScenario = (id, version, data, successCallback) => async dispatch => {
+const updateScenario = (id, version, data, successCallback) => async (dispatch) => {
   dispatch({type: ActionType.SCENARIO_UPDATING, id})
 
   try {

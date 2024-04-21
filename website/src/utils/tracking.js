@@ -1,5 +1,5 @@
-import { useState, useCallback } from 'react';
-import { deepEqual, isEmpty } from './objects.js';
+import {useState, useCallback} from 'react'
+import {deepEqual, isEmpty} from './objects.js'
 
 class Tracker {
   constructor() {

@@ -2,7 +2,6 @@ import React from 'react'
 import PropTypes from 'prop-types'
 import styled from '@emotion/styled'
 
-
 const baseColor = (props) => props.theme.color[props.baseColor || 'neutral']
 
 const errorColor = (props) => props.theme.color[props.errorColor || 'error']
@@ -31,10 +30,12 @@ const backgroundColor = (props, state) => {
 const borderColor = (props, state) => {
   const hasError = !!props.error
   const highlight = state === 'focus' || state === 'hover'
-  return hasError && errorColor(props) ||
-    state === 'focus' && focusColor(props) ||
-    state === 'hover' && hoverColor(props) ||
+  return (
+    (hasError && errorColor(props)) ||
+    (state === 'focus' && focusColor(props)) ||
+    (state === 'hover' && hoverColor(props)) ||
     baseColor(props)
+  )
 }
 
 const border = (props, state) => {
@@ -44,8 +45,7 @@ const border = (props, state) => {
 
 const focusShadowColor = (props) => {
   const hasError = !!props.error
-  return hasError && errorColor(props) ||
-    focusColor(props)
+  return (hasError && errorColor(props)) || focusColor(props)
 }
 
 const focusBoxShadow = (props) => {
@@ -64,18 +64,20 @@ const Input = styled.input`
   background-color: ${backgroundColor};
   border: ${border};
   border-radius: 0.5rem;
-  transition: border-color 0.125s ease-in-out, box-shadow 0.125s ease-in-out;
+  transition:
+    border-color 0.125s ease-in-out,
+    box-shadow 0.125s ease-in-out;
 
   ::placeholder {
-    color: ${props => textColor(props, 'placeholder')};
+    color: ${(props) => textColor(props, 'placeholder')};
   }
 
   &:hover {
-    border: ${props => border(props, 'hover')};
+    border: ${(props) => border(props, 'hover')};
   }
 
   &:focus {
-    border: ${props => border(props, 'focus')};
+    border: ${(props) => border(props, 'focus')};
     box-shadow: ${focusBoxShadow};
   }
 `

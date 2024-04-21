@@ -3,7 +3,7 @@ export const deepEqual = (a, b, seen = new Map()) => {
     return seen.get(a) === b
   }
 
-  seen.set(a, b);
+  seen.set(a, b)
 
   if (a instanceof Date && b instanceof Date) {
     return a.getTime() === b.getTime()
@@ -38,4 +38,3 @@ export const isEmpty = (obj) => {
   }
   return true
 }
-

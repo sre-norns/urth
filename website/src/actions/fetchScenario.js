@@ -1,8 +1,7 @@
 import ActionType from './ActionType.js'
 import {apiGet} from '../utils/api.js'
 
-
-const fetchScenario = (id) => async dispatch => {
+const fetchScenario = (id) => async (dispatch) => {
   dispatch({type: ActionType.SCENARIO_FETCHING, id})
 
   try {

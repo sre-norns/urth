@@ -4,7 +4,7 @@ import styled from '@emotion/styled'
 
 const color = (props) => props.theme.color[props.color || 'neutral']
 
-const levelToShadeIndex = (level) => !level ? 50 : 100 * level
+const levelToShadeIndex = (level) => (!level ? 50 : 100 * level)
 
 const textColor = (props) => {
   const _color = color(props)
@@ -20,10 +20,14 @@ const textColor = (props) => {
 
 const fontSize = (props) => {
   switch (props.size) {
-    case 'small': return '0.875rem'
-    case 'medium': return '1rem'
-    case 'large': return '1.25rem'
-    default: return 'unset'
+    case 'small':
+      return '0.875rem'
+    case 'medium':
+      return '1rem'
+    case 'large':
+      return '1.25rem'
+    default:
+      return 'unset'
   }
 }
 
@@ -31,10 +35,14 @@ const fontWeight = (props) => props.weight || 'unset'
 
 const lineHeight = (props) => {
   switch (props.size) {
-    case 'small': return '1.25rem'
-    case 'medium': return '1.5rem'
-    case 'large': return '1.75rem'
-    default: return 'unset'
+    case 'small':
+      return '1.25rem'
+    case 'medium':
+      return '1.5rem'
+    case 'large':
+      return '1.75rem'
+    default:
+      return 'unset'
   }
 }
 

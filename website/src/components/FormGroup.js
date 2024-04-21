@@ -4,7 +4,6 @@ import styled from '@emotion/styled'
 import FormContext from './FormContext.js'
 import FormGroupContext from './FormGroupContext.js'
 
-
 const FormGroupContainer = styled.div``
 
 class FormGroup extends Component {
@@ -18,7 +17,7 @@ class FormGroup extends Component {
         controlId: props.controlId,
         error: undefined,
         validate: this.onValidate,
-      }
+      },
     }
 
     this.value = undefined
@@ -46,21 +45,21 @@ class FormGroup extends Component {
         this.context.register(this.props.controlId, this.onForceValidate)
       }
 
-      this.setState(state => ({
+      this.setState((state) => ({
         context: {
           ...state.context,
           controlId: this.props.controlId,
-        }
+        },
       }))
     }
   }
 
   notifyValidated(value, error) {
-    this.setState(state => ({
+    this.setState((state) => ({
       context: {
         ...state.context,
         error,
-      }
+      },
     }))
 
     if (this.context && this.context.validated && this.props.controlId) {

@@ -1,5 +1,5 @@
 body {
-  font-family: "Roboto Flex Variable", sans-serif;
+  font-family: 'Roboto Flex Variable', sans-serif;
   font-size: 1rem;
   font-weight: 400;
   line-height: 1.5;
@@ -30,7 +30,12 @@ h6 {
   font-size: 1rem;
 }
 
-h1, h2, h3, h4, h5, h6 {
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
   font-weight: 700;
   line-height: 1.2;
   margin-bottom: 0.5rem;
@@ -40,7 +45,8 @@ html {
   height: 100%;
 }
 
-body, #app {
+body,
+#app {
   height: 100%;
 }
 

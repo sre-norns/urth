@@ -5,17 +5,9 @@ import {css} from '@emotion/react'
 import FormGroupContext from './FormGroupContext.js'
 import Label from './Label.js'
 
-
 const FormLabel = forwardRef(({htmlFor, required, ...props}, ref) => {
   const {controlId} = useContext(FormGroupContext)
-  return (
-    <Label
-      htmlFor={htmlFor || controlId}
-      required={required}
-      {...props}
-      ref={ref}
-    />
-  )
+  return <Label htmlFor={htmlFor || controlId} required={required} {...props} ref={ref} />
 })
 
 FormLabel.propTypes = {
