@@ -28,7 +28,7 @@ type ResourceMeta struct {
 	Version wyrd.Version `form:"version" json:"version" yaml:"version" xml:"version" gorm:"default:1"`
 
 	// Name is a human readable name of the resource used for display in UI
-	Name string `form:"name" json:"name" yaml:"name" xml:"name"  binding:"required" gorm:"uniqueIndex"`
+	Name string `form:"name" json:"name" yaml:"name" xml:"name"  binding:"required" gorm:"index"`
 
 	// Labels is map of string keys and values that can be used to organize and categorize
 	// (scope and select) resources.

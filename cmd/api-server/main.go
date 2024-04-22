@@ -707,6 +707,8 @@ func main() {
 		grace.ExitOrLog(fmt.Errorf("DB migration failed: %w", err))
 	}
 
+	addUniqueConstraintTrigger(db)
+
 	// Init service
 	store := dbstore.NewDbStore(db)
 	// scheduler, err := gqueue.NewScheduler(ctx, "test-local-321", "prob-request")
@@ -720,4 +722,21 @@ func main() {
 	router := apiRoutes(api)
 
 	grace.ExitOrLog(router.Run()) // listen and serve on 0.0.0.0:8080
+}
+
+func addUniqueConstraintTrigger(db *gorm.DB) {
+    triggerSQL := `
+    CREATE TRIGGER IF NOT EXISTS no_duplicate_names
+    BEFORE INSERT ON scenarios
+    FOR EACH ROW
+    WHEN EXISTS (
+        SELECT 1 FROM scenarios WHERE name = NEW.name AND deleted_at IS NULL
+    )
+    BEGIN
+        SELECT RAISE(FAIL, 'A scenario with this name already exists.');
+    END;
+    `
+    if err := db.Exec(triggerSQL).Error; err != nil {
+        grace.ExitOrLog(fmt.Errorf("failed to create trigger: %v", err))
+    }
 }
