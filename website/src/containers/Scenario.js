@@ -1,14 +1,14 @@
-import React, {useCallback} from 'react'
+import React, { useCallback } from 'react'
 import PropTypes from 'prop-types'
 import styled from '@emotion/styled'
-import {parseExpression} from 'cron-parser'
-import {Tooltip} from 'react-tooltip'
-import {useDispatch, useSelector} from 'react-redux'
+import { parseExpression } from 'cron-parser'
+import { Tooltip } from 'react-tooltip'
+import { useDispatch, useSelector } from 'react-redux'
 import OddContainer from '../components/OddContainer.js'
 import Capsule from '../components/Capsule.js'
 import RagIndicator from '../components/RagIndicator.js'
-import TextSpan, {TextDiv} from '../components/TextSpan.js'
-import {cyrb53} from '../utils/hash.js'
+import TextSpan, { TextDiv } from '../components/TextSpan.js'
+import { cyrb53 } from '../utils/hash.js'
 import Button from '../components/Button.js'
 import Link from '../components/Link.js'
 import runScenario from '../actions/runScenario.js'
@@ -51,14 +51,20 @@ const ScenarioCapsules = styled(ObjectCapsules)`
 
 const statusToColor = (status) => {
   switch (status) {
-    case 'success':
-      return 'success'
-    case 'failure':
-      return 'error'
-    case 'running':
-      return 'primary'
-    case 'pending':
+    case 'pending/':
       return 'warning'
+    case 'running/':
+      return 'primary'
+    case 'completed/success':
+      return 'success'
+    case 'completed/failure':
+      return 'error'
+    case 'completed/errored':
+      return 'error'
+    case 'completed/canceled':
+      return 'error'
+    case 'completed/timeout':
+      return 'error'
     default:
       return 'neutral'
   }
@@ -81,11 +87,14 @@ function scheduleBreakdown(expression) {
   }
 }
 
-const Scenario = ({data, odd}) => {
-  const {ID, name, labels} = data.metadata
-  const {active, description, schedule, prob} = data.spec
+const Scenario = ({ data, odd }) => {
+  const { uid, name, labels, spec, status } = data
+  const { active, description, schedule, prob } = spec
 
-  const lastRunStatus = 'unknown'
+  const lastRunStatus = status.results && status.results.length > 0
+    ? `${status.results[0].status.status}/${status.results[0].status.result}`
+    : 'unknown';
+
   const statusColor = statusToColor(lastRunStatus)
 
   const executable = !!prob?.kind
@@ -93,14 +102,14 @@ const Scenario = ({data, odd}) => {
   const stopDisabled = !(active && executable)
 
   const scenarioActions = useSelector((s) => s.scenarioActions)
-  const {fetching, response, error} = scenarioActions[ID] || {}
+  const { fetching, response, error } = scenarioActions[name] || {}
 
   const runSchedule = scheduleBreakdown(schedule)
   const dispatch = useDispatch()
 
   const requestRun = useCallback((event) => {
     event.preventDefault()
-    dispatch(runScenario(ID))
+    dispatch(runScenario(name))
   }, [])
 
   return (
@@ -123,8 +132,8 @@ const Scenario = ({data, odd}) => {
 
         <BodyContainer>
           <TextDiv size="medium" level={2} weight={500}>
-            <RagIndicator color={statusColor} style={{margin: '0 .5rem 0 2px'}} />
-            <Link href={`/scenarios/${ID}`}>{name}</Link>
+            <RagIndicator color={statusColor} style={{ margin: '0 .5rem 0 2px' }} />
+            <Link href={`/scenarios/${name}`}>{name}</Link>
           </TextDiv>
           <TextDiv size="small" level={4}>
             <TextSpan>Schedule: </TextSpan>
@@ -158,15 +167,19 @@ const Scenario = ({data, odd}) => {
 
 Scenario.propTypes = {
   data: PropTypes.shape({
-    kind: PropTypes.oneOf(['scenarios']).isRequired,
+    uid: PropTypes.oneOfType([PropTypes.number, PropTypes.string]).isRequired,
+    name: PropTypes.string.isRequired,
+    labels: PropTypes.any,
     metadata: PropTypes.shape({
-      ID: PropTypes.oneOfType([PropTypes.number, PropTypes.string]).isRequired,
-      name: PropTypes.string.isRequired,
-    }).isRequired,
+    }),
     spec: PropTypes.shape({
       description: PropTypes.string,
       active: PropTypes.bool,
       schedule: PropTypes.string,
+    }).isRequired,
+    status: PropTypes.shape({
+      nextScheduledRunTime: PropTypes.string,
+      results: PropTypes.arrayOf(PropTypes.any),
     }).isRequired,
   }).isRequired,
   odd: PropTypes.bool,

@@ -28,15 +28,14 @@ const (
 )
 
 type Spec struct {
-	FollowRedirects bool
-	Script          string
+	FollowRedirects bool   `json:"followRedirects,omitempty" yaml:"followRedirects,omitempty"`
+	Script          string `json:"script,omitempty" yaml:"script,omitempty"`
 }
 
 func init() {
-	moduleVersion := "(unknown)"
-	bi, ok := debug.ReadBuildInfo()
-	if ok {
-		moduleVersion = bi.Main.Version
+	moduleVersion := "unknown"
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		moduleVersion = strings.Trim(bi.Main.Version, "()")
 	}
 
 	// Ignore double registration error
@@ -153,7 +152,7 @@ func formatResponse(resp *http.Response) string {
 	return result.String()
 }
 
-func RunHttpRequests(ctx context.Context, logger *runner.RunLog, requests []httpparser.TestRequest, options runner.RunOptions) (urth.FinalRunResults, []urth.ArtifactSpec, error) {
+func RunHttpRequests(ctx context.Context, logger *runner.RunLog, requests []httpparser.TestRequest, options runner.RunOptions) (urth.ResultStatus, []urth.ArtifactSpec, error) {
 	harLogger := har.NewLogger()
 	harLogger.SetOption(har.BodyLogging(options.Http.CaptureResponseBody))
 	harLogger.SetOption(har.PostDataLogging(options.Http.CaptureRequestBody))
@@ -216,7 +215,7 @@ func RunHttpRequests(ctx context.Context, logger *runner.RunLog, requests []http
 		}, nil
 }
 
-func RunScript(ctx context.Context, probSpec any, logger *runner.RunLog, options runner.RunOptions) (urth.FinalRunResults, []urth.ArtifactSpec, error) {
+func RunScript(ctx context.Context, probSpec any, logger *runner.RunLog, options runner.RunOptions) (urth.ResultStatus, []urth.ArtifactSpec, error) {
 	prob, ok := probSpec.(*Spec)
 	if !ok {
 		return urth.NewRunResults(urth.RunFinishedError), logger.Package(), fmt.Errorf("%w: got %q, expected %q", wyrd.ErrUnexpectedSpecType, reflect.TypeOf(probSpec), reflect.TypeOf(&Spec{}))

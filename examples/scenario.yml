@@ -1,14 +1,14 @@
 apiVersion: v1
 kind: scenarios
 metadata:
-  name: basic-rest-prober-http
+  name: basic-rest-self-prober-http
   labels:
     app: web-prob
     function: front-end
 spec:
-  description: "Self-prob version using HTTP prober"
+  description: "HTTP prober checking api/version every 5 minutes"
   active: true
-  schedule: "* * * * *"
+  schedule: "@5minutes"
   requirements:
     matchLabels:
       os: "linux"

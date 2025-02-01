@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: runners
+metadata:
+  name: "example-runner-yaml"
+  labels: 
+    os: "linux"
+    cloud_self: aws
+spec:
+  active: true
+  description: "Mock Cloud runner"
+  requirements:
+    matchLabels:
+      cloud_req: "wha?"

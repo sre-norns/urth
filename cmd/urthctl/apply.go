@@ -3,37 +3,42 @@ package main
 import (
 	"fmt"
 
-	"github.com/sre-norns/urth/pkg/urth"
-	"github.com/sre-norns/urth/pkg/wyrd"
+	"github.com/sre-norns/wyrd/pkg/manifest"
 	"gopkg.in/yaml.v3"
 )
 
 type ApplyCmd struct {
-	Filename string `help:"Filename of a resource to apply to the API server" arg:"" name:"file"`
+	Filenames []string `help:"Manifest files(s) to apply changes to on the server" arg:"" name:"file"`
+
+	DryRun bool `help:"If true, don't apply changes but print what actions would have been taken"`
 }
 
 func (c *ApplyCmd) Run(cfg *commandContext) error {
-	content, _, err := readContent(c.Filename)
-	if err != nil {
-		return nil
-	}
-
-	// FIXME: Should be just a universal resource manifest file
-	var resourceSpec wyrd.ResourceManifest
-	if err := yaml.Unmarshal(content, &resourceSpec); err != nil {
-		return err
-	}
-
-	_, err = urth.NewRestApiClient(cfg.ApiServerAddress)
+	apiClient, err := cfg.NewClient()
 	if err != nil {
 		return fmt.Errorf("failed to initialize API Client: %w", err)
 	}
 
-	// WIP
-	// _, err = apiClient.ApplyObjectDefinition(cfg.Context, resourceSpec)
-	// if err != nil {
-	// 	return err
-	// }
+	for _, filename := range c.Filenames {
+		// TODO: Check stats for isDir!
+		content, fname, err := readContent(filename)
+		if err != nil {
+			return fmt.Errorf("failed read content from %q: %w", fname, err)
+		}
+
+		// FIXME: Should be just a universal resource manifest file
+		var resourceSpec manifest.ResourceManifest
+		if err := yaml.Unmarshal(content, &resourceSpec); err != nil {
+			return fmt.Errorf("client: %w", err)
+		}
+
+		if !c.DryRun {
+			_, _, err = apiClient.ApplyObjectDefinition(cfg.Context, resourceSpec)
+			if err != nil {
+				return fmt.Errorf("server: %w", err)
+			}
+		}
+	}
 
 	return nil
 }

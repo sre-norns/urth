@@ -1,11 +1,11 @@
 import ActionType from './ActionType.js'
-import {apiPost} from '../utils/api.js'
+import { apiPost } from '../utils/api.js'
 
-const runScenario = (id) => async (dispatch) => {
-  dispatch({type: ActionType.RUN_SCENARIO_FETCHING, id})
+const runScenario = (name) => async (dispatch) => {
+  dispatch({ type: ActionType.RUN_SCENARIO_FETCHING, name })
 
   try {
-    const response = await apiPost(`/api/v1/scenarios/${id}/results`, {
+    const response = await apiPost(`/api/v1/scenarios/${name}/results`, {
       metadata: {
         name: 'manual-',
         labels: {
@@ -17,13 +17,13 @@ const runScenario = (id) => async (dispatch) => {
 
     dispatch({
       type: ActionType.RUN_SCENARIO_FETCHED,
-      id,
+      name,
       response,
     })
   } catch (error) {
     dispatch({
       type: ActionType.RUN_SCENARIO_FETCH_FAILED,
-      id,
+      name,
       error,
     })
   }

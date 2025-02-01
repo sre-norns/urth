@@ -4,16 +4,18 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
+	"os/user"
 	"time"
 
 	"github.com/alecthomas/kong"
 	"github.com/hibiken/asynq"
 
-	"github.com/sre-norns/urth/pkg/grace"
 	"github.com/sre-norns/urth/pkg/redqueue"
 	"github.com/sre-norns/urth/pkg/runner"
 	"github.com/sre-norns/urth/pkg/urth"
-	"github.com/sre-norns/urth/pkg/wyrd"
+	"github.com/sre-norns/wyrd/pkg/grace"
+	"github.com/sre-norns/wyrd/pkg/manifest"
 
 	_ "github.com/sre-norns/urth/pkg/probers/har"
 	_ "github.com/sre-norns/urth/pkg/probers/http"
@@ -23,14 +25,15 @@ import (
 )
 
 type WorkerConfig struct {
-	runner.RunnerConfig
+	urth.ApiClientConfig `embed:"" prefix:"client."`
+	runner.RunnerConfig  `embed:"" `
 
 	RedisAddress           string        `help:"Redis server address:port to connect to" default:"localhost:6379"`
 	ApiRegistrationTimeout time.Duration `help:"Maximum time alloted for this worker to register with API server" default:"1m"`
+	Name                   string        `help:"Custom name for this worker" env:"WORKER_NAME"`
 
 	apiClient urth.Service
-
-	identity urth.Runner
+	identity  urth.Runner
 }
 
 // HandleWelcomeEmailTask handler for welcome email task.
@@ -45,32 +48,33 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 		return err // Note: job can be re-tried
 	}
 
-	timeout := w.Timeout
+	// FIXME: Check job.prob != nil
+	timeout := w.RunnerConfig.Timeout
 	if (job.Prob.Timeout != 0) && timeout > job.Prob.Timeout {
 		timeout = job.Prob.Timeout
 	}
 
-	runID := job.RunName
+	runID := job.ResultName
 	log.Print("jobID: ", runID)
 
 	// TODO: Check requirements!
 
-	resultsApiClient := w.apiClient.GetResultsAPI(job.ScenarioID.ID)
+	resultsApiClient := w.apiClient.GetResultsAPI(job.ScenarioName)
 	// Notify API-server that a job has been accepted by this worker
 	// FIXME: Worker must use its credentials jwt
 	// Authorize this worker to pick up this job:
 	log.Print("jobID: ", runID, " requesting authorization to execute")
-	runAuth, err := resultsApiClient.Auth(ctx, job.RunID, urth.AuthJobRequest{
+	runAuth, err := resultsApiClient.Auth(ctx, job.ResultName, urth.AuthJobRequest{
+		WorkerID: w.identity.Status.Instances[0].GetVersionedID(),
 		RunnerID: w.identity.GetVersionedID(),
 		Timeout:  timeout,
-		Labels: wyrd.MergeLabels(
-			w.LabelJob(w.identity.GetVersionedID(), job),
-			wyrd.Labels{
-				urth.LabelScenarioRunMessageId: messageId,
+		Labels: manifest.MergeLabels(
+			w.LabelJob(w.identity.Name, w.identity.GetVersionedID(), job),
+			manifest.Labels{
+				urth.LabelRunResultsMessageId: messageId,
 			},
 		),
 	})
-
 	if err != nil {
 		log.Printf("failed to register new run %q: %v", runID, err)
 		// TODO: Log and count metrics
@@ -90,7 +94,7 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 		Puppeteer: runner.PuppeteerOptions{
 			Headless:         true,
 			WorkingDirectory: w.WorkingDirectory,
-			TempDirPrefix:    job.RunName,
+			TempDirPrefix:    string(job.ResultName),
 			KeepTempDir:      job.IsKeepDirectory,
 		},
 	})
@@ -107,15 +111,17 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 		artifact := a
 		wg.Go(func() error {
 			// TODO: Must include run Auth Token
-			_, err := artifactsApiClient.Create(ctx, wyrd.ResourceManifest{
-				Metadata: wyrd.ObjectMeta{
-					Name: fmt.Sprintf("%v.%v", runID, artifact.Rel),
-					Labels: wyrd.MergeLabels(
-						w.LabelJob(w.identity.GetVersionedID(), job),
-						wyrd.Labels{
-							urth.LabelScenarioArtifactKind: artifact.Rel,          // Groups all artifacts produced by the content type: logs / HAR / etc
-							urth.LabelScenarioRunId:        job.RunID.ID.String(), // Groups all artifacts produced in the same run
-							urth.LabelScenarioRunMessageId: messageId,
+			_, err := artifactsApiClient.Create(ctx, manifest.ResourceManifest{
+				TypeMeta: manifest.TypeMeta{
+					Kind: urth.KindArtifact,
+				},
+				Metadata: manifest.ObjectMeta{
+					Name: manifest.ResourceName(fmt.Sprintf("%v.%v", runID, artifact.Rel)),
+					Labels: manifest.MergeLabels(
+						w.LabelJob(w.identity.Name, w.identity.GetVersionedID(), job),
+						manifest.Labels{
+							urth.LabelScenarioArtifactKind: artifact.Rel, // Groups all artifacts produced by the content type: logs / HAR / etc
+							urth.LabelRunResultsMessageId:  messageId,
 						},
 					),
 				},
@@ -133,13 +139,13 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 
 	// Notify API-server that the job has been complete
 	wg.Go(func() error {
-		created, err := resultsApiClient.Update(ctx, runAuth.VersionedResourceId, runAuth.Token, runResult)
+		created, err := resultsApiClient.Update(ctx, runAuth.VersionedResourceID, runAuth.Token, runResult)
 		if err != nil {
 			log.Printf("failed to post run results for %q: %v", runID, err)
 			return err // TODO: retry or not? Add results into the retry queue to post later?
 		}
 
-		log.Print("jobID: ", runID, ", resultID: ", created.VersionedResourceId)
+		log.Print("jobID: ", runID, ", resultID: ", created.VersionedResourceID)
 		return nil
 	})
 
@@ -148,60 +154,91 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 	return nil
 }
 
-var defaultConfig = WorkerConfig{
+var appConfig = WorkerConfig{
 	RunnerConfig: runner.NewDefaultConfig(),
 }
 
 func main() {
 	log.SetFlags(0)
 
-	appCtx := kong.Parse(&defaultConfig,
+	appCtx := kong.Parse(&appConfig,
 		kong.Name("runner"),
 		kong.Description("Urth async worker picks up jobs from and executes scripts, producing metrics and test artifacts"),
 	)
 
-	apiClient, err := urth.NewRestApiClient(defaultConfig.ApiServerAddress)
-	if err != nil {
-		log.Fatalf("Failed to initialize API Client: %v", err)
-		return
-	}
-	if apiClient == nil {
-		log.Fatalf("Initialize of API Client failed: unexpected `nil` value returned")
-		return
+	if appConfig.Token == "" {
+		grace.SuccessRequired(fmt.Errorf("no token provided"), "Auth token required")
 	}
 
-	defaultConfig.apiClient = apiClient
+	if appConfig.Name == "" {
+		if uname, err := user.Current(); err == nil && manifest.ValidateSubdomainName(uname.Name) == nil {
+			appConfig.Name = uname.Name
+		}
 
-	// Create a new task's mux instance.
-	mux := asynq.NewServeMux()
-	mux.HandleFunc(
-		urth.RunScenarioTopicName,           // task type
-		defaultConfig.handleRunScenarioTask, // handler function
-	)
+		if name, err := os.Hostname(); err == nil && manifest.ValidateSubdomainName(name) == nil {
+			if appConfig.Name != "" {
+				appConfig.Name += "."
+			}
 
-	regoCtx, cancel := context.WithTimeout(context.Background(), defaultConfig.ApiRegistrationTimeout)
+			appConfig.Name += name
+		}
+
+		if appConfig.Name == "" {
+			appConfig.Name = string(urth.NewRandToken(16))
+		}
+	}
+
+	apiClient, err := appConfig.NewClient()
+	grace.SuccessRequired(err, "Failed to initialize API Client")
+
+	appConfig.apiClient = apiClient
+
+	regoCtx, cancel := context.WithTimeout(context.Background(), appConfig.ApiRegistrationTimeout)
 	defer cancel()
 
-	defaultConfig.identity, err = apiClient.GetRunnerAPI().Auth(regoCtx, urth.ApiToken(defaultConfig.ApiToken), urth.RunnerRegistration{
-		IsOnline:       true,
-		InstanceLabels: defaultConfig.GetEffectiveLabels(),
-	})
-	if err != nil {
-		// TODO: Should be back-off and retry
-		appCtx.FatalIfErrorf(err)
-		return
+	// Request Auth to join the workers queue
+	identity, err := apiClient.GetRunnerAPI().Auth(regoCtx, appConfig.Token, urth.WorkerInstance{
+		ObjectMeta: manifest.ObjectMeta{
+			Name:   manifest.ResourceName(appConfig.Name),
+			Labels: appConfig.GetEffectiveLabels(),
+		},
+		Spec: urth.WorkerInstanceSpec{
+			IsActive:     false,
+			RequestedTTL: 0,
+		},
+	}.ToManifest())
+
+	// TODO: Should be back-off and retry ?
+	grace.SuccessRequired(err, "failed to Auth to the Runner API")
+
+	appConfig.identity, err = urth.NewRunner(identity)
+	grace.SuccessRequired(err, "Auth API returner unexpected type")
+
+	if len(appConfig.identity.Status.Instances) == 0 {
+		log.Fatal("returned Runner identity does not contain worker rego, abort")
 	}
-	log.Print("Registered with API server as: ", defaultConfig.identity.Name, "Id: ", defaultConfig.identity.GetVersionedID())
+
+	log.Print("Registered with API server as Runner: ", appConfig.identity.Name,
+		", Id: ", appConfig.identity.GetVersionedID(),
+	)
+	log.Printf("...Worker ID: %q, Name: %q", appConfig.identity.Status.Instances[0].GetVersionedID(), appConfig.identity.Status.Instances[0].Name)
 
 	// Create and configuring Redis connection.
 	redisConnection := asynq.RedisClientOpt{
-		Addr: defaultConfig.RedisAddress, // Redis server address
+		Addr: appConfig.RedisAddress, // Redis server address
 	}
 
 	// Create and Run Asynq worker server.
 	workerServer := asynq.NewServer(redisConnection, asynq.Config{
 		// BaseContext: func() context.Context { return mainContext },
 	})
+
+	// Create a new task's mux instance.
+	mux := asynq.NewServeMux()
+	mux.HandleFunc(
+		urth.RunScenarioTopicName,       // task type
+		appConfig.handleRunScenarioTask, // handler function
+	)
 
 	appCtx.FatalIfErrorf(workerServer.Run(mux))
 }

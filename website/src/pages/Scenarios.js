@@ -1,5 +1,5 @@
 import React from 'react'
-import {useDispatch, useSelector} from 'react-redux'
+import { useDispatch, useSelector } from 'react-redux'
 import styled from '@emotion/styled'
 import fetchScenarios from '../actions/fetchScenarios.js'
 import SpinnerInlay from '../components/SpinnerInlay.js'
@@ -17,7 +17,7 @@ const ScenariosContainer = styled.div`
 
 const Scenarios = () => {
   const dispatch = useDispatch()
-  const {fetching, response, error} = useSelector((s) => s.scenarios)
+  const { fetching, response, error } = useSelector((s) => s.scenarios)
 
   React.useEffect(() => {
     dispatch(fetchScenarios())
@@ -38,7 +38,7 @@ const Scenarios = () => {
   return (
     <ScenariosContainer>
       {response.data.map((s, i) => (
-        <Scenario key={s.metadata.ID} data={s} odd={i % 2 === 1} />
+        <Scenario key={s.uid} data={s} odd={i % 2 === 1} />
       ))}
     </ScenariosContainer>
   )

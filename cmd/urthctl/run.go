@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -12,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"gopkg.in/yaml.v3"
+	"github.com/sre-norns/wyrd/pkg/manifest"
 
 	"github.com/sre-norns/urth/pkg/probers/har"
 	"github.com/sre-norns/urth/pkg/probers/http"
@@ -22,14 +21,13 @@ import (
 
 	"github.com/sre-norns/urth/pkg/runner"
 	"github.com/sre-norns/urth/pkg/urth"
-	"github.com/sre-norns/urth/pkg/wyrd"
 )
 
 type RunCmd struct {
 	Files []string `arg:"" optional:"" name:"file" help:"A script file to execute" type:"existingfile" xor:"scenario"`
 	Kind  string   `help:"The type of the scenario to run. Will try to guess if not specified"`
 
-	ScenarioId wyrd.ResourceID `help:"Id of the scenario" name:"scenario" xor:"file"`
+	ScenarioId manifest.ResourceName `help:"Id of the scenario" name:"scenario" xor:"file"`
 
 	KeepTemp        bool `help:"If true, temporary work directory is kept after run is complete"`
 	SaveHAR         bool `help:"If true, save HAR recording of HTTP scripts if applicable"`
@@ -83,17 +81,17 @@ func readContent(filename string) ([]byte, string, error) {
 	if filename == "-" {
 		content, err := io.ReadAll(os.Stdin)
 		if err != nil {
-			return content, "", fmt.Errorf("failed to read content from STDIN: %w", err)
+			return content, "<stdin>", fmt.Errorf("failed to read content from STDIN: %w", err)
 		}
 
-		return content, "", err
+		return content, "<stdin>", err
 	}
 
 	content, err := os.ReadFile(filename)
 	return content, filepath.Ext(filename), err
 }
 
-func getScenarioProb(kind wyrd.Kind, scenarioSpec any) (urth.ProbManifest, error) {
+func getScenarioProb(kind manifest.Kind, scenarioSpec any) (urth.ProbManifest, error) {
 	if kind != urth.KindScenario {
 		return urth.ProbManifest{}, fmt.Errorf("non-runnable manifest file of kind %q", kind)
 	}
@@ -113,26 +111,11 @@ func jobFromFile(filename string, kindHint string) (urth.ProbManifest, error) {
 	}
 
 	if kindHint == "" {
-		switch ext {
-		case ".yaml", ".yml":
-			var scenario wyrd.ResourceManifest
-			err := yaml.Unmarshal(content, &scenario)
-			if err != nil {
-				return urth.ProbManifest{}, err
-			}
-
-			return getScenarioProb(scenario.Kind, scenario.Spec)
-		case ".json":
-			var scenario wyrd.ResourceManifest
-			err := json.Unmarshal(content, &scenario)
-			if err != nil {
-				return urth.ProbManifest{}, err
-			}
-
+		if scenario, ok, err := manifestFromFile(filename); err != nil {
+			return urth.ProbManifest{}, err
+		} else if ok {
 			return getScenarioProb(scenario.Kind, scenario.Spec)
 		}
-
-		// Fallthrough: Not a recognized format for scenario file
 	}
 
 	kind := urth.ProbKind(kindHint)
@@ -184,24 +167,26 @@ func jobFromFile(filename string, kindHint string) (urth.ProbManifest, error) {
 }
 
 func (c *RunCmd) Run(cfg *commandContext) error {
-	// Check that either scenarioID or files is specified but not both
-	if len(c.Files) == 0 && c.ScenarioId == wyrd.InvalidResourceID {
-		return fmt.Errorf("file or scenario ID must be provided")
-	}
-	if len(c.Files) != 0 && c.ScenarioId != wyrd.InvalidResourceID {
-		return fmt.Errorf("only file or scenario ID must be provided, but not both")
+	apiClient, err := cfg.NewClient()
+	if err != nil {
+		return fmt.Errorf("failed to initialize API Client: %w", err)
 	}
 
-	if c.ScenarioId != wyrd.InvalidResourceID {
-		resource, err := fetchScenario(cfg.Context, c.ScenarioId, cfg.ApiServerAddress)
+	// Check that either scenarioID or files is specified but not both
+	if len(c.Files) == 0 && c.ScenarioId == "" {
+		return fmt.Errorf("file or scenario Name must be provided")
+	}
+	if len(c.Files) != 0 && c.ScenarioId != "" {
+		return fmt.Errorf("only file or scenario Name must be provided, but not both")
+	}
+
+	if c.ScenarioId != "" {
+		resource, err := fetchScenario(cfg.Context, apiClient, c.ScenarioId)
 		if err != nil {
 			return err
 		}
-		prob, err := getScenarioProb(resource.Kind, resource.Spec)
-		if err != nil {
-			return err
-		}
-		return c.runScenario(cfg.Context, resource.Metadata.Name, prob, cfg.WorkingDirectory, cfg.Timeout)
+
+		return c.runScenario(cfg.Context, string(resource.Name), resource.Spec.Prob, cfg.WorkingDirectory, cfg.RunnerConfig.Timeout)
 	}
 
 	for _, filename := range c.Files {
@@ -210,7 +195,7 @@ func (c *RunCmd) Run(cfg *commandContext) error {
 			return err
 		}
 
-		if err := c.runScenario(cfg.Context, strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename)), prob, cfg.WorkingDirectory, cfg.Timeout); err != nil {
+		if err := c.runScenario(cfg.Context, strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename)), prob, cfg.WorkingDirectory, cfg.RunnerConfig.Timeout); err != nil {
 			return err
 		}
 	}

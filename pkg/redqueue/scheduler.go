@@ -14,11 +14,11 @@ const TaskType = urth.RunScenarioTopicName
 
 var ErrInvalidJobSpec = fmt.Errorf("job spec if nil")
 
-func UnmarshalJob(msg *asynq.Task) (urth.RunScenarioJob, error) {
+func UnmarshalJob(msg *asynq.Task) (urth.Job, error) {
 	return urth.UnmarshalJob(msg.Payload())
 }
 
-func MarshalJob(job urth.RunScenarioJob) (*asynq.Task, error) {
+func MarshalJob(job urth.Job) (*asynq.Task, error) {
 	data, err := urth.MarshalJob(job)
 	if err != nil {
 		return nil, err
@@ -51,9 +51,15 @@ func (s *asynqScheduler) Close() error {
 	return s.client.Close()
 }
 
-func (s *asynqScheduler) Schedule(ctx context.Context, job urth.RunScenarioJob) (urth.RunId, error) {
-	if job.Prob.Spec == nil {
+func (s *asynqScheduler) Schedule(ctx context.Context, result urth.Result, scenario urth.Scenario) (urth.RunId, error) {
+	if scenario.Spec.Prob.Spec == nil {
 		return urth.InvalidRunId, fmt.Errorf("can't schedule job: %w", ErrInvalidJobSpec)
+	}
+
+	job := urth.Job{
+		ResultName:   result.Name,
+		ScenarioName: scenario.Name,
+		Prob:         scenario.Spec.Prob,
 	}
 
 	task, err := MarshalJob(job)

@@ -7,6 +7,7 @@ import (
 	"net/netip"
 	"reflect"
 	"runtime/debug"
+	"strings"
 
 	"github.com/sre-norns/urth/pkg/runner"
 	"github.com/sre-norns/urth/pkg/urth"
@@ -19,9 +20,9 @@ const (
 )
 
 type Spec struct {
-	Net  string // tcp, tcp4, tcp6, udp, udp4, udp6...
-	Port string
-	Host string
+	Net  string `json:"net,omitempty" yaml:"net,omitempty"` // tcp, tcp4, tcp6, udp, udp4, udp6...
+	Port string `json:"port,omitempty" yaml:"port,omitempty"`
+	Host string `json:"host,omitempty" yaml:"host,omitempty"`
 }
 
 type TcpProbSpec1 struct {
@@ -32,10 +33,9 @@ type TcpProbSpec1 struct {
 }
 
 func init() {
-	moduleVersion := "(unknown)"
-	bi, ok := debug.ReadBuildInfo()
-	if ok {
-		moduleVersion = bi.Main.Version
+	moduleVersion := "unknown"
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		moduleVersion = strings.Trim(bi.Main.Version, "()")
 	}
 
 	// Ignore double registration error
@@ -50,7 +50,7 @@ func init() {
 	)
 }
 
-func RunScript(ctx context.Context, probSpec any, logger *runner.RunLog, options runner.RunOptions) (urth.FinalRunResults, []urth.ArtifactSpec, error) {
+func RunScript(ctx context.Context, probSpec any, logger *runner.RunLog, options runner.RunOptions) (urth.ResultStatus, []urth.ArtifactSpec, error) {
 	prob, ok := probSpec.(*Spec)
 	if !ok {
 		return urth.NewRunResults(urth.RunFinishedError), logger.Package(), fmt.Errorf("%w: got %q, expected %q", wyrd.ErrUnexpectedSpecType, reflect.TypeOf(probSpec), reflect.TypeOf(&Spec{}))

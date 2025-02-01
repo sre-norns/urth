@@ -6,13 +6,15 @@ import (
 
 // Well-know labels for scenarios
 const (
-	LabelScenarioId          = "scenario.id"
-	LabelScenarioVersionedId = "scenario.id.versioned"
-	LabelScenarioKind        = "scenario.kind"
+	LabelScenarioId      = "scenario.name"
+	LabelScenarioVersion = "scenario.version"
+	LabelScenarioKind    = "scenario.kind"
 
 	LabelScenarioArtifactKind = "artifact.kind"
-	LabelScenarioRunId        = "run.id"
-	LabelScenarioRunMessageId = "run.messageId"
+
+	LabelRunResultsName      = "run.name"
+	LabelRunResultsId        = "run.id"
+	LabelRunResultsMessageId = "run.messageId"
 )
 
 var kindToMimeMap = map[ProbKind]string{}

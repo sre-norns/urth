@@ -1,142 +1,60 @@
 package urth
 
 import (
+	"fmt"
 	"time"
 
-	"github.com/sre-norns/urth/pkg/wyrd"
-
+	"github.com/adhocore/gronx"
+	"github.com/sre-norns/wyrd/pkg/manifest"
 	"gorm.io/gorm"
 )
 
-// ApiToken is opaque datum used for auth purposes
-type ApiToken string
+var (
+	ErrResourceNameEmpty = fmt.Errorf("manifest %w", manifest.ErrNameIsEmpty)
+)
 
-type ResourceLabel struct {
-	Key   string
-	Value string
+// WorkerInstanceSpec defines details about an instance of worker active
+type WorkerInstanceSpec struct {
+	RunnerID manifest.ResourceID `json:"-" yaml:"-"`
+	// Runner is the 'class' that this worker is an instance of
+	Runner Runner `json:"-" yaml:"-" gorm:"foreignKey:RunnerID;references:UID"`
+
+	// IsActive is true if this worker is permitted to take on jobs
+	IsActive bool `form:"active" json:"active,omitempty" yaml:"active,omitempty" xml:"active"`
+
+	// RequestedTTL is the desired TTL value
+	RequestedTTL time.Duration `form:"requestedTTL,omitempty" json:"requestedTTL,omitempty" yaml:"requestedTTL,omitempty" xml:"requestedTTL,omitempty"`
 }
 
-// ResourceMeta represents common data for all resources managed by the service
-type ResourceMeta struct {
-	gorm.Model `json:",inline" yaml:",inline"`
-
-	// Unique system generated identified of the resource
-	// ID ResourceID `form:"id" json:"id" yaml:"id" xml:"id"`
-
-	// A sequence number representing a specific generation of the resource.
-	// Populated by the system. Read-only.
-	Version wyrd.Version `form:"version" json:"version" yaml:"version" xml:"version" gorm:"default:1"`
-
-	// Name is a human readable name of the resource used for display in UI
-	Name string `form:"name" json:"name" yaml:"name" xml:"name"  binding:"required" gorm:"index"`
-
-	// Labels is map of string keys and values that can be used to organize and categorize
-	// (scope and select) resources.
-	Labels wyrd.Labels `form:"labels,omitempty" json:"labels,omitempty" yaml:"labels,omitempty" xml:"labels,omitempty" gorm:"serializer:json"`
+type WorkerInstanceStatus struct {
+	TTL time.Duration `form:"ttl,omitempty" json:"ttl,omitempty" yaml:"ttl,omitempty" xml:"ttl,omitempty"`
 }
 
-func (meta *ResourceMeta) GetID() wyrd.ResourceID {
-	return wyrd.ResourceID(meta.ID)
-}
-
-func (meta *ResourceMeta) IsDeleted() bool {
-	return meta.DeletedAt.Valid
-}
-
-func (meta *ResourceMeta) GetVersionedID() wyrd.VersionedResourceId {
-	return wyrd.NewVersionedId(wyrd.ResourceID(meta.ID), meta.Version)
-}
-
-func (m *ResourceMeta) asObjectMeta() wyrd.ObjectMeta {
-	return wyrd.ObjectMeta{
-		UUID:    wyrd.ResourceID(m.ID),
-		Version: m.Version,
-		Name:    m.Name,
-		Labels:  m.Labels,
-	}
-}
-
-func (m *ResourceMeta) asPartialMetadata(kind wyrd.Kind, spec any) PartialObjectMetadata {
-	return PartialObjectMetadata{
-		TypeMeta:     wyrd.TypeMeta{Kind: kind},
-		ResourceMeta: *m,
-		Spec:         spec,
-	}
-}
-
-func (m *ResourceMeta) asResourceManifest(kind wyrd.Kind, spec any) wyrd.ResourceManifest {
-	return wyrd.ResourceManifest{
-		TypeMeta: wyrd.TypeMeta{Kind: kind},
-		Metadata: m.asObjectMeta(),
-		Spec:     spec,
-	}
-}
-
-func GetResourceMetadata(m wyrd.ResourceManifest) ResourceMeta {
-	return ResourceMeta{
-		// ID: m.Metadata.UUID,
-		Name:   m.Metadata.Name,
-		Labels: m.Metadata.Labels,
-	}
-}
-
-// PartialObjectMetadata is a common information about a managed resource without details of that resource.
-// TypeMeta represents info about the type of resource.
-// This Type is return by API that manage collection of resources.
-type PartialObjectMetadata struct {
-	wyrd.TypeMeta `json:",inline" yaml:",inline"`
-
-	// Standard resource's metadata.
-	ResourceMeta `json:"metadata,omitempty" yaml:"metadata,omitempty"`
-
-	Spec any `json:"spec,omitempty" yaml:"spec,omitempty"`
-}
-
-// RunnerDefinition holds information about a runner as supplied by the administrator to register one
-type RunnerDefinition struct {
+// RunnerSpec holds information about a runner as supplied by the administrator to register one
+type RunnerSpec struct {
 	// Description is a human readable text to describe intent behind this runner
 	Description string `form:"description" json:"description,omitempty" yaml:"description,omitempty" xml:"description,omitempty"`
 
 	// Requirements are optional to select sub-set of jobs this worker capable of taking
-	Requirements wyrd.LabelSelector `form:"requirements" json:"requirements,omitempty" yaml:"requirements,omitempty" xml:"requirements" gorm:"serializer:json"`
+	Requirements manifest.LabelSelector `form:"requirements" json:"requirements,omitempty" yaml:"requirements,omitempty" xml:"requirements" gorm:"serializer:json"`
 
 	// IsActive is true if this worker is permitted to take on jobs
 	IsActive bool `form:"active" json:"active" yaml:"active" xml:"active"`
+
+	// MaxInstances specifies maximum number of worker instance of this runner type. 0 means no limit
+	MaxInstances uint64 `json:"maxInstance,omitempty" yaml:"maxInstance,omitempty"`
 }
 
-// RunnerRegistration is information that owned and managed by the runner itself
-type RunnerRegistration struct {
-	// IsOnline is this runner is online and accepts jobs or is currently processing one
-	IsOnline bool `form:"online" json:"online" yaml:"online" xml:"online" binding:"required"`
+// RunnerStatus is information that owned and managed by the runner itself
+type RunnerStatus struct {
+	// Instances of this runner that are currently active
+	NumberInstances uint64 `json:"numberInstances,omitempty" yaml:"numberInstances,omitempty" gorm:"-"`
 
-	InstanceLabels wyrd.Labels `form:"runner_labels,omitempty" json:"runner_labels,omitempty" yaml:"runner_labels,omitempty" xml:"runner_labels,omitempty" gorm:"serializer:json"`
+	// Instances of this runner that are currently active
+	Instances []WorkerInstance `json:"activeInstances,omitempty" yaml:"activeInstances,omitempty" gorm:"foreignKey:RunnerID;references:UID"`
 }
 
-type RunnerSpec struct {
-	RunnerDefinition   `json:",inline" yaml:",inline"`
-	RunnerRegistration `json:",inline" yaml:",inline"`
-}
-
-// Runner is a resource manager by Urth service that represents
-// an instance of a worker capable to take on some probs job for execution
-type Runner struct {
-	ResourceMeta `json:",inline" yaml:",inline"`
-
-	RunnerSpec `json:",inline" yaml:",inline"`
-
-	IdToken ApiToken `form:"-" json:"-" yaml:"-" xml:"-"`
-}
-
-func (s *Runner) asPartialMetadata() PartialObjectMetadata {
-	return s.ResourceMeta.asPartialMetadata(wyrd.MustKnowKindOf(&s.RunnerDefinition), s.RunnerDefinition)
-}
-
-func (s *Runner) asResourceManifest() wyrd.ResourceManifest {
-	spec := s.RunnerDefinition
-	return s.ResourceMeta.asResourceManifest(wyrd.MustKnowKindOf(&s.RunnerDefinition), &spec)
-}
-
-// Type to represent cron-like schedule
+// CronSchedule is a type to represent cron-like schedule: "@daily" or "0 */5 * * * *"
 type CronSchedule string
 
 type ScenarioSpec struct {
@@ -144,7 +62,7 @@ type ScenarioSpec struct {
 	Description string `form:"description" json:"description,omitempty" yaml:"description,omitempty" xml:"description"`
 
 	// Requirements are optional to select sub-set of runners that are qualified to perform the script.
-	Requirements wyrd.LabelSelector `form:"requirements" json:"requirements,omitempty" yaml:"requirements,omitempty" xml:"requirements" gorm:"serializer:json"`
+	Requirements manifest.LabelSelector `form:"requirements" json:"requirements,omitempty" yaml:"requirements,omitempty" xml:"requirements" gorm:"serializer:json"`
 
 	// A schedule to run the script
 	RunSchedule CronSchedule `form:"schedule" json:"schedule,omitempty" yaml:"schedule,omitempty" xml:"schedule"`
@@ -154,27 +72,33 @@ type ScenarioSpec struct {
 
 	// Script is the actual test scenario that a qualified runner executes
 	Prob ProbManifest `form:"prob" json:"prob,omitempty" yaml:"prob,omitempty" xml:"prob" gorm:"serializer:json"`
+}
 
+// ComputeNextRun compute next point in time when a given Scenario can be scheduled to run
+func (s *ScenarioSpec) ComputeNextRun(now time.Time) *time.Time {
+	if s == nil || !s.IsActive || s.RunSchedule == "" {
+		return nil
+	}
+
+	nextTime, err := gronx.NextTickAfter(string(s.RunSchedule), now, true)
+	if err != nil {
+		return nil
+	}
+
+	return &nextTime
+}
+
+// ScenarioStatus represents system computed state of the scenario resource
+type ScenarioStatus struct {
 	// Computed fields
-	NextRun    *time.Time  `json:"nextScheduledRunTime,omitempty" yaml:"nextScheduledRunTime,omitempty" gorm:"-"`
-	LastResult *ResultSpec `json:"last_result,omitempty" yaml:"last_result,omitempty" gorm:"-"`
+	NextRun *time.Time `json:"nextScheduledRunTime,omitempty" yaml:"nextScheduledRunTime,omitempty" gorm:"-"`
+	Results []Result   `json:"results,omitempty" yaml:"results,omitempty" gorm:"foreignKey:ScenarioID"`
 }
 
-type Scenario struct {
-	ResourceMeta `json:",inline" yaml:",inline"`
-	ScenarioSpec `json:",inline" yaml:",inline"`
-}
-
-func (s *Scenario) asPartialMetadata() PartialObjectMetadata {
-	return s.ResourceMeta.asPartialMetadata(wyrd.MustKnowKindOf(&s.ScenarioSpec), s.ScenarioSpec)
-}
-
-func (s *Scenario) asResourceManifest() wyrd.ResourceManifest {
-	spec := s.ScenarioSpec
-	return s.ResourceMeta.asResourceManifest(wyrd.MustKnowKindOf(&s.ScenarioSpec), &spec)
-}
-
+// JobStatus represents a state of job: pending -> running -> completed | timeout | errored
 type JobStatus string
+
+// RunStatus represents the state of script execution once job has been successfully run
 type RunStatus string
 
 const (
@@ -190,12 +114,35 @@ const (
 	JobErrored JobStatus = "errored"
 
 	// A run completed with a status
+	RunNotFinished      RunStatus = ""
 	RunFinishedSuccess  RunStatus = "success"
 	RunFinishedFailed   RunStatus = "failed"
 	RunFinishedError    RunStatus = "errored"
 	RunFinishedCanceled RunStatus = "canceled"
 	RunFinishedTimeout  RunStatus = "timeout"
 )
+
+type ResultSpec struct {
+	ScenarioID manifest.ResourceID `json:"-" yaml:"-"`
+	Scenario   Scenario            `json:"-" yaml:"-" gorm:"foreignKey:ScenarioID;references:UID"`
+
+	// Timestamp when a job has been picked-up by a worked
+	TimeStarted *time.Time `form:"start_time" json:"start_time" yaml:"start_time" xml:"start_time" gorm:"type:TIMESTAMP NULL"`
+
+	// Timestamp when execution finished, if it finished
+	TimeEnded *time.Time `form:"end_time" json:"end_time" yaml:"end_time" xml:"end_time" time_format:"unix" gorm:"type:TIMESTAMP NULL"`
+}
+
+type ResultStatus struct {
+	// Status is the status of job in the job-scheduling life-cycle
+	Status JobStatus `form:"status" json:"status" yaml:"status" xml:"status"  binding:"required"`
+
+	// Result of the job execution, if job has been scheduled and finished one way or the other.
+	Result RunStatus `form:"result" json:"result" yaml:"result" xml:"result"  binding:"required"`
+
+	// Artifacts produced as a result of the job execution. Logs, traces, image, etc. depending on the nature of the Prob
+	Artifacts []Artifact `json:"artifacts,omitempty" yaml:"artifacts,omitempty" gorm:"foreignKey:UID"`
+}
 
 type ArtifactSpec struct {
 	// ExpireTime is a point in time after which the artifact can be removed by the system. If nil - artifact is 'pinned' and will not be purged, unless manually deleted.
@@ -211,45 +158,173 @@ type ArtifactSpec struct {
 	Content []byte `form:"content,omitempty" json:"content,omitempty" yaml:"content,omitempty" xml:"content,omitempty"`
 }
 
-// Artifact model. Artifacts are produced and published by a script runner,
+func (r Runner) ToManifest() manifest.ResourceManifest {
+	return manifest.ToManifestWithStatus(manifest.StatefulResource[RunnerSpec, RunnerStatus](r))
+}
+
+func (r Scenario) ToManifest() manifest.ResourceManifest {
+	return manifest.ToManifestWithStatus(manifest.StatefulResource[ScenarioSpec, ScenarioStatus](r))
+}
+
+func (r Artifact) ToManifest() manifest.ResourceManifest {
+	return manifest.ToManifest(manifest.ResourceModel[ArtifactSpec](r))
+}
+
+func (r Result) ToManifest() manifest.ResourceManifest {
+	return manifest.ToManifestWithStatus(manifest.StatefulResource[ResultSpec, ResultStatus](r))
+}
+
+func (r WorkerInstance) ToManifest() manifest.ResourceManifest {
+	return manifest.ToManifestWithStatus(manifest.StatefulResource[WorkerInstanceSpec, WorkerInstanceStatus](r))
+}
+
+const (
+	KindWorkerInstance manifest.Kind = "workerInstances"
+	KindRunner         manifest.Kind = "runners"
+	KindScenario       manifest.Kind = "scenarios"
+	KindResult         manifest.Kind = "results"
+	KindArtifact       manifest.Kind = "artifacts"
+)
+
+// WorkerInstance is an instance of Runner
+type WorkerInstance manifest.StatefulResource[WorkerInstanceSpec, WorkerInstanceStatus]
+
+// Runner is a manager resource that represents
+// an instance of a worker capable of execution some probing job
+type Runner manifest.StatefulResource[RunnerSpec, RunnerStatus]
+
+// Scenario is a manager resource that represents
+// an test case that can be executed and a history of such runs
+type Scenario manifest.StatefulResource[ScenarioSpec, ScenarioStatus]
+
+// Artifact model - produced and published by a runner,
 // as a result of scenario execution.
-type Artifact struct {
-	ResourceMeta `json:",inline" yaml:",inline"`
+type Artifact manifest.ResourceModel[ArtifactSpec]
 
-	ArtifactSpec `json:",inline" yaml:",inline"`
+// Result represents an outcome of a single execution of a given scenario
+type Result manifest.StatefulResource[ResultSpec, ResultStatus]
+
+func init() {
+	manifest.MustRegisterManifest(KindWorkerInstance, &WorkerInstanceSpec{}, &WorkerInstanceStatus{})
+	manifest.MustRegisterManifest(KindRunner, &RunnerSpec{}, &RunnerStatus{})
+	manifest.MustRegisterManifest(KindResult, &ResultSpec{}, &ResultStatus{})
+	manifest.MustRegisterManifest(KindScenario, &ScenarioSpec{}, &ScenarioStatus{})
+	manifest.MustRegisterKind(KindArtifact, &ArtifactSpec{})
 }
 
-func (s *Artifact) asPartialMetadata() PartialObjectMetadata {
-	return s.ResourceMeta.asPartialMetadata(wyrd.MustKnowKindOf(&s.ArtifactSpec), s.ArtifactSpec)
+func NewWorkerInstance(m manifest.ResourceManifest) (WorkerInstance, error) {
+	e, err := manifest.ManifestAsStatefulResource[WorkerInstanceSpec, WorkerInstanceStatus](m)
+	entry := WorkerInstance(e)
+	if err != nil {
+		err = fmt.Errorf("failed to convert resource manifest into a Runner model: %w", err)
+	}
+
+	// validate metadata
+	if entry.ObjectMeta.Name == "" {
+		return entry, ErrResourceNameEmpty
+	}
+
+	if err := entry.ObjectMeta.Validate(); err != nil {
+		return entry, err
+	}
+
+	return entry, err
 }
 
-func (s *Artifact) asResourceManifest() wyrd.ResourceManifest {
-	spec := s.ArtifactSpec
-	return s.ResourceMeta.asResourceManifest(wyrd.MustKnowKindOf(&s.ArtifactSpec), &spec)
+func NewRunner(m manifest.ResourceManifest) (Runner, error) {
+	e, err := manifest.ManifestAsStatefulResource[RunnerSpec, RunnerStatus](m)
+	entry := Runner(e)
+	if err != nil {
+		err = fmt.Errorf("failed to convert resource manifest into a Runner model: %w", err)
+	}
+
+	// validate metadata
+	if entry.ObjectMeta.Name == "" {
+		return entry, ErrResourceNameEmpty
+	}
+
+	if err := entry.ObjectMeta.Validate(); err != nil {
+		return entry, err
+	}
+
+	return entry, err
 }
 
-// Final results of the script run
-type FinalRunResults struct {
-	// Timestamp when execution finished, if it finished
-	TimeEnded *time.Time `form:"end_time" json:"end_time" yaml:"end_time" xml:"end_time" time_format:"unix" gorm:"type:TIMESTAMP NULL"`
+func NewResult(m manifest.ResourceManifest) (Result, error) {
+	e, err := manifest.ManifestAsStatefulResource[ResultSpec, ResultStatus](m)
+	entry := Result(e)
+	if err != nil {
+		err = fmt.Errorf("failed to convert resource manifest into a Result model: %w", err)
+	}
 
-	// Result is a status of the run
-	Result RunStatus `form:"result" json:"result" yaml:"result" xml:"result"  binding:"required"`
+	// validate metadata
+	if entry.ObjectMeta.Name == "" {
+		return entry, ErrResourceNameEmpty
+	}
+
+	if err := entry.ObjectMeta.Validate(); err != nil {
+		return entry, err
+	}
+
+	return entry, err
 }
 
-type RunResultOption func(value *FinalRunResults)
+func NewArtifact(m manifest.ResourceManifest) (Artifact, error) {
+	e, err := manifest.ManifestAsResource[ArtifactSpec](m)
+	entry := Artifact(e)
+	if err != nil {
+		err = fmt.Errorf("failed to convert resource manifest into an Artifact model: %w", err)
+	}
 
-func WithTime(value time.Time) RunResultOption {
-	return func(result *FinalRunResults) {
-		result.TimeEnded = &value
+	// validate metadata
+	if entry.ObjectMeta.Name == "" {
+		return entry, ErrResourceNameEmpty
+	}
+
+	if err := entry.ObjectMeta.Validate(); err != nil {
+		return entry, err
+	}
+
+	return entry, err
+}
+
+func NewScenario(m manifest.ResourceManifest) (Scenario, error) {
+	e, err := manifest.ManifestAsStatefulResource[ScenarioSpec, ScenarioStatus](m)
+	entry := Scenario(e)
+	if err != nil {
+		return entry, fmt.Errorf("failed to convert resource manifest into a Scenario model: %w", err)
+	}
+
+	// validate metadata
+	if entry.ObjectMeta.Name == "" {
+		return entry, ErrResourceNameEmpty
+	}
+
+	if err := entry.ObjectMeta.Validate(); err != nil {
+		return entry, err
+	}
+
+	return entry, err
+}
+
+type RunResultOption func(value *ResultStatus)
+
+// func WithTime(value time.Time) RunResultOption {
+// 	return func(result *ResultSpec) {
+// 		result.TimeEnded = &value
+// 	}
+// }
+
+func WithStatus(value JobStatus) RunResultOption {
+	return func(result *ResultStatus) {
+		result.Status = value
 	}
 }
 
-func NewRunResults(runResult RunStatus, options ...RunResultOption) FinalRunResults {
-	now := time.Now()
-	result := FinalRunResults{
-		TimeEnded: &now,
-		Result:    runResult,
+func NewRunResults(runResult RunStatus, options ...RunResultOption) ResultStatus {
+	result := ResultStatus{
+		Status: JobCompleted,
+		Result: runResult,
 	}
 
 	for _, option := range options {
@@ -259,62 +334,13 @@ func NewRunResults(runResult RunStatus, options ...RunResultOption) FinalRunResu
 	return result
 }
 
-// CreateScenarioRunResults is info that runner reports about a running job
-type InitialRunResults struct {
-	// Timestamp when a job has been picked-up by a worked
-	TimeStarted *time.Time `form:"start_time" json:"start_time" yaml:"start_time" xml:"start_time" gorm:"type:TIMESTAMP NULL"`
-}
-
-type ResultSpec struct {
-	InitialRunResults `json:",inline" yaml:",inline"`
-
-	FinalRunResults `json:",inline" yaml:",inline"`
-
-	Status JobStatus `form:"status" json:"status" yaml:"status" xml:"status"  binding:"required"`
-}
-
-// Results results of a single execution of a given scenario
-type Result struct {
-	ResourceMeta `json:",inline" yaml:",inline"`
-
-	ResultSpec `json:",inline" yaml:",inline"`
-
-	UpdateToken ApiToken `uri:"-" form:"-" json:"-" yaml:"-" xml:"-"`
-}
-
-func (s *Result) asPartialMetadata() PartialObjectMetadata {
-	return s.ResourceMeta.asPartialMetadata(wyrd.MustKnowKindOf(&s.ResultSpec), s.ResultSpec)
-}
-
-func (s *Result) asResourceManifest() wyrd.ResourceManifest {
-	spec := s.ResultSpec
-	return s.ResourceMeta.asResourceManifest(wyrd.MustKnowKindOf(&s.ResultSpec), &spec)
-}
-
-// GORM hook to auto-increment resource version on each save
-func (meta *ResourceMeta) BeforeSave(tx *gorm.DB) (err error) {
-	meta.Version += 1
+func (u *Scenario) AfterFind(tx *gorm.DB) (err error) {
+	u.Status.NextRun = u.Spec.ComputeNextRun(time.Now())
 	return
 }
 
-const (
-	KindScenario wyrd.Kind = "scenarios"
-	KindRunner   wyrd.Kind = "runners"
-	KindResult   wyrd.Kind = "results"
-	KindArtifact wyrd.Kind = "artifacts"
-)
+func (u *Runner) AfterFind(tx *gorm.DB) (err error) {
+	u.Status.NumberInstances = uint64(tx.Model(u).Association("Instances").Count())
 
-func init() {
-	if err := wyrd.RegisterKind(KindScenario, &ScenarioSpec{}); err != nil {
-		panic(err)
-	}
-	if err := wyrd.RegisterKind(KindRunner, &RunnerDefinition{}); err != nil {
-		panic(err)
-	}
-	if err := wyrd.RegisterKind(KindResult, &ResultSpec{}); err != nil {
-		panic(err)
-	}
-	if err := wyrd.RegisterKind(KindArtifact, &ArtifactSpec{}); err != nil {
-		panic(err)
-	}
+	return
 }

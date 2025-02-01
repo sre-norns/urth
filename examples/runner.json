@@ -1,11 +1,20 @@
 {
-    "name": "example-runner",
-    "labels": {
-        "cloud": "gcp"
+    "apiVersion": "v1",
+    "kind": "runners",
+    "metadata": {
+        "name": "example-runner-json",
+        "labels": {
+            "os": "linux",
+            "cloud-self": "gcp"
+        }
     },
-    "active": true,
-    "description": "My first Cloud runner",
-    "requirements": {
-        "cloud": true
+    "spec": {
+        "active": true,
+        "description": "Mock Cloud runner",
+        "requirements": {
+            "matchLabels": {
+                "cloud-req": "wha?"
+            }
+        }
     }
 }

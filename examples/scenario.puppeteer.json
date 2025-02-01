@@ -10,7 +10,7 @@
         "active": true,
         "description": "My other scenario",
         "requirements": {},
-        "schedule": "0 0 * * TUE",
+        "schedule": "@5minutes",
         "prob": {
             "kind": "puppeteer",
             "spec": {

@@ -3,12 +3,16 @@ package main
 import (
 	"context"
 
+	// TODO: Add dotenv autoloader
+
 	"github.com/alecthomas/kong"
 	"github.com/sre-norns/urth/pkg/grace"
 	"github.com/sre-norns/urth/pkg/runner"
+	"github.com/sre-norns/urth/pkg/urth"
 )
 
 type commandContext struct {
+	*urth.ApiClientConfig
 	*runner.RunnerConfig
 
 	OutputFormatter formatter
@@ -17,13 +21,18 @@ type commandContext struct {
 
 type outputFormat string
 
+func (c *commandContext) ClientCallContext() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(c.Context, c.ApiClientConfig.Timeout)
+}
+
 func (f outputFormat) AfterApply(cfg *commandContext) (err error) {
 	cfg.OutputFormatter, err = getFormatter(f)
 	return err
 }
 
 var appCli struct {
-	runner.RunnerConfig
+	urth.ApiClientConfig
+	runner.RunnerConfig `embed:"" prefix:"runner."`
 
 	// short:"o"
 	Format outputFormat `enum:"yaml,yml,json" help:"Data output format" default:"yml"`
@@ -42,6 +51,7 @@ func main() {
 	cfg := &commandContext{
 		Context:         mainContext,
 		OutputFormatter: yamlFormatter,
+		ApiClientConfig: &appCli.ApiClientConfig,
 		RunnerConfig:    &appCli.RunnerConfig,
 	}
 	appCtx := kong.Parse(&appCli,

@@ -2,20 +2,22 @@ package urth
 
 import (
 	"math/rand"
-	"time"
 )
 
 // Temporary token generation facilities
 
+// ApiToken is opaque datum used for auth purposes
+type ApiToken string
+
 // FIXME: Use better token generation!
-const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+const alphaNumBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890"
+const lettersBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
-func randToken(n int) ApiToken {
-	rand.Seed(time.Now().UnixNano())
-
-	b := make([]byte, n)
+func NewRandToken(nBytes int) ApiToken {
+	b := make([]byte, nBytes)
 	for i := range b {
-		b[i] = letterBytes[rand.Int63()%int64(len(letterBytes))]
+		b[i] = alphaNumBytes[rand.Int63()%int64(len(alphaNumBytes))]
 	}
+
 	return ApiToken(b)
 }

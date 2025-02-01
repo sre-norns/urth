@@ -9,9 +9,8 @@ import (
 	"strings"
 	"time"
 
-	// TODO: move to github.com/sre-norns/wyrd
 	"github.com/sre-norns/urth/pkg/urth"
-	"github.com/sre-norns/urth/pkg/wyrd"
+	"github.com/sre-norns/wyrd/pkg/manifest"
 	"golang.org/x/mod/semver"
 )
 
@@ -27,69 +26,69 @@ const (
 	LabelPythonVersionMajor = LabelPythonVersion + ".major"
 
 	// Well-known labels used by runners:
-	LabelBuildVersion      = "runner.version"
-	LabelRunnerId          = "runner.id"
-	LabelRunnerVersionedId = "runner.id.versioned"
+	LabelBuildVersion  = "runner.version"
+	LabelRunnerName    = "runner.name"
+	LabelRunnerUID     = "runner.uid"
+	LabelRunnerVersion = "runner.version"
 )
 
 type RunnerConfig struct {
-	systemLabels wyrd.Labels `kong:"-"`
-	CustomLabels wyrd.Labels `help:"Extra labels to identify this instance of the runner"`
+	systemLabels manifest.Labels `kong:"-"`
+	CustomLabels manifest.Labels `help:"Extra labels to identify this instance of the runner"`
 
-	ApiToken         string        `help:"API token to register this runner instance"`
-	ApiServerAddress string        `help:"URL address of the API server" default:"http://localhost:8080/" `
 	WorkingDirectory string        `help:"Worker directory where test are executed" default:"./worker" type:"existingdir"`
 	Timeout          time.Duration `help:"Maximum duration alloted for each script run" default:"1m"`
 }
 
-func GetNodeRuntimeLabels() wyrd.Labels {
+func GetNodeRuntimeLabels() manifest.Labels {
 	nodeV := exec.Command("node", "-v")
 	out, err := nodeV.CombinedOutput()
 	if err != nil {
-		return wyrd.Labels{}
+		return manifest.Labels{}
 	}
 
 	vstr := strings.TrimSpace(string(out))
-	return wyrd.Labels{
+	return manifest.Labels{
 		LabelNodeJsVersion:      vstr[1:],
 		LabelNodeJsVersionMajor: semver.Major(vstr)[1:],
 	}
 }
 
-func GetPythonRuntimeLabels() wyrd.Labels {
+func GetPythonRuntimeLabels() manifest.Labels {
 	nodeV := exec.Command("python3", "-V")
 	out, err := nodeV.CombinedOutput()
 	if err != nil {
-		return wyrd.Labels{}
+		return manifest.Labels{}
 	}
 
 	parts := strings.Split(strings.TrimSpace(string(out)), " ")
 	if len(parts) < 2 {
-		return wyrd.Labels{}
+		return manifest.Labels{}
 	}
 
 	vstr := strings.TrimSpace(parts[1])
-	return wyrd.Labels{
+	return manifest.Labels{
 		LabelPythonVersion:      vstr,
 		LabelPythonVersionMajor: semver.Major("v" + vstr)[1:],
 	}
 }
 
-func GetRuntimeLabels() wyrd.Labels {
+func GetRuntimeLabels() manifest.Labels {
 	bi, ok := debug.ReadBuildInfo()
 	if !ok {
 		log.Print("[ERROR] failed to get Build info")
 	}
 
-	return wyrd.Labels{
+	bi.Main.Version = strings.Trim(bi.Main.Version, "()")
+	return manifest.Labels{
 		LabelArch:         runtime.GOARCH,
 		LabelOS:           runtime.GOOS,
 		LabelBuildVersion: bi.Main.Version,
 	}
 }
 
-func (c *RunnerConfig) GetEffectiveLabels() wyrd.Labels {
-	return wyrd.MergeLabels(
+func (c *RunnerConfig) GetEffectiveLabels() manifest.Labels {
+	return manifest.MergeLabels(
 		c.systemLabels,
 		c.CustomLabels,
 	)
@@ -97,7 +96,7 @@ func (c *RunnerConfig) GetEffectiveLabels() wyrd.Labels {
 
 func NewDefaultConfig() RunnerConfig {
 	return RunnerConfig{
-		systemLabels: wyrd.MergeLabels(
+		systemLabels: manifest.MergeLabels(
 			GetRuntimeLabels(),
 			GetNodeRuntimeLabels(),
 			GetPythonRuntimeLabels(),
@@ -111,9 +110,9 @@ func kindAsLabel(kind urth.ProbKind) string {
 }
 
 // Expose loaded probers as Labels
-func ProberAsLabels() wyrd.Labels {
+func ProberAsLabels() manifest.Labels {
 	probs := ListProbs()
-	result := make(wyrd.Labels, len(probs))
+	result := make(manifest.Labels, len(probs))
 	for kind, prob := range probs {
 		result[kindAsLabel(kind)] = prob.Version
 	}
@@ -121,18 +120,19 @@ func ProberAsLabels() wyrd.Labels {
 	return result
 }
 
-func (c *RunnerConfig) LabelJob(runnerId wyrd.VersionedResourceId, job urth.RunScenarioJob) wyrd.Labels {
-
-	return wyrd.MergeLabels(
+func (c *RunnerConfig) LabelJob(runnerName manifest.ResourceName, runnerId manifest.VersionedResourceID, job urth.Job) manifest.Labels {
+	return manifest.MergeLabels(
 		job.Labels,
 		c.GetEffectiveLabels(),
-		wyrd.Labels{
-			LabelRunnerId:          runnerId.ID.String(), // Groups all artifacts produced by the same runner
-			LabelRunnerVersionedId: runnerId.String(),    // Groups all artifacts produced by the same version of the scenario
+		manifest.Labels{
+			LabelRunnerName:    string(runnerName),        // Groups all artifacts produced by the same runner
+			LabelRunnerUID:     string(runnerId.ID),       // Groups all artifacts produced by the same runner
+			LabelRunnerVersion: runnerId.Version.String(), // Groups all artifacts produced by the same runner
 
-			urth.LabelScenarioId:          job.ScenarioID.ID.String(), // Groups all artifacts produced by the same scenario regardless of version
-			urth.LabelScenarioVersionedId: job.ScenarioID.String(),    // Groups all artifacts produced by the same version of the scenario
-			urth.LabelScenarioKind:        string(job.Prob.Kind),      // Groups all artifacts produced by the type of script: TCP probe, HTTP probe, etc.
+			urth.LabelRunResultsName: string(job.ResultName),   // Groups all artifacts produced in the same run
+			urth.LabelScenarioId:     string(job.ScenarioName), // Groups all artifacts produced by the same scenario regardless of version
+			// urth.LabelScenarioVersion: job.ScenarioID.String(),  // Groups all artifacts produced by the same version of the scenario
+			urth.LabelScenarioKind: string(job.Prob.Kind), // Groups all artifacts produced by the type of script: TCP probe, HTTP probe, etc.
 		},
 	)
 }

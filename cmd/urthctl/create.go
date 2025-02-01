@@ -4,8 +4,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/sre-norns/urth/pkg/urth"
-	"github.com/sre-norns/urth/pkg/wyrd"
+	"github.com/sre-norns/wyrd/pkg/manifest"
 	"gopkg.in/yaml.v3"
 )
 
@@ -14,19 +13,19 @@ type createCmd struct {
 }
 
 func (c *createCmd) Run(cfg *commandContext) error {
-	apiClient, err := urth.NewRestApiClient(cfg.ApiServerAddress)
+	apiClient, err := cfg.NewClient()
 	if err != nil {
 		return fmt.Errorf("failed to initialize API Client: %w", err)
 	}
 
 	for _, filename := range c.Filenames {
 		// TODO: Check stats for isDir!
-		content, _, err := readContent(filename)
+		content, fname, err := readContent(filename)
 		if err != nil {
-			return fmt.Errorf("failed read content from %q: %w", filename, err)
+			return fmt.Errorf("failed read content from %q: %w", fname, err)
 		}
 
-		var resourceSpec wyrd.ResourceManifest
+		var resourceSpec manifest.ResourceManifest
 		if err := yaml.Unmarshal(content, &resourceSpec); err != nil {
 			return fmt.Errorf("failed parse manifest from %q: %w", filename, err)
 		}
@@ -37,7 +36,7 @@ func (c *createCmd) Run(cfg *commandContext) error {
 			return fmt.Errorf("failed to create resource from %q: %w", filename, err)
 		}
 
-		log.Print("created ", c.Kind, ", ID: ", c.GetVersionedID())
+		log.Print("created ", c.Kind, ", name: ", c.Metadata.Name, ", UID: ", c.Metadata.UID)
 	}
 
 	return nil

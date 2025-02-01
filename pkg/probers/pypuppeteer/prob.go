@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"runtime/debug"
+	"strings"
 
 	"github.com/sre-norns/urth/pkg/runner"
 	"github.com/sre-norns/urth/pkg/urth"
@@ -15,10 +16,9 @@ const (
 )
 
 func init() {
-	moduleVersion := "(unknown)"
-	bi, ok := debug.ReadBuildInfo()
-	if ok {
-		moduleVersion = bi.Main.Version
+	moduleVersion := "unknown"
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		moduleVersion = strings.Trim(bi.Main.Version, "()")
 	}
 
 	// Ignore double registration error
@@ -32,7 +32,7 @@ func init() {
 		})
 }
 
-func RunScript(ctx context.Context, prob any, logger *runner.RunLog, options runner.RunOptions) (urth.FinalRunResults, []urth.ArtifactSpec, error) {
+func RunScript(ctx context.Context, prob any, logger *runner.RunLog, options runner.RunOptions) (urth.ResultStatus, []urth.ArtifactSpec, error) {
 	logger.Log("FIXME: PyPuppeteer scenarios are not implemented....yet")
 
 	return urth.NewRunResults(urth.RunFinishedError), nil, fmt.Errorf("not implemented yet")

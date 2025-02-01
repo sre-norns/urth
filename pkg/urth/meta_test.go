@@ -1,11 +1,12 @@
-package urth
+package urth_test
 
 import (
 	"fmt"
 	"testing"
 	"time"
 
-	"github.com/sre-norns/urth/pkg/wyrd"
+	"github.com/sre-norns/urth/pkg/urth"
+	"github.com/sre-norns/wyrd/pkg/manifest"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 )
@@ -13,7 +14,7 @@ import (
 func TestResourceManifest_Unmarshaling(t *testing.T) {
 	testCases := map[string]struct {
 		given       []byte
-		expect      wyrd.ResourceManifest
+		expect      manifest.ResourceManifest
 		expectError bool
 	}{
 		"unknown_kind": {
@@ -42,18 +43,18 @@ spec:
     matchLabels:
       os: linux
 `),
-			expect: wyrd.ResourceManifest{
-				TypeMeta: wyrd.TypeMeta{
+			expect: manifest.ResourceManifest{
+				TypeMeta: manifest.TypeMeta{
 					Kind: "runners",
 				},
-				Metadata: wyrd.ObjectMeta{
+				Metadata: manifest.ObjectMeta{
 					Name: "nginx-demo",
 				},
-				Spec: &RunnerDefinition{
+				Spec: &urth.RunnerSpec{
 					IsActive:    true,
 					Description: "Awesome",
-					Requirements: wyrd.LabelSelector{
-						MatchLabels: wyrd.Labels{
+					Requirements: manifest.LabelSelector{
+						MatchLabels: manifest.Labels{
 							"os": "linux",
 						},
 					},
@@ -84,32 +85,32 @@ spec:
       - { key: "owner", operator: "in",  values: ["trusted", "allowed"] }
       - { key: "env", operator: "notIn",  values: ["dev", "testing"] }
 `),
-			expect: wyrd.ResourceManifest{
-				TypeMeta: wyrd.TypeMeta{
+			expect: manifest.ResourceManifest{
+				TypeMeta: manifest.TypeMeta{
 					APIVersion: "v1",
 					Kind:       "scenarios",
 				},
-				Metadata: wyrd.ObjectMeta{
+				Metadata: manifest.ObjectMeta{
 					Name: "simple-web-prober",
-					Labels: wyrd.Labels{
+					Labels: manifest.Labels{
 						"app":      "web-prob",
 						"function": "front-end",
 					},
 				},
-				Spec: &ScenarioSpec{
+				Spec: &urth.ScenarioSpec{
 					IsActive:    true,
 					RunSchedule: "* * * * *",
 					Description: "Awesome",
-					Prob: ProbManifest{
+					Prob: urth.ProbManifest{
 						Kind:    "http",
 						Timeout: time.Second * 120,
 					},
-					Requirements: wyrd.LabelSelector{
-						MatchSelector: []wyrd.Selector{
-							{Key: "owner", Op: "in", Values: []string{"trusted", "allowed"}},
-							{Key: "env", Op: "notIn", Values: []string{"dev", "testing"}},
+					Requirements: manifest.LabelSelector{
+						MatchSelector: manifest.SelectorRules{
+							{Key: "owner", Op: manifest.LabelSelectorOpIn, Values: []string{"trusted", "allowed"}},
+							{Key: "env", Op: manifest.LabelSelectorOpNotIn, Values: []string{"dev", "testing"}},
 						},
-						MatchLabels: wyrd.Labels{
+						MatchLabels: manifest.Labels{
 							"os": "linux",
 						},
 					},
@@ -130,19 +131,19 @@ spec:
  rel: "har"
  mimeType: "data"
 `),
-			expect: wyrd.ResourceManifest{
-				TypeMeta: wyrd.TypeMeta{
+			expect: manifest.ResourceManifest{
+				TypeMeta: manifest.TypeMeta{
 					APIVersion: "v1",
 					Kind:       "artifacts",
 				},
-				Metadata: wyrd.ObjectMeta{
+				Metadata: manifest.ObjectMeta{
 					Name: "artifact-example",
-					Labels: wyrd.Labels{
+					Labels: manifest.Labels{
 						"scenario": "xyz-script",
 						"function": "front-end",
 					},
 				},
-				Spec: &ArtifactSpec{
+				Spec: &urth.ArtifactSpec{
 					Rel:      "har",
 					MimeType: "data",
 					Content:  nil,
@@ -154,7 +155,7 @@ spec:
 	for name, tc := range testCases {
 		test := tc
 		t.Run(fmt.Sprintf("unmarshal:%s", name), func(t *testing.T) {
-			var got wyrd.ResourceManifest
+			var got manifest.ResourceManifest
 			err := yaml.Unmarshal(test.given, &got)
 			if test.expectError {
 				require.Error(t, err, "expected error: %v", test.expectError)
