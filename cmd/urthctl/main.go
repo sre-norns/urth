@@ -6,9 +6,9 @@ import (
 	// TODO: Add dotenv autoloader
 
 	"github.com/alecthomas/kong"
-	"github.com/sre-norns/urth/pkg/grace"
 	"github.com/sre-norns/urth/pkg/runner"
 	"github.com/sre-norns/urth/pkg/urth"
+	"github.com/sre-norns/wyrd/pkg/grace"
 )
 
 type commandContext struct {
@@ -47,7 +47,7 @@ var appCli struct {
 }
 
 func main() {
-	mainContext := grace.SetupSignalHandler()
+	mainContext := grace.NewSignalHandlingContext()
 	cfg := &commandContext{
 		Context:         mainContext,
 		OutputFormatter: yamlFormatter,

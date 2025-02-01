@@ -6,11 +6,12 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/sre-norns/urth/pkg/wyrd"
+	"github.com/sre-norns/wyrd/pkg/manifest"
+
 	"gopkg.in/yaml.v3"
 )
 
-type ProbKind = wyrd.Kind
+type ProbKind = manifest.Kind
 
 var probKindRegistry = map[ProbKind]reflect.Type{}
 
@@ -33,13 +34,19 @@ func UnregisterProbKind(kind ProbKind) {
 	delete(probKindRegistry, kind)
 }
 
-func InstanceOf(kind wyrd.Kind) (any, error) {
+func InstanceOf(kind manifest.Kind) (manifest.ResourceManifest, error) {
+	// func InstanceOf(kind manifest.Kind) (any, error) {
 	t, known := probKindRegistry[kind]
 	if !known {
-		return nil, fmt.Errorf("%w: %q", wyrd.ErrUnknownKind, kind)
+		return manifest.ResourceManifest{}, fmt.Errorf("%w: %q", manifest.ErrUnknownKind, kind)
 	}
 
-	return reflect.New(t).Interface(), nil
+	return manifest.ResourceManifest{
+		TypeMeta: manifest.TypeMeta{
+			Kind: kind,
+		},
+		Spec: reflect.New(t).Interface(),
+	}, nil
 }
 
 type ProbManifest struct {
@@ -78,8 +85,13 @@ func (s *ProbManifest) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
+	m2, err := manifest.UnmarshalJSONWithRegister(aux.Kind, InstanceOf, aux.Spec, nil)
+	if err != nil {
+		return err
+	}
+
 	s.Kind = aux.Kind
-	s.Spec, err = wyrd.UnmarshalJsonWithRegister(aux.Kind, InstanceOf, aux.Spec)
+	s.Spec = m2.Spec
 	return err
 }
 

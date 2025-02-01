@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/sre-norns/urth/pkg/urth"
-	"github.com/sre-norns/urth/pkg/wyrd"
+	"github.com/sre-norns/wyrd/pkg/manifest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -34,7 +34,7 @@ func TestCustomMarshaling_JSON(t *testing.T) {
 		},
 		"basic": {
 			given: urth.ProbManifest{
-				Kind: wyrd.Kind("testSpec"),
+				Kind: manifest.Kind("testSpec"),
 				Spec: &TestSpec{
 					Value: 42,
 					Name:  "meaning",
@@ -60,7 +60,7 @@ func TestCustomUnmarshaling_JSON(t *testing.T) {
 		Name  string `json:"name"`
 	}
 
-	testKind := wyrd.Kind("testSpec")
+	testKind := manifest.Kind("testSpec")
 	require.NoError(t, urth.RegisterProbKind(testKind, &TestSpec{}))
 	defer urth.UnregisterProbKind(testKind)
 
@@ -76,7 +76,7 @@ func TestCustomUnmarshaling_JSON(t *testing.T) {
 		"unknown-kind": {
 			given: `{"kind":"unknownSpec","metadata":{"name":""},"spec":{"field":"xyz","desc":"unknown"}}`,
 			expect: urth.ProbManifest{
-				Kind: wyrd.Kind("unknownSpec"),
+				Kind: manifest.Kind("unknownSpec"),
 				// Spec: json.RawMessage(`{"field":"xyz","desc":"unknown"}`),
 				Spec: map[string]any{"field": "xyz", "desc": "unknown"},
 			},
