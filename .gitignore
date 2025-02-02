@@ -20,7 +20,11 @@
 # Go workspace file
 go.work
 
+.env
+# Exclude local SQlite DB user for local testing
 test.db
+test.sqlite
+
 .DS_Store
 
 website/dist/*
