@@ -5,11 +5,12 @@
         "name": "example-runner-json",
         "labels": {
             "os": "linux",
-            "cloud-self": "gcp"
+            "cloud": "local"
         }
     },
     "spec": {
         "active": true,
+        "maxInstance": 1,
         "description": "Mock Cloud runner",
         "requirements": {
             "matchLabels": {

@@ -66,13 +66,13 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 	router.UseRawPath = true
 
 	// Simple group: v1
-	v1 := router.Group("api/v1", bark.ContentTypeAPI())
+	v1 := router.Group("/api/v1", bark.ContentTypeAPI())
 	{
 		v1.GET("/version", func(ctx *gin.Context) {
 			bark.Ok(ctx, bark.NewVersionResponse())
 		})
 
-		search := router.Group("/search/:kind", KindAPI(), bark.SearchableAPI(paginationLimit))
+		search := v1.Group("/search/:kind", KindAPI(), bark.SearchableAPI(paginationLimit))
 		{
 			search.GET("/names", func(ctx *gin.Context) {
 				results, total, err := srv.Labels(RequireKind(ctx)).ListNames(ctx.Request.Context(), bark.RequireSearchQuery(ctx))

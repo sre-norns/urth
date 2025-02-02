@@ -919,7 +919,7 @@ func kindToModel(kind manifest.Kind) (model any, found bool) {
 	case KindRunner:
 		return &Runner{}, true
 	case KindResult:
-		return &Runner{}, true
+		return &Result{}, true
 	case KindScenario:
 		return &Scenario{}, true
 	case KindArtifact:
