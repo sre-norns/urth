@@ -17,7 +17,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	dlogger "gorm.io/gorm/logger"
+	// dlogger "gorm.io/gorm/logger"
 )
 
 const (
@@ -338,7 +338,7 @@ func main() {
 
 	// Init DB connection based on env or config
 	db, err := gorm.Open(dial, &gorm.Config{
-		Logger: dlogger.Default.LogMode(dlogger.Info),
+		// Logger: dlogger.Default.LogMode(dlogger.Info),
 	})
 
 	grace.SuccessRequired(err, "failed to connect the datastore")
