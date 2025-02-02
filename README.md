@@ -100,3 +100,62 @@ When requirements match workers's _capabilities_ than it can take and perform a 
 A new worker must first be registered with the `API server` by creating a _slot_. Creation of such _slot_ generates token that a `worker` instance must present to the `API server` issuer as part of initial configuration process. Presentation of a valid token notifies `API server` that a worker is ready to pick up jobs. After successful authorization, a worker joins a job queue and awaits.
 When a job is available, worker picks it up notifies `API server` that it picked the job. This constitutes authorization of a particular instance of a worker to the API server for a specific job. At this point (WIP) API server will check that worker is indeed authorized to perform the job in question and if successful will issue a short-living token that must be used by the worker to post results back to the API server. Token life-time is chosen by the server to be approximately the maximum allowed run-duration of the task + some buffer time to account communication delays. This mechanism is designed to prevent workers from replaying jobs or posting already existing job results after restart and restore. 
 
+# Running demo:
+
+```shell
+##------------------------------
+# Spin-up test infrastructure:
+##------------------------------
+# Start a PostgresDB. For example using docker/podman, in a separate terminal
+podman run -p 5432:5432 -e POSTGRES_PASSWORD=<db_password> -e POSTGRES_USER=dbusername postgres:15
+# Start a redis instance for job queuing. For example using docker/podman, in a separate terminal
+podman run -p 6379:6379 redis
+
+##------------------------------
+# Spin-up services:
+##------------------------------
+
+# Start API server in a separate terminal and point it to the Postgres instance. check
+go run ./cmd/api-server --store.url="postgres://dbusername:<db_password>@localhost:5432"  
+
+# Start WebUI using dev server, in a separate terminal
+cd website && npm start
+
+##------------------------------
+# Create some resources
+##------------------------------
+
+# Create an job runner. See ./examples dir for different resources manifests 
+go run ./cmd/urthctl apply ./examples/runner.json
+
+# List all currently registered runners to insure your new example runner has been created.
+go run ./cmd/urthctl get runners -o wide  
+
+# Create your first test scenario
+go run ./cmd/urthctl apply ./examples/scenario.yml 
+
+# List all currently registered scenarios to ensure your newly created one is correct
+go run ./cmd/urthctl get scenarios -o wide
+
+
+##------------------------------
+## Start some workers and connect them to the job queue
+##------------------------------
+
+# Start an instance of runner. Note the token is generated for this example to authorize as `./examples/runner.json`
+go run ./cmd/asynq-runner --client.token="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJleGFtcGxlLXJ1bm5lci1qc29uIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.nXfHt_2ejYA6XinTuL2MLCojq54FJmLLy9EnRE-T6xU"
+
+##------------------------------
+## Trigger a scenario run manually
+##------------------------------
+# Open your favorite browser and navigate to 'http://localhost:3000/'
+# Find `basic-rest-self-prober-http` in the list and press Play [>] button on the right hand side.
+# Note: UI refresh is still not implemented so you'll have to refresh the page.
+
+# Inspect scenarios:
+go run ./cmd/urthctl get scenarios -o wide
+
+
+# Inspect run results:
+> http ':8080/api/v1/scenarios/basic-rest-self-prober-http/results'
+```

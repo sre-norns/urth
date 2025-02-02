@@ -22,12 +22,12 @@
 - Response Body for TCP request
 - Regexp to match response body for TCP request
 - Response code for HTTP request
-[] Validate labels names!
+[x] Validate labels names!
 [] Labels returned by a worker for a job-results / artifacts must be immutable
 [X] Add API to find workers give a set of labels and requirements - to enable better UX where user can see how many probers will qualify for a given set of labels. (NOTE: This is a statdards label-besed search API)
-[X] A run results object with an update time-limited JWT token must be created when a job is scheduled. Worker can only update, within a time alloted, an already `pending` run. 
-[] Restore labels API: Extract labels from JSON field
-[] Create API must return metadata for a newly created object as `names` may be generated.
+[X] A run results object with an update time-limited JWT token must be created when a job is scheduled. Worker can only update, within a time alloted, an already `pending` run.
+[x] Restore labels API: Extract labels from JSON field
+[x] Create API must return metadata for a newly created object as `names` may be generated.
 [X] For `Create` API set `Location` header to point to a newly created resource as per rest best practice
 [] All non-GET request should require authentication!
 [] API to create artifacts must only accept valid auth-tokens from workers that authorized to run a scenario
@@ -35,9 +35,9 @@
 
 
 ## CLI tooling
-[x] `urthctl` - support reading scenario / script from stdin
+[X] `urthctl` - support reading scenario / script from stdin
 [X] `urthctl` convert HAR into .http files
-[ ] `urthctl` `apply` command to create/update scenarios
+[X] `urthctl` `apply` command to create/update scenarios
 [ ] `urthctl` `get run artifact` command to fetch artifacts produces during script run
 
 ## Web UI
