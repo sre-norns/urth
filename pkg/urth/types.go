@@ -48,7 +48,7 @@ type RunnerSpec struct {
 // RunnerStatus is information that owned and managed by the runner itself
 type RunnerStatus struct {
 	// Instances of this runner that are currently active
-	NumberInstances uint64 `json:"numberInstances,omitempty" yaml:"numberInstances,omitempty" gorm:"-"`
+	NumberInstances uint64 `json:"numberInstances" yaml:"numberInstances" gorm:"-"`
 
 	// Instances of this runner that are currently active
 	Instances []WorkerInstance `json:"activeInstances,omitempty" yaml:"activeInstances,omitempty" gorm:"foreignKey:RunnerID;references:UID"`
@@ -336,6 +336,13 @@ func NewRunResults(runResult RunStatus, options ...RunResultOption) ResultStatus
 
 func (u *Scenario) AfterFind(tx *gorm.DB) (err error) {
 	u.Status.NextRun = u.Spec.ComputeNextRun(time.Now())
+	if u.Status.Results == nil {
+		err = tx.Model(u).Limit(1).Order("updated_at DESC").Association("Results").Find(&u.Status.Results)
+		if err != nil {
+			return
+		}
+	}
+
 	return
 }
 

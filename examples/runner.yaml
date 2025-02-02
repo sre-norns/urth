@@ -10,4 +10,4 @@ spec:
   description: "Mock Cloud runner"
   requirements:
     matchLabels:
-      cloud_req: "wha?"
+      cloud: "wha?"

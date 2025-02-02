@@ -1,12 +1,12 @@
-import React, {useCallback} from 'react'
+import React, { useCallback } from 'react'
 import PropTypes from 'prop-types'
 import styled from '@emotion/styled'
-import {useLocation} from 'wouter'
-import {useDispatch, useSelector} from 'react-redux'
-import {useTrackedState, useTracker} from '../utils/tracking.js'
-import {validateMaxLength, validateNotEmpty} from '../utils/validators.js'
-import {routed} from '../utils/routing.js'
-import {isEmpty} from '../utils/objects.js'
+import { useLocation } from 'wouter'
+import { useDispatch, useSelector } from 'react-redux'
+import { useTrackedState, useTracker } from '../utils/tracking.js'
+import { validateMaxLength, validateNotEmpty } from '../utils/validators.js'
+import { routed } from '../utils/routing.js'
+import { isEmpty } from '../utils/objects.js'
 import fetchScenario from '../actions/fetchScenario.js'
 import createScenario from '../actions/createScenario.js'
 import updateScenario from '../actions/updateScenario.js'
@@ -104,9 +104,8 @@ const validateName = (...args) => validateNotEmpty(...args) || validateMaxLength
 
 const validateDescription = validateMaxLength(128)
 
-const ScenarioViewer = ({scenarioId, edit = false}) => {
+const ScenarioViewer = ({ scenarioId, edit = false }) => {
   const [location, setLocation] = useLocation()
-
   const [isNew, setIsNew] = React.useState(false)
 
   const formRef = React.useRef(null)
@@ -118,12 +117,12 @@ const ScenarioViewer = ({scenarioId, edit = false}) => {
   const [description, setDescription] = useTrackedState(tracker, '')
   const [active, setActive] = useTrackedState(tracker, false)
 
-  const {id, fetching, creating, updating, deleting, response, error} = useSelector((s) => s.scenario)
+  const { id, fetching, creating, updating, deleting, response, error } = useSelector((s) => s.scenario)
   const dispatch = useDispatch()
 
   const handleResponse = useCallback(
     (response) => {
-      if (response && response.metadata.uid === parseInt(scenarioId)) {
+      if (response && response.metadata.name === scenarioId) {
         setName(response.metadata.name)
         setLabels(response.metadata.labels || {})
         setDescription(response.spec.description)
@@ -155,7 +154,7 @@ const ScenarioViewer = ({scenarioId, edit = false}) => {
       setLocation('/scenarios')
     } else {
       handleResponse(response)
-      setLocation(`/scenarios/${scenarioId}`, {replace: true})
+      setLocation(`/scenarios/${scenarioId}`, { replace: true })
     }
   }, [isNew, response])
 
@@ -179,7 +178,7 @@ const ScenarioViewer = ({scenarioId, edit = false}) => {
           },
           (id) => {
             setIsNew(false)
-            setLocation(`/scenarios/${id}`, {replace: true})
+            setLocation(`/scenarios/${id}`, { replace: true })
           }
         )
       )
@@ -203,7 +202,7 @@ const ScenarioViewer = ({scenarioId, edit = false}) => {
               // prob: response.spec.prob,
             },
           },
-          () => setLocation(`/scenarios/${scenarioId}`, {replace: true})
+          () => setLocation(`/scenarios/${scenarioId}`, { replace: true })
         )
       )
     }
@@ -327,6 +326,7 @@ const ScenarioViewer = ({scenarioId, edit = false}) => {
 }
 
 ScenarioViewer.propTypes = {
+  scenarioId: PropTypes.string.isRequired,
   edit: PropTypes.bool,
 }
 

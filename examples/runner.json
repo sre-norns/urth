@@ -13,7 +13,7 @@
         "description": "Mock Cloud runner",
         "requirements": {
             "matchLabels": {
-                "cloud-req": "wha?"
+                "cloud": "wha?"
             }
         }
     }

@@ -14,46 +14,68 @@ import (
 var ErrResourceNotFound = fmt.Errorf("requested resource not found")
 
 func fetchRunner(ctx context.Context, apiClient *urth.RestApiClient, id manifest.ResourceName) (urth.Runner, error) {
-	resource, ok, err := apiClient.GetRunnerAPI().Get(ctx, id)
-	if !ok && err == nil {
-		err = fmt.Errorf("%w: runnerId=%v", ErrResourceNotFound, id)
+	resource, ok, err := apiClient.Runners().Get(ctx, id)
+	if err != nil {
+		return urth.Runner{}, fmt.Errorf("failed to fetch Runner %q: %w", id, err)
+	} else if !ok {
+		return urth.Runner{}, fmt.Errorf("%w: runnerId=%v", ErrResourceNotFound, id)
 	}
 
-	return resource, err
+	result, err := urth.NewRunner(resource)
+	return result, err
 }
 
-func fetchRunners(ctx context.Context, apiClient *urth.RestApiClient, q manifest.SearchQuery) ([]urth.Runner, error) {
-	// TODO: Pagination
-	resources, _, err := apiClient.GetRunnerAPI().List(ctx, q)
+func fetchRunners(ctx context.Context, apiClient *urth.RestApiClient, q manifest.SearchQuery) ([]urth.Runner, int64, error) {
+	resources, total, err := apiClient.Runners().List(ctx, q)
 	if err != nil {
-		return nil, err
+		return nil, total, fmt.Errorf("failed to fetch batch: %w", err)
 	}
 
-	return resources, nil
+	results := make([]urth.Runner, 0, len(resources))
+	for _, resource := range resources {
+		r, err := urth.NewRunner(resource)
+		if err != nil {
+			return results, total, fmt.Errorf("error while parsing batch results: %w", err)
+		}
+		results = append(results, r)
+	}
+
+	return results, total, nil
 }
 
 func fetchScenario(ctx context.Context, apiClient *urth.RestApiClient, id manifest.ResourceName) (urth.Scenario, error) {
-	resource, ok, err := apiClient.GetScenarioAPI().Get(ctx, id)
-	if !ok && err == nil {
-		err = fmt.Errorf("%w: scenarioId=%v", ErrResourceNotFound, id)
+	resource, ok, err := apiClient.Scenarios().Get(ctx, id)
+	if err != nil {
+		return urth.Scenario{}, fmt.Errorf("failed to fetch Scenario %q: %w", id, err)
+	} else if !ok {
+		return urth.Scenario{}, fmt.Errorf("%w: scenarioId=%v", ErrResourceNotFound, id)
 	}
 
-	return resource, err
+	result, err := urth.NewScenario(resource)
+	return result, err
 }
 
-func fetchScenarios(ctx context.Context, apiClient *urth.RestApiClient, q manifest.SearchQuery) ([]urth.Scenario, error) {
-	// TODO: Pagination
-	resources, _, err := apiClient.GetScenarioAPI().List(ctx, q)
+func fetchScenarios(ctx context.Context, apiClient *urth.RestApiClient, q manifest.SearchQuery) ([]urth.Scenario, int64, error) {
+	resources, total, err := apiClient.Scenarios().List(ctx, q)
 	if err != nil {
-		return nil, err
+		return nil, total, fmt.Errorf("failed to fetch batch: %w", err)
 	}
 
-	return resources, nil
+	results := make([]urth.Scenario, 0, len(resources))
+	for _, resource := range resources {
+		r, err := urth.NewScenario(resource)
+		if err != nil {
+			return results, total, fmt.Errorf("error while parsing batch results: %w", err)
+		}
+		results = append(results, r)
+	}
+
+	return results, total, nil
 }
 
 func fetchResults(ctx context.Context, apiClient *urth.RestApiClient, scenarioId manifest.ResourceName, ids []manifest.ResourceName) ([]urth.Result, error) {
 	if len(ids) == 0 {
-		resources, _, err := apiClient.GetResultsAPI(scenarioId).List(ctx, manifest.SearchQuery{})
+		resources, _, err := apiClient.Results(scenarioId).List(ctx, manifest.SearchQuery{})
 		if err != nil {
 			return nil, err
 		}
@@ -65,7 +87,7 @@ func fetchResults(ctx context.Context, apiClient *urth.RestApiClient, scenarioId
 
 	results := make([]urth.Result, 0, len(ids))
 	for _, rid := range ids {
-		resource, ok, err := apiClient.GetResultsAPI(scenarioId).Get(ctx, rid)
+		resource, ok, err := apiClient.Results(scenarioId).Get(ctx, rid)
 		if !ok && err == nil {
 			return nil, fmt.Errorf("%w: scenarioId=%v, runId=%v", ErrResourceNotFound, scenarioId, ids)
 		}
@@ -77,12 +99,15 @@ func fetchResults(ctx context.Context, apiClient *urth.RestApiClient, scenarioId
 }
 
 func fetchArtifact(ctx context.Context, apiClient *urth.RestApiClient, id manifest.ResourceName) (urth.Artifact, error) {
-	resource, ok, err := apiClient.GetArtifactsApi().Get(ctx, id)
-	if !ok && err == nil {
-		err = fmt.Errorf("%w: id=%v", ErrResourceNotFound, id)
+	resource, ok, err := apiClient.Artifacts().Get(ctx, id)
+	if err != nil {
+		return urth.Artifact{}, fmt.Errorf("failed to fetch Artifact %q: %w", id, err)
+	} else if !ok {
+		return urth.Artifact{}, fmt.Errorf("%w: artifactId=%v", ErrResourceNotFound, id)
 	}
 
-	return resource, err
+	result, err := urth.NewArtifact(resource)
+	return result, err
 }
 
 func fetchLogs(ctx context.Context, apiClient *urth.RestApiClient, resultsName manifest.ResourceName, customSelector string) (chan io.Reader, error) {
@@ -104,7 +129,7 @@ func fetchLogs(ctx context.Context, apiClient *urth.RestApiClient, resultsName m
 		return nil, fmt.Errorf("failed to parse labels selector: %w", err)
 	}
 
-	resources, _, err := apiClient.GetArtifactsApi().List(ctx, manifest.SearchQuery{
+	resources, _, err := apiClient.Artifacts().List(ctx, manifest.SearchQuery{
 		Selector: selector,
 	})
 	if err != nil {
@@ -116,8 +141,8 @@ func fetchLogs(ctx context.Context, apiClient *urth.RestApiClient, resultsName m
 	go func() {
 		defer close(logStream)
 
-		for _, r := range resources {
-			l, ok, err := apiClient.GetArtifactsApi().GetContent(ctx, r.Name)
+		for _, resource := range resources {
+			l, ok, err := apiClient.Artifacts().GetContent(ctx, resource.Metadata.Name)
 			if !ok || err != nil {
 				return
 			}

@@ -44,6 +44,7 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 	job, err := redqueue.UnmarshalJob(t)
 	if err != nil {
 		log.Print("Failed to deserialize message content: ", err)
+		log.Println(string(t.Payload()))
 		// TODO: Log and count metrics
 		return err // Note: job can be re-tried
 	}
@@ -59,7 +60,7 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 
 	// TODO: Check requirements!
 
-	resultsApiClient := w.apiClient.GetResultsAPI(job.ScenarioName)
+	resultsApiClient := w.apiClient.Results(job.ScenarioName)
 	// Notify API-server that a job has been accepted by this worker
 	// FIXME: Worker must use its credentials jwt
 	// Authorize this worker to pick up this job:
@@ -106,27 +107,30 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 	// Push artifacts if any:
 	wg := grace.NewWorkgroup(4)
 
-	artifactsApiClient := w.apiClient.GetArtifactsApi()
+	artifactsApiClient := w.apiClient.Artifacts()
 	for _, a := range artifacts {
 		artifact := a
 		wg.Go(func() error {
 			// TODO: Must include run Auth Token
-			_, err := artifactsApiClient.Create(ctx, manifest.ResourceManifest{
-				TypeMeta: manifest.TypeMeta{
-					Kind: urth.KindArtifact,
+			_, err := artifactsApiClient.Create(ctx,
+				runAuth.Token,
+				manifest.ResourceManifest{
+					TypeMeta: manifest.TypeMeta{
+						Kind: urth.KindArtifact,
+					},
+					Metadata: manifest.ObjectMeta{
+						Name: manifest.ResourceName(fmt.Sprintf("%v.%v", runID, artifact.Rel)),
+						Labels: manifest.MergeLabels(
+							w.LabelJob(w.identity.Name, w.identity.GetVersionedID(), job),
+							manifest.Labels{
+								urth.LabelScenarioArtifactKind: artifact.Rel, // Groups all artifacts produced by the content type: logs / HAR / etc
+								urth.LabelRunResultsMessageId:  messageId,
+							},
+						),
+					},
+					Spec: artifact,
 				},
-				Metadata: manifest.ObjectMeta{
-					Name: manifest.ResourceName(fmt.Sprintf("%v.%v", runID, artifact.Rel)),
-					Labels: manifest.MergeLabels(
-						w.LabelJob(w.identity.Name, w.identity.GetVersionedID(), job),
-						manifest.Labels{
-							urth.LabelScenarioArtifactKind: artifact.Rel, // Groups all artifacts produced by the content type: logs / HAR / etc
-							urth.LabelRunResultsMessageId:  messageId,
-						},
-					),
-				},
-				Spec: artifact,
-			})
+			)
 
 			if err != nil {
 				log.Printf("failed to post artifact %q for %q: %v", artifact.Rel, runID, err)
@@ -139,7 +143,7 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 
 	// Notify API-server that the job has been complete
 	wg.Go(func() error {
-		created, err := resultsApiClient.Update(ctx, runAuth.VersionedResourceID, runAuth.Token, runResult)
+		created, err := resultsApiClient.UpdateStatus(ctx, runAuth.VersionedResourceID, runAuth.Token, runResult)
 		if err != nil {
 			log.Printf("failed to post run results for %q: %v", runID, err)
 			return err // TODO: retry or not? Add results into the retry queue to post later?
@@ -197,7 +201,7 @@ func main() {
 	defer cancel()
 
 	// Request Auth to join the workers queue
-	identity, err := apiClient.GetRunnerAPI().Auth(regoCtx, appConfig.Token, urth.WorkerInstance{
+	identity, err := apiClient.Runners().Auth(regoCtx, appConfig.Token, urth.WorkerInstance{
 		ObjectMeta: manifest.ObjectMeta{
 			Name:   manifest.ResourceName(appConfig.Name),
 			Labels: appConfig.GetEffectiveLabels(),

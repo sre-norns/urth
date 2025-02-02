@@ -60,8 +60,6 @@ func RequireKind(ctx *gin.Context) manifest.Kind {
 	return ctx.MustGet(kindRequestKey).(manifest.Kind)
 }
 
-// TODO: JWT Auth middleware for runners!
-
 func apiRoutes(srv urth.Service) *gin.Engine {
 	router := gin.Default()
 	router.UseRawPath = true
@@ -73,152 +71,121 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 			bark.Ok(ctx, bark.NewVersionResponse())
 		})
 
-		v1.GET("/search/:kind/names", KindAPI(), bark.SearchableAPI(paginationLimit), func(ctx *gin.Context) {
-			results, total, err := srv.GetLabels(RequireKind(ctx)).ListNames(ctx.Request.Context(), bark.RequireSearchQuery(ctx))
-			bark.FoundOrNot(ctx, err, results.Slice(), total)
-		})
+		search := router.Group("/search/:kind", KindAPI(), bark.SearchableAPI(paginationLimit))
+		{
+			search.GET("/names", func(ctx *gin.Context) {
+				results, total, err := srv.Labels(RequireKind(ctx)).ListNames(ctx.Request.Context(), bark.RequireSearchQuery(ctx))
+				bark.FoundOrNot(ctx, err, results.Slice(), total)
+			})
+			// Support search by listing all possible labels
+			search.GET("/labels", func(ctx *gin.Context) {
+				results, total, err := srv.Labels(RequireKind(ctx)).ListLabels(ctx.Request.Context(), bark.RequireSearchQuery(ctx))
+				bark.FoundOrNot(ctx, err, results.Slice(), total)
+			})
+			// Support search by listing all values of a given label
+			search.GET("/labels/:id", bark.ResourceAPI(), func(ctx *gin.Context) {
+				results, total, err := srv.Labels(RequireKind(ctx)).ListLabelValues(ctx.Request.Context(), string(bark.RequireResourceID(ctx)), bark.RequireSearchQuery(ctx))
+				bark.FoundOrNot(ctx, err, results.Slice(), total)
+			})
+		}
 
-		// Support search by listing all possible labels
-		v1.GET("/search/:kind/labels", KindAPI(), bark.SearchableAPI(paginationLimit), func(ctx *gin.Context) {
-			results, total, err := srv.GetLabels(RequireKind(ctx)).ListLabels(ctx.Request.Context(), bark.RequireSearchQuery(ctx))
-			bark.FoundOrNot(ctx, err, results.Slice(), total)
-		})
-		// Support search by listing all values of a given label
-		v1.GET("/search/:kind/labels/:id", KindAPI(), bark.ResourceAPI(), bark.SearchableAPI(paginationLimit), func(ctx *gin.Context) {
-			results, total, err := srv.GetLabels(RequireKind(ctx)).ListLabelValues(ctx.Request.Context(), string(bark.RequireResourceID(ctx)), bark.RequireSearchQuery(ctx))
-			bark.FoundOrNot(ctx, err, results.Slice(), total)
-		})
+		//------------
+		// Auth API for various operations
+		//------------
+		// Auth API for Worker to assume a Runner identity, given auth token
+		v1.POST("/auth/runners", bark.AuthBearerAPI(), bark.ManifestAPI(urth.KindWorkerInstance), func(ctx *gin.Context) {
+			ctx.Header(bark.HTTPHeaderCacheControl, "no-store")
 
-		// Auth API for runners. TODO: Should it be something like `/auth/runner` ?
-		v1.PUT("/runners", bark.AuthBearerAPI(), bark.ManifestAPI(urth.KindWorkerInstance), func(ctx *gin.Context) {
 			token := bark.RequireBearerToken(ctx)
-			result, err := srv.GetRunnerAPI().Auth(ctx.Request.Context(), urth.ApiToken(token), bark.RequireManifest(ctx))
+			bark.Manifest(ctx).Created(srv.Runners().Auth(ctx.Request.Context(), urth.ApiToken(token), bark.RequireManifest(ctx)))
+		})
+		// "/scenarios/:id/results/:runId/auth"
+		v1.POST("/auth//scenarios/:id/:runId", func(ctx *gin.Context) {
+			var resourceRequest urth.ScenarioRunResultsRequest
+			if err := ctx.ShouldBindUri(&resourceRequest); err != nil {
+				log.Print("error while trying to bind to ScenarioRunResultsRequest", "err", err)
+				bark.AbortWithError(ctx, http.StatusNotFound, err)
+				return
+			}
+
+			var authRequest urth.AuthJobRequest
+			if err := ctx.ShouldBind(&authRequest); err != nil {
+				log.Print("error while trying to parse AuthJobRequest", "err", err)
+				bark.AbortWithError(ctx, http.StatusBadRequest, err)
+				return
+			}
+
+			resource, err := srv.Results(manifest.ResourceName(resourceRequest.ID)).Auth(ctx.Request.Context(), resourceRequest.RunId, authRequest)
+			if err != nil {
+				log.Print("error while calling auth", "err", err)
+				bark.AbortWithError(ctx, http.StatusBadRequest, err)
+				return
+			}
 
 			ctx.Header(bark.HTTPHeaderCacheControl, "no-store")
-			bark.MaybeResourceCreated(ctx, result, err)
+			bark.Ok(ctx, resource)
 		})
-
 		//------------
 		// Runners API
 		//------------
 		v1.GET("/runners", bark.SearchableAPI(paginationLimit), func(ctx *gin.Context) {
-			results, total, err := srv.GetRunnerAPI().List(ctx.Request.Context(), bark.RequireSearchQuery(ctx))
-			bark.FoundOrNot(ctx, err, results, total)
+			bark.Manifest(ctx).List(srv.Runners().List(ctx.Request.Context(), bark.RequireSearchQuery(ctx)))
 		})
 		v1.POST("/runners", bark.ManifestAPI(urth.KindRunner), func(ctx *gin.Context) {
-			result, err := srv.GetRunnerAPI().Create(ctx.Request.Context(), bark.RequireManifest(ctx))
-			bark.MaybeResourceCreated(ctx, result.ToManifest(), err)
-		})
-
-		v1.POST("/runners/:id", bark.ResourceAPI(), bark.ManifestAPI(urth.KindRunner), func(ctx *gin.Context) {
-			resource, created, err := srv.GetRunnerAPI().CreateOrUpdate(ctx.Request.Context(), bark.RequireManifest(ctx))
-			if err != nil {
-				bark.AbortWithError(ctx, http.StatusBadRequest, err)
-				return
-			}
-
-			if created {
-				bark.ReplyResourceCreated(ctx, "", resource.ToManifest())
-			} else {
-				bark.Ok(ctx, resource.ToManifest())
-			}
+			bark.Manifest(ctx).Created(srv.Runners().Create(ctx.Request.Context(), bark.RequireManifest(ctx)))
 		})
 		v1.GET("/runners/:id", bark.ResourceAPI(), func(ctx *gin.Context) {
-			resource, exists, err := srv.GetRunnerAPI().Get(ctx.Request.Context(), bark.RequireResourceName(ctx))
-			bark.MaybeManifest(ctx, resource.ToManifest(), exists, err)
+			bark.Manifest(ctx).Found(srv.Runners().Get(ctx.Request.Context(), bark.RequireResourceName(ctx)))
 		})
-		// Update existing Runner info
-		v1.PUT("/runners/:id", bark.ResourceAPI(), bark.VersionedResourceAPI(), bark.ManifestAPI(urth.KindRunner), func(ctx *gin.Context) {
-			versionedId := bark.RequireVersionedResource(ctx)
-			newEntry := bark.RequireManifest(ctx)
-
-			updateResponse, err := srv.GetRunnerAPI().Update(ctx.Request.Context(), versionedId, newEntry)
-			if err != nil {
-				bark.AbortWithError(ctx, http.StatusBadRequest, err)
-				return
-			}
-
-			bark.MarshalResponse(ctx, http.StatusCreated, updateResponse)
+		// Create or Update existing resource
+		// bark.VersionedResourceAPI()
+		v1.PUT("/runners/:id", bark.ResourceAPI(), bark.ManifestAPI(urth.KindRunner), func(ctx *gin.Context) {
+			// 	versionedId := bark.RequireVersionedResource(ctx)
+			bark.Manifest(ctx).CreatedOrUpdated(srv.Runners().CreateOrUpdate(ctx.Request.Context(), bark.RequireManifest(ctx)))
 		})
-
 		v1.DELETE("/runners/:id", bark.ResourceAPI(), bark.VersionedResourceAPI(), func(ctx *gin.Context) {
-			versionedId := bark.RequireVersionedResource(ctx)
-
-			// Note: Should Delete be is silent? - no error if deleting non-existing resource
-			existed, err := srv.GetRunnerAPI().Delete(ctx.Request.Context(), versionedId)
-			if err != nil {
-				bark.AbortWithError(ctx, http.StatusBadRequest, err)
-				return
-			}
-			if !existed {
-				bark.AbortWithError(ctx, http.StatusNotFound, bark.ErrResourceNotFound)
-				return
-			}
-
-			ctx.Status(http.StatusNoContent)
+			bark.Manifest(ctx).Deleted(srv.Runners().Delete(ctx.Request.Context(), bark.RequireVersionedResource(ctx)))
 		})
 		//------------
 		// Scenarios API
 		//------------
-
 		v1.GET("/scenarios", bark.SearchableAPI(paginationLimit), func(ctx *gin.Context) {
-			results, total, err := srv.GetScenarioAPI().List(ctx.Request.Context(), bark.RequireSearchQuery(ctx))
-			bark.FoundOrNot(ctx, err, results, total)
+			bark.Manifest(ctx).List(srv.Scenarios().List(ctx.Request.Context(), bark.RequireSearchQuery(ctx)))
 		})
-
 		v1.POST("/scenarios", bark.ManifestAPI(urth.KindScenario), func(ctx *gin.Context) {
-			result, err := srv.GetScenarioAPI().Create(ctx.Request.Context(), bark.RequireManifest(ctx))
-			bark.MaybeResourceCreated(ctx, result.ToManifest(), err)
+			bark.Manifest(ctx).Created(srv.Scenarios().Create(ctx.Request.Context(), bark.RequireManifest(ctx)))
 		})
-
 		v1.GET("/scenarios/:id", bark.ResourceAPI(), func(ctx *gin.Context) {
-			resource, exists, err := srv.GetScenarioAPI().Get(ctx.Request.Context(), bark.RequireResourceName(ctx))
-			bark.MaybeManifest(ctx, resource.ToManifest(), exists, err)
+			bark.Manifest(ctx).Found(srv.Scenarios().Get(ctx.Request.Context(), bark.RequireResourceName(ctx)))
 		})
-
+		// Create or Update existing resource
+		// bark.VersionedResourceAPI(
+		v1.PUT("/scenarios/:id", bark.ResourceAPI(), bark.ManifestAPI(urth.KindScenario), func(ctx *gin.Context) {
+			// 	versionedId := bark.RequireVersionedResource(ctx)
+			bark.Manifest(ctx).CreatedOrUpdated(srv.Scenarios().CreateOrUpdate(ctx.Request.Context(), bark.RequireManifest(ctx)))
+		})
 		v1.DELETE("/scenarios/:id", bark.ResourceAPI(), bark.VersionedResourceAPI(), func(ctx *gin.Context) {
-			versionedId := bark.RequireVersionedResource(ctx)
-
-			existed, err := srv.GetScenarioAPI().Delete(ctx.Request.Context(), versionedId)
-			if err != nil {
-				bark.AbortWithError(ctx, http.StatusBadRequest, err)
-				return
-			}
-			if !existed {
-				bark.AbortWithError(ctx, http.StatusNotFound, bark.ErrResourceNotFound)
-				return
-			}
-
-			ctx.Status(http.StatusNoContent)
-		})
-
-		v1.PUT("/scenarios/:id", bark.ResourceAPI(), bark.VersionedResourceAPI(), bark.ManifestAPI(urth.KindScenario), func(ctx *gin.Context) {
-			versionedId := bark.RequireVersionedResource(ctx)
-			newEntry := bark.RequireManifest(ctx)
-
-			updateResponse, err := srv.GetScenarioAPI().Update(ctx.Request.Context(), versionedId, newEntry)
-			if err != nil {
-				bark.AbortWithError(ctx, http.StatusBadRequest, err)
-				return
-			}
-
-			bark.MarshalResponse(ctx, http.StatusCreated, updateResponse)
+			bark.Manifest(ctx).Deleted(srv.Scenarios().Delete(ctx.Request.Context(), bark.RequireVersionedResource(ctx)))
 		})
 
 		v1.GET("/scenarios/:id/script", bark.ResourceAPI(), func(ctx *gin.Context) {
-			resource, exists, err := srv.GetScenarioAPI().Get(ctx.Request.Context(), bark.RequireResourceName(ctx))
+			resource, exists, err := srv.Scenarios().Get(ctx.Request.Context(), bark.RequireResourceName(ctx))
 			if err != nil {
 				bark.AbortWithError(ctx, http.StatusBadRequest, err)
 				return
-			}
-			if !exists {
+			} else if !exists {
 				bark.AbortWithError(ctx, http.StatusNotFound, bark.ErrResourceNotFound)
 				return
 			}
 
-			data, ok := resource.Spec.Prob.Spec.(map[string]any)
+			scenario, err := urth.NewScenario(resource)
+			if err != nil {
+				bark.AbortWithError(ctx, http.StatusInternalServerError, bark.ErrResourceNotFound)
+			}
+
+			data, ok := scenario.Spec.Prob.Spec.(map[string]any)
 			if !ok || data == nil || len(data) == 0 {
-				bark.AbortWithError(ctx, http.StatusNotFound, fmt.Errorf("prob spec %q is %w", reflect.TypeOf(resource.Spec.Prob.Spec), manifest.ErrNilSpec))
+				bark.AbortWithError(ctx, http.StatusNotFound, fmt.Errorf("prob spec %q is %w", reflect.TypeOf(scenario.Spec.Prob.Spec), manifest.ErrNilSpec))
 				return
 			}
 
@@ -267,24 +234,16 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 		// DELETE script ? => UpdateScript("")
 
 		//------------
-		// Scenario run results API
+		// Scenario run Results API
 		//------------
 
 		v1.GET("/scenarios/:id/results", bark.SearchableAPI(paginationLimit), bark.ResourceAPI(), func(ctx *gin.Context) {
-			results, total, err := srv.GetResultsAPI(bark.RequireResourceName(ctx)).List(ctx.Request.Context(), bark.RequireSearchQuery(ctx))
-			bark.FoundOrNot(ctx, err, results, total)
+			bark.WithContext[urth.Result](ctx).List(srv.Results(bark.RequireResourceName(ctx)).List(ctx.Request.Context(), bark.RequireSearchQuery(ctx)))
 		})
+		// AuthBearerAPI: Who is authorized to create new results ???
 		v1.POST("/scenarios/:id/results", bark.ResourceAPI(), bark.ManifestAPI(urth.KindResult), func(ctx *gin.Context) {
-			newEntry := bark.RequireManifest(ctx)
-			result, err := srv.GetResultsAPI(bark.RequireResourceName(ctx)).Create(ctx.Request.Context(), newEntry)
-			if err != nil {
-				bark.AbortWithError(ctx, http.StatusBadRequest, err)
-				return
-			}
-
-			bark.ReplyResourceCreated(ctx, result, result)
+			bark.WithContext[urth.Result](ctx).Created(srv.Results(bark.RequireResourceName(ctx)).Create(ctx.Request.Context(), bark.RequireManifest(ctx)))
 		})
-
 		v1.GET("/scenarios/:id/results/:runId", func(ctx *gin.Context) {
 			var resourceRequest urth.ScenarioRunResultsRequest
 			if err := ctx.BindUri(&resourceRequest); err != nil {
@@ -292,40 +251,9 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 				return
 			}
 
-			resource, exists, err := srv.GetResultsAPI(manifest.ResourceName(resourceRequest.ID)).Get(ctx.Request.Context(), manifest.ResourceName(resourceRequest.RunId))
-			bark.MaybeManifest(ctx, resource.ToManifest(), exists, err)
+			bark.WithContext[urth.Result](ctx).Found(srv.Results(manifest.ResourceName(resourceRequest.ID)).Get(ctx.Request.Context(), manifest.ResourceName(resourceRequest.RunId)))
 		})
-		v1.POST("/auth/:id/:runId", func(ctx *gin.Context) {
-			// v1.POST("/scenarios/:id/results/:runId/auth", func(ctx *gin.Context) {
-			log.Print("YO!")
-
-			var resourceRequest urth.ScenarioRunResultsRequest
-			if err := ctx.ShouldBindUri(&resourceRequest); err != nil {
-				log.Print("error while trying to bind to ScenarioRunResultsRequest", "err", err)
-				bark.AbortWithError(ctx, http.StatusNotFound, err)
-				return
-			}
-
-			var authRequest urth.AuthJobRequest
-			if err := ctx.ShouldBind(&authRequest); err != nil {
-				log.Print("error while trying to read AuthJobRequest", "err", err)
-				bark.AbortWithError(ctx, http.StatusBadRequest, err)
-				return
-			}
-
-			resource, err := srv.GetResultsAPI(manifest.ResourceName(resourceRequest.ID)).Auth(ctx.Request.Context(), resourceRequest.RunId, authRequest)
-			// resource, err := srv.GetResultsAPI(manifest.ResourceName(resourceRequest.ID)).Auth(ctx.Request.Context(), manifest.NewVersionedID(resourceRequest.RunId, versionedInfo.Version), authRequest)
-			if err != nil {
-				log.Print("error while calling auth", "err", err)
-				bark.AbortWithError(ctx, http.StatusBadRequest, err)
-				return
-			}
-
-			ctx.Header(bark.HTTPHeaderCacheControl, "no-store")
-			bark.Ok(ctx, resource)
-		})
-
-		v1.PUT("/scenarios/:id/results/:runId", bark.AuthBearerAPI(), bark.VersionedResourceAPI(), func(ctx *gin.Context) {
+		v1.PUT("/scenarios/:id/results/:runId/status", bark.AuthBearerAPI(), bark.VersionedResourceAPI(), func(ctx *gin.Context) {
 			var resourceRequest urth.ScenarioRunResultsRequest
 			if err := ctx.ShouldBindUri(&resourceRequest); err != nil {
 				bark.AbortWithError(ctx, http.StatusNotFound, err)
@@ -333,8 +261,6 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 			}
 
 			versionInfo := bark.RequireVersionedResourceQuery(ctx)
-
-			// FIXME: Should require valid JWT with exp claim validated
 			token := bark.RequireBearerToken(ctx)
 
 			var newEntry urth.ResultStatus
@@ -343,7 +269,7 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 				return
 			}
 
-			resource, err := srv.GetResultsAPI(manifest.ResourceName(resourceRequest.ID)).Update(ctx.Request.Context(), manifest.NewVersionedID(manifest.ResourceID(resourceRequest.RunId), versionInfo.Version), urth.ApiToken(token), newEntry)
+			resource, err := srv.Results(manifest.ResourceName(resourceRequest.ID)).UpdateStatus(ctx.Request.Context(), manifest.NewVersionedID(manifest.ResourceID(resourceRequest.RunId), versionInfo.Version), urth.ApiToken(token), newEntry)
 			if err != nil {
 				bark.AbortWithError(ctx, http.StatusBadRequest, err)
 				return
@@ -356,40 +282,24 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 		// Artifacts API
 		//------------
 		v1.GET("/artifacts", bark.SearchableAPI(paginationLimit), func(ctx *gin.Context) {
-			results, total, err := srv.GetArtifactsApi().List(ctx.Request.Context(), bark.RequireSearchQuery(ctx))
-			bark.FoundOrNot(ctx, err, results, total)
+			bark.Manifest(ctx).List(srv.Artifacts().List(ctx.Request.Context(), bark.RequireSearchQuery(ctx)))
 		})
 
 		// FIXME: Require valid worker auth / JWT
-		v1.POST("/artifacts", bark.ContentTypeAPI() /*authBearerApi(),*/, bark.ManifestAPI(urth.KindArtifact), func(ctx *gin.Context) {
-			// TODO: Considers streaming data to a blob storage
-			result, err := srv.GetArtifactsApi().Create(ctx.Request.Context(), bark.RequireManifest(ctx))
-			bark.MaybeResourceCreated(ctx, result.ToManifest(), err)
+		// TODO: Considers streaming data to a blob storage
+		v1.POST("/artifacts", bark.AuthBearerAPI(), bark.ManifestAPI(urth.KindArtifact), func(ctx *gin.Context) {
+			token := bark.RequireBearerToken(ctx)
+			bark.Manifest(ctx).Created(srv.Artifacts().Create(ctx.Request.Context(), urth.ApiToken(token), bark.RequireManifest(ctx)))
 		})
-
 		v1.GET("/artifacts/:id", bark.ResourceAPI(), func(ctx *gin.Context) {
-			resource, exists, err := srv.GetArtifactsApi().Get(ctx.Request.Context(), bark.RequireResourceName(ctx))
-			if err != nil {
-				bark.AbortWithError(ctx, http.StatusBadRequest, err)
-				return
-			}
-			if !exists {
-				bark.AbortWithError(ctx, http.StatusNotFound, bark.ErrResourceNotFound)
-				return
-			}
-
-			// TODO: Find a better way to not-expand content
-			resource.Spec.Content = nil
-			bark.Ok(ctx, resource)
+			bark.Manifest(ctx).Found(srv.Artifacts().Get(ctx.Request.Context(), bark.RequireResourceName(ctx)))
 		})
 		v1.GET("/artifacts/:id/content", bark.ResourceAPI(), func(ctx *gin.Context) {
-			resource, exists, err := srv.GetArtifactsApi().GetContent(ctx.Request.Context(), bark.RequireResourceName(ctx))
+			resource, exists, err := srv.Artifacts().GetContent(ctx.Request.Context(), bark.RequireResourceName(ctx))
 			if err != nil {
 				bark.AbortWithError(ctx, http.StatusBadRequest, err)
 				return
-			}
-
-			if !exists {
+			} else if !exists {
 				bark.AbortWithError(ctx, http.StatusNotFound, bark.ErrResourceNotFound)
 				return
 			}
@@ -402,19 +312,7 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 
 		// FIXME: Should you be able to delete an artifact. It should auto-expire
 		v1.DELETE("/artifacts/:id", bark.ResourceAPI(), bark.VersionedResourceAPI(), func(ctx *gin.Context) {
-			versionedId := bark.RequireVersionedResource(ctx)
-
-			existed, err := srv.GetArtifactsApi().Delete(ctx.Request.Context(), versionedId)
-			if err != nil {
-				bark.AbortWithError(ctx, http.StatusBadRequest, err)
-				return
-			}
-			if !existed {
-				bark.AbortWithError(ctx, http.StatusNotFound, bark.ErrResourceNotFound)
-				return
-			}
-
-			ctx.Status(http.StatusNoContent)
+			bark.Manifest(ctx).Deleted(srv.Artifacts().Delete(ctx.Request.Context(), bark.RequireVersionedResource(ctx)))
 		})
 	}
 

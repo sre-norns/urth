@@ -1,16 +1,16 @@
 {
+    "apiVersion": "v1",
     "kind": "scenarios",
     "metadata": {
         "name": "scenario-tcp-example-1",
         "labels": {
-            "os": "linux"
+            "host": "localhost"
         }
     },
     "spec": {
         "active": true,
-        "description": "My other scenario",
-        "requirements": {},
-        "schedule": "0 0 * * TUE",
+        "description": "TCP Prob checking if TCP port is open",
+        "schedule": "* * * * *",
         "prob": {
             "kind": "tcp",
             "spec": {

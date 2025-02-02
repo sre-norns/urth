@@ -221,12 +221,13 @@ func RunScript(ctx context.Context, probSpec any, logger *runner.RunLog, options
 		return urth.NewRunResults(urth.RunFinishedError), logger.Package(), fmt.Errorf("%w: got %q, expected %q", manifest.ErrUnexpectedSpecType, reflect.TypeOf(probSpec), reflect.TypeOf(&Spec{}))
 	}
 
-	logger.Log("fondling HTTP")
+	logger.Logf("parsing %v scenario...", Kind)
 	requests, err := httpparser.Parse(strings.NewReader(prob.Script))
 	if err != nil {
-		logger.Log("failed: ", err)
+		logger.Logf("failed to parse %v prober script: %v", Kind, err)
 		return urth.NewRunResults(urth.RunFinishedError), logger.Package(), nil
 	}
 
+	logger.Logf("running %v script: %d requests", Kind, len(requests))
 	return RunHttpRequests(ctx, logger, requests, options)
 }

@@ -57,31 +57,32 @@ type ProbManifest struct {
 	Timeout time.Duration `form:"timeout" json:"timeout,omitempty" yaml:"timeout,omitempty" xml:"timeout,omitempty"`
 
 	// Actual script, of a 'kind' type
-	Spec interface{} `json:"-" yaml:"-"`
+	Spec any `json:"-" yaml:"-"`
 }
 
 func (u ProbManifest) MarshalJSON() ([]byte, error) {
 	return json.Marshal(&struct {
-		Kind ProbKind    `json:"kind,omitempty" yaml:"kind,omitempty"`
-		Spec interface{} `json:"spec,omitempty"` // needed to strip any json tags
+		Kind    ProbKind      `json:"kind,omitempty"`
+		Timeout time.Duration `json:"timeout,omitempty"`
+		Spec    any           `json:"spec,omitempty"` // needed to strip any json tags
 	}{
-		Kind: u.Kind,
-		Spec: u.Spec,
+		Kind:    u.Kind,
+		Timeout: u.Timeout,
+		Spec:    u.Spec,
 	})
 }
 
 func (s *ProbManifest) UnmarshalJSON(data []byte) error {
 	aux := &struct {
-		Kind    ProbKind        `json:"kind,omitempty" yaml:"kind,omitempty"`
-		Timeout time.Duration   `json:"timeout,omitempty" yaml:"timeout,omitempty"`
+		Kind    ProbKind        `json:"kind,omitempty"`
+		Timeout time.Duration   `json:"timeout,omitempty"`
 		Spec    json.RawMessage `json:"spec,omitempty"`
 	}{
 		Kind:    s.Kind,
 		Timeout: s.Timeout,
 	}
 
-	err := json.Unmarshal(data, aux)
-	if err != nil {
+	if err := json.Unmarshal(data, aux); err != nil {
 		return err
 	}
 
@@ -91,6 +92,7 @@ func (s *ProbManifest) UnmarshalJSON(data []byte) error {
 	}
 
 	s.Kind = aux.Kind
+	s.Timeout = aux.Timeout
 	s.Spec = m2.Spec
 	return err
 }
@@ -119,7 +121,7 @@ func (s *ProbManifest) UnmarshalYAML(n *yaml.Node) (err error) {
 		return err
 	}
 
-	s.Spec, err = InstanceOf(s.Kind)
+	m2, err := InstanceOf(s.Kind)
 	if err != nil {
 		if len(obj.Spec.Content) == 0 {
 			s.Spec = nil
@@ -127,6 +129,8 @@ func (s *ProbManifest) UnmarshalYAML(n *yaml.Node) (err error) {
 		}
 		s.Spec = make(map[string]string)
 	}
+
+	s.Spec = m2.Spec
 
 	return obj.Spec.Decode(s.Spec)
 }

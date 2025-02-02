@@ -38,7 +38,7 @@ const Scenarios = () => {
   return (
     <ScenariosContainer>
       {response.data.map((s, i) => (
-        <Scenario key={s.uid} data={s} odd={i % 2 === 1} />
+        <Scenario key={s.metadata.uid} data={s} odd={i % 2 !== 0} />
       ))}
     </ScenariosContainer>
   )

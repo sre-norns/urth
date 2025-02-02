@@ -70,8 +70,8 @@ const statusToColor = (status) => {
   }
 }
 
-function scheduleBreakdown(expression) {
-  if (!expression) {
+function scheduleBreakdown(schedule, status) {
+  if (!schedule) {
     return {
       runSchedule: null,
       prevScheduledRun: null,
@@ -79,16 +79,34 @@ function scheduleBreakdown(expression) {
     }
   }
 
-  const runSchedule = parseExpression(expression)
   return {
-    runSchedule: runSchedule,
-    prevScheduledRun: runSchedule.prev(),
-    nextScheduledRun: runSchedule.next(),
+    runSchedule: schedule,
+    nextScheduledRun: status.nextScheduledRunTime,
+    prevScheduledRun: (status.results && status.results.length > 0)
+      ? status.results[0].spec?.start_time || status.results[0].creationTimestamp
+      : null
   }
+
+  // try {
+  //   const runSchedule = parseExpression(expression)
+  //   return {
+  //     runSchedule: runSchedule,
+  //     prevScheduledRun: runSchedule.prev(),
+  //     nextScheduledRun: runSchedule.next(),
+  //   }
+  // } catch {
+  //   return {
+  //     runSchedule: null,
+  //     prevScheduledRun: null,
+  //     nextScheduledRun: null,
+  //   }
+
+  // }
 }
 
 const Scenario = ({ data, odd }) => {
-  const { uid, name, labels, spec, status } = data
+  const { metadata, spec, status } = data
+  const { uid, name, labels } = metadata
   const { active, description, schedule, prob } = spec
 
   const lastRunStatus = status.results && status.results.length > 0
@@ -104,7 +122,7 @@ const Scenario = ({ data, odd }) => {
   const scenarioActions = useSelector((s) => s.scenarioActions)
   const { fetching, response, error } = scenarioActions[name] || {}
 
-  const runSchedule = scheduleBreakdown(schedule)
+  const runSchedule = scheduleBreakdown(schedule, status)
   const dispatch = useDispatch()
 
   const requestRun = useCallback((event) => {
@@ -165,23 +183,39 @@ const Scenario = ({ data, odd }) => {
   )
 }
 
-Scenario.propTypes = {
-  data: PropTypes.shape({
-    uid: PropTypes.oneOfType([PropTypes.number, PropTypes.string]).isRequired,
-    name: PropTypes.string.isRequired,
-    labels: PropTypes.any,
-    metadata: PropTypes.shape({
+const ManifestMeta = PropTypes.shape({
+  name: PropTypes.string.isRequired,
+  labels: PropTypes.any,
+  uid: PropTypes.string,
+  version: PropTypes.number,
+  creationTimestamp: PropTypes.string,
+  updateTimestamp: PropTypes.string,
+})
+
+const ScenarioManifest = PropTypes.shape({
+  kind: PropTypes.string,
+  metadata: ManifestMeta.isRequired,
+  spec: PropTypes.shape({
+    active: PropTypes.bool,
+    description: PropTypes.string,
+    schedule: PropTypes.string,
+    prob: PropTypes.shape({
+      kind: PropTypes.string.isRequired,
+      spec: PropTypes.any,
     }),
-    spec: PropTypes.shape({
-      description: PropTypes.string,
-      active: PropTypes.bool,
-      schedule: PropTypes.string,
-    }).isRequired,
-    status: PropTypes.shape({
-      nextScheduledRunTime: PropTypes.string,
-      results: PropTypes.arrayOf(PropTypes.any),
-    }).isRequired,
+    requirements: PropTypes.shape({
+      matchLabels: PropTypes.any,
+      matchSelector: PropTypes.arrayOf(PropTypes.any),
+    }),
   }).isRequired,
+  status: PropTypes.shape({
+    nextScheduledRunTime: PropTypes.string,
+    results: PropTypes.arrayOf(PropTypes.any),
+  }).isRequired,
+})
+
+Scenario.propTypes = {
+  data: ScenarioManifest.isRequired,
   odd: PropTypes.bool,
 }
 

@@ -16,8 +16,9 @@ func TestCustomMarshaling_JSON(t *testing.T) {
 	}
 
 	testCases := map[string]struct {
-		given  urth.ProbManifest
-		expect string
+		given       urth.ProbManifest
+		expect      string
+		expectError bool
 	}{
 		"nothing": {
 			given:  urth.ProbManifest{},
@@ -69,18 +70,16 @@ func TestCustomUnmarshaling_JSON(t *testing.T) {
 		expect      urth.ProbManifest
 		expectError bool
 	}{
-		"nothing": {
+		"nothing-object": {
 			given:  `{}`,
 			expect: urth.ProbManifest{},
 		},
 		"unknown-kind": {
-			given: `{"kind":"unknownSpec","metadata":{"name":""},"spec":{"field":"xyz","desc":"unknown"}}`,
+			given: `{"kind":"unknownSpec","spec":{"field":"xyz","desc":"unknown"}}`,
 			expect: urth.ProbManifest{
 				Kind: manifest.Kind("unknownSpec"),
-				// Spec: json.RawMessage(`{"field":"xyz","desc":"unknown"}`),
 				Spec: map[string]any{"field": "xyz", "desc": "unknown"},
 			},
-			expectError: false,
 		},
 		"basic": {
 			expect: urth.ProbManifest{
@@ -92,6 +91,10 @@ func TestCustomUnmarshaling_JSON(t *testing.T) {
 			},
 			given: `{"kind":"testSpec","spec":{"value":42,"name":"meaning"}}`,
 		},
+		"invalid-spec": {
+			expectError: true,
+			given:       `{"kind":"testSpec","spec":{"script":"meaning"}}`,
+		},
 	}
 
 	for name, tc := range testCases {
@@ -100,7 +103,7 @@ func TestCustomUnmarshaling_JSON(t *testing.T) {
 			var got urth.ProbManifest
 			err := json.Unmarshal([]byte(test.given), &got)
 			if test.expectError {
-				require.Error(t, err, "expected error: %v", test.expectError)
+				require.Error(t, err, "expected error")
 			} else {
 				require.NoError(t, err, "expected error: %v", test.expectError)
 				require.Equal(t, test.expect, got)

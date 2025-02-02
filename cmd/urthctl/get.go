@@ -131,7 +131,8 @@ func (c *Scenarios) Run(cfg *commandContext) error {
 	q := manifest.SearchQuery{
 		Selector: selector,
 	}
-	resources, err := fetchScenarios(cfg.Context, apiClient, q)
+	// TODO: Pagination
+	resources, _, err := fetchScenarios(cfg.Context, apiClient, q)
 	if err != nil {
 		return err
 	}
@@ -210,7 +211,8 @@ func (c *Runners) Run(cfg *commandContext) error {
 	q := manifest.SearchQuery{
 		Selector: selector,
 	}
-	resources, err := fetchRunners(cfg.Context, apiClient, q)
+	// TODO: Pagination
+	resources, _, err := fetchRunners(cfg.Context, apiClient, q)
 	if err != nil {
 		return err
 	}
@@ -312,7 +314,7 @@ func (c *Labels) Run(cfg *commandContext) error {
 	ctx, cancel := cfg.ClientCallContext()
 	defer cancel()
 
-	labels, _, err := apiClient.GetLabels(kind).ListLabels(ctx, manifest.SearchQuery{
+	labels, _, err := apiClient.Labels(kind).ListLabels(ctx, manifest.SearchQuery{
 		Selector: selector,
 	})
 	if err != nil {
