@@ -1,6 +1,6 @@
 import React from 'react'
 import PropTypes from 'prop-types'
-import {Route, Switch} from 'wouter'
+import { Route, Switch } from 'wouter'
 import styled from '@emotion/styled'
 import NavRow from '../components/NavRow.js'
 import NavBrand from '../components/NavBrand.js'
@@ -9,7 +9,7 @@ import Nav from '../components/Nav.js'
 import NavRowContainer from '../components/NavRowContainer.js'
 import TextInput from '../components/TextInput.js'
 import Button from '../components/Button.js'
-import {routed} from '../utils/routing.js'
+import { routed } from '../utils/routing.js'
 
 const onNonClick = (e) => {
   e.preventDefault()
@@ -39,10 +39,10 @@ const Header = () => {
             <NavLink href="/scenarios" activePattern="/scenarios/*?">
               Scenarios
             </NavLink>
-            <NavLink href="/run-results" activePattern="/run-results/*?">
-              Run Results
-            </NavLink>
             <NavLink href="#" onClick={onNonClick}>
+              Results
+            </NavLink>
+            <NavLink href="/runners" activePattern="/runners/*?">
               Runners
             </NavLink>
             <NavLink href="#" onClick={onNonClick} disabled active>

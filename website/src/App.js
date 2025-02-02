@@ -1,11 +1,13 @@
-import React, {Fragment, useMemo} from 'react'
-import {useMediaQuery} from '@react-hook/media-query'
-import {ThemeProvider} from '@emotion/react'
-import {createTheme} from './theme/index.js'
+import React, { Fragment, useMemo } from 'react'
+import { useMediaQuery } from '@react-hook/media-query'
+import { ThemeProvider } from '@emotion/react'
+import { createTheme } from './theme/index.js'
 import Header from './containers/Header.js'
 import Scenarios from './pages/Scenarios.js'
 import ScenarioViewer from './pages/ScenarioViewer.js'
-import {Redirect, Route, Switch} from 'wouter'
+import Runners from './pages/Runners.js'
+
+import { Redirect, Route, Switch } from 'wouter'
 
 export default () => {
   const dark = useMediaQuery('(prefers-color-scheme: dark)')
@@ -22,6 +24,7 @@ export default () => {
           <Route path="/scenarios/:scenarioId/edit">
             {(params) => <ScenarioViewer scenarioId={params.scenarioId} edit />}
           </Route>
+          <Route path="/runners">{() => <Runners />}</Route>
           <Route>{() => <p>Not found</p>}</Route>
         </Switch>
       </>
