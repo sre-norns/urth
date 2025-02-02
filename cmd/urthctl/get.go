@@ -31,8 +31,10 @@ type (
 	}
 
 	Results struct {
-		ScenarioId manifest.ResourceName   `help:"Id of the scenario" arg:"" name:"scenario" `
-		RunId      []manifest.ResourceName `help:"Id of the run results" arg:"" optional:"" name:"result" `
+		Selector string `help:"Selector (label query) to filter on" optional:"" name:"selector" short:"l"`
+		Output   string `help:"Output format" enum:"wide,short" default:"short" name:"output" short:"o"`
+
+		ScenarioId manifest.ResourceName `help:"Id of the scenario" arg:"" name:"scenario" `
 	}
 
 	Runner struct {
@@ -101,6 +103,25 @@ func getFormatter(formatName outputFormat) (formatter, error) {
 	return nil, fmt.Errorf("unexpected output format %q", formatName)
 }
 
+func resourceAge(meta manifest.ObjectMeta) time.Duration {
+	if meta.UpdatedAt == nil {
+		return 0
+	}
+
+	return time.Since(*meta.UpdatedAt).Round(time.Second)
+}
+
+func maybeDuration(start *time.Time, end *time.Time) string {
+	if start == nil {
+		return "not-started"
+	}
+	if end == nil {
+		return fmt.Sprintf("pending: %v", time.Since(*start).Round(time.Second))
+	}
+
+	return end.Sub(*start).Round(time.Second).String()
+}
+
 func (c *Scenario) Run(cfg *commandContext) error {
 	apiClient, err := cfg.NewClient()
 	if err != nil {
@@ -163,18 +184,14 @@ func (c *Scenarios) Run(cfg *commandContext) error {
 			probType = string(r.Spec.Prob.Kind)
 		}
 
-		row := table.Row{r.Name, r.Spec.IsActive, probType, lastStatus, time.Since(*r.UpdatedAt).Round(time.Second)}
+		row := table.Row{r.Name, r.Spec.IsActive, probType, lastStatus, resourceAge(r.ObjectMeta)}
 
 		if c.Output == "wide" {
 			lastRunDuration := ""
 
 			if len(r.Status.Results) > 0 && r.Status.Results[0].Spec.TimeStarted != nil {
 				latestResult := r.Status.Results[0].Spec
-				if latestResult.TimeEnded != nil {
-					lastRunDuration = latestResult.TimeEnded.Sub(*latestResult.TimeStarted).Round(time.Second).String()
-				} else {
-					lastRunDuration = time.Since(*latestResult.TimeStarted).Round(time.Second).String()
-				}
+				lastRunDuration = maybeDuration(latestResult.TimeStarted, latestResult.TimeEnded)
 			}
 
 			nextRunScheduled := ""
@@ -218,7 +235,6 @@ func (c *Runners) Run(cfg *commandContext) error {
 	}
 
 	t := table.NewWriter()
-
 	t.Style().Options = table.OptionsNoBordersAndSeparators
 	t.Style().Format.HeaderAlign = text.AlignLeft
 	t.Style().Format.RowAlign = text.AlignLeft
@@ -236,7 +252,7 @@ func (c *Runners) Run(cfg *commandContext) error {
 			nActive = fmt.Sprintf("%d/%d", r.Status.NumberInstances, r.Spec.MaxInstances)
 		}
 
-		row := table.Row{r.Name, r.Spec.IsActive, nActive, time.Since(*r.UpdatedAt).Round(time.Second)}
+		row := table.Row{r.Name, r.Spec.IsActive, nActive, resourceAge(r.ObjectMeta)}
 
 		if c.Output == "wide" {
 			row = append(row,
@@ -278,12 +294,47 @@ func (c *Results) Run(cfg *commandContext) error {
 	ctx, cancel := cfg.ClientCallContext()
 	defer cancel()
 
-	resource, err := fetchResults(ctx, apiClient, c.ScenarioId, c.RunId)
+	selector, err := manifest.ParseSelector(c.Selector)
+	if err != nil {
+		return fmt.Errorf("failed to parse labels selector: %w", err)
+	}
+	q := manifest.SearchQuery{
+		Selector: selector,
+	}
+	// TODO: Pagination
+	resources, _, err := fetchResults(ctx, apiClient, c.ScenarioId, q)
 	if err != nil {
 		return err
 	}
 
-	return cfg.OutputFormatter(resource)
+	t := table.NewWriter()
+	t.Style().Options = table.OptionsNoBordersAndSeparators
+	t.Style().Format.HeaderAlign = text.AlignLeft
+	t.Style().Format.RowAlign = text.AlignLeft
+	t.SetOutputMirror(os.Stdout)
+
+	header := table.Row{"Name", "Duration", "Status", "Age"}
+	if c.Output == "wide" {
+		header = append(header, "Results", "Kind", "Artifacts")
+	}
+	t.AppendHeader(header)
+
+	for _, resource := range resources {
+		row := table.Row{resource.Name, maybeDuration(resource.Spec.TimeStarted, resource.Spec.TimeEnded), resource.Status.Status, resourceAge(resource.ObjectMeta)}
+
+		if c.Output == "wide" {
+			row = append(row,
+				resource.Status.Result,
+				resource.Spec.ProbKind,
+				strconv.FormatUint(resource.Status.NumberArtifacts, 10),
+			)
+		}
+
+		t.AppendRow(row)
+	}
+
+	t.Render()
+	return nil
 }
 
 func (c *Labels) Run(cfg *commandContext) error {

@@ -114,7 +114,7 @@ type (
 func (s *serviceImpl) Runners() RunnersApi {
 	return &runnersApiImpl{
 		store:            s.store,
-		hmacSampleSecret: []byte("my_secret_key"),
+		hmacSampleSecret: []byte("my_secret_key"), // FIXME: Must be Runtime configurable secret
 	}
 }
 
@@ -132,12 +132,16 @@ func (s *serviceImpl) Results(scenarioName manifest.ResourceName) RunResultApi {
 		workersApi: &runnersApiImpl{
 			store: s.store,
 		},
+
+		resultsSigningKey: []byte("my_results signing secret key, duh"), // FIXME: Must be Runtime configurable secret
 	}
 }
 
 func (s *serviceImpl) Artifacts() ArtifactApi {
 	return &artifactApiImp{
 		store: s.store,
+
+		resultsSigningKey: []byte("my_results signing secret key, duh"), // FIXME: Must be Runtime configurable secret
 	}
 }
 
@@ -292,6 +296,8 @@ type resultsApiImpl struct {
 	scenarioId manifest.ResourceName
 	scheduler  Scheduler
 	workersApi *runnersApiImpl
+
+	resultsSigningKey []byte
 }
 
 func (s *resultsApiImpl) scheduleRun(ctx context.Context, runResult Result) (RunId, error) {
@@ -377,7 +383,7 @@ func (m *resultsApiImpl) Create(ctx context.Context, newEntry manifest.ResourceM
 
 	// Ensure end time is unset:
 	if entry.Spec.TimeEnded != nil {
-		// Can't post completed jobs
+		// Can't post to create a completed jobs
 		return Result{}, bark.ErrForbidden
 	}
 
@@ -393,6 +399,9 @@ func (m *resultsApiImpl) Create(ctx context.Context, newEntry manifest.ResourceM
 	if !entry.Spec.Scenario.Spec.IsActive {
 		return Result{}, bark.ErrForbidden
 	}
+
+	// Should we override of just trust the value passed in?
+	entry.Spec.ProbKind = entry.Spec.Scenario.Spec.Prob.Kind
 
 	// Ensure initial status is set to pending
 	entry.Status = ResultStatus{
@@ -483,7 +492,7 @@ func (m *resultsApiImpl) Auth(ctx context.Context, resultName manifest.ResourceN
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenString, err := token.SignedString([]byte(entry.Name))
+	tokenString, err := token.SignedString(m.resultsSigningKey)
 	if err != nil {
 		return AuthJobResponse{}, fmt.Errorf("failed to sing an auth token: %w", err)
 	}
@@ -513,7 +522,7 @@ func (m *resultsApiImpl) validateUpdateRequest(_ context.Context, entry Result, 
 
 		// hmacSampleSecret is a []byte containing your secret, e.g. []byte("my_secret_key")
 		// return m.hmacSampleSecret, nil
-		return []byte(entry.Name), nil // FIXME: Terribly insecure way to confirm token signature. Should use results auth-token
+		return m.resultsSigningKey, nil // FIXME: Terribly insecure way to confirm token signature. Should use results auth-token
 	})
 	if err != nil {
 		return bark.ErrResourceUnauthorized
@@ -777,6 +786,8 @@ func (m *runnersApiImpl) Auth(ctx context.Context, apiToken ApiToken, newEntry m
 // ------------------------------
 type artifactApiImp struct {
 	store dbstore.TransitionalStore
+
+	resultsSigningKey []byte
 }
 
 func (m *artifactApiImp) List(ctx context.Context, query manifest.SearchQuery) (results []manifest.ResourceManifest, total int64, err error) {
@@ -814,14 +825,51 @@ func (m *artifactApiImp) GetContent(ctx context.Context, name manifest.ResourceN
 	return result.Spec, exist && result.Name == name, err
 }
 
-func (m *artifactApiImp) Create(ctx context.Context, token ApiToken, newEntry manifest.ResourceManifest) (manifest.ResourceManifest, error) {
-	// TODO: Validate the JWT!
+func (m *artifactApiImp) Create(ctx context.Context, apiToken ApiToken, newEntry manifest.ResourceManifest) (manifest.ResourceManifest, error) {
+	token, err := jwt.Parse(string(apiToken), func(token *jwt.Token) (interface{}, error) {
+		// Don't forget to validate the alg is what you expect:
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+
+		// hmacSampleSecret is a []byte containing your secret, e.g. []byte("my_secret_key")
+		return m.resultsSigningKey, nil
+	})
+	if err != nil {
+		return manifest.ResourceManifest{}, bark.ErrResourceUnauthorized
+	}
+
+	tokenSubj, err := token.Claims.GetSubject()
+	if err != nil {
+		return manifest.ResourceManifest{}, bark.ErrResourceUnauthorized
+	}
+
+	// Find result this artifact is for:
+	// Subject:   string(entry.UID),
+	var result Result
+	if ok, err := m.store.GetByUID(ctx, &result, manifest.ResourceID(tokenSubj),
+		dbstore.Expand("Artifacts", manifestMatch(newEntry.Metadata))); err != nil {
+		return manifest.ResourceManifest{}, err
+	} else if !ok {
+		return manifest.ResourceManifest{}, bark.ErrResourceUnauthorized
+	}
 
 	entry, err := NewArtifact(newEntry)
 	if err != nil {
+		log.Printf("Failed to convert Artifact Manifest into a model: %v", err)
 		return manifest.ResourceManifest{}, err
 	}
+	entry.Spec.Result = result
 
+	log.Printf("Result has %d artifacts with Name matches", len(result.Status.Artifacts))
+	if len(result.Status.Artifacts) > 0 && result.Status.Artifacts[0].Name == entry.Name {
+		existingRecord := result.Status.Artifacts[0]
+		// Double posting the same artifact, just ignore
+		log.Printf("Attempt to post the same artifact %q again. Rejected", existingRecord.Name)
+		return manifest.ResourceManifest{}, bark.ErrResourceVersionConflict
+	}
+
+	//////////////////
 	err = m.store.Create(ctx, &entry)
 	return entry.ToManifest(), err
 }

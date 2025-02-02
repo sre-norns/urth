@@ -73,29 +73,24 @@ func fetchScenarios(ctx context.Context, apiClient *urth.RestApiClient, q manife
 	return results, total, nil
 }
 
-func fetchResults(ctx context.Context, apiClient *urth.RestApiClient, scenarioId manifest.ResourceName, ids []manifest.ResourceName) ([]urth.Result, error) {
-	if len(ids) == 0 {
-		resources, _, err := apiClient.Results(scenarioId).List(ctx, manifest.SearchQuery{})
-		if err != nil {
-			return nil, err
-		}
-
-		for _, resource := range resources {
-			ids = append(ids, resource.Name)
-		}
+func fetchResults(ctx context.Context, apiClient *urth.RestApiClient, scenarioId manifest.ResourceName, q manifest.SearchQuery) ([]urth.Result, int64, error) {
+	resources, total, err := apiClient.Results(scenarioId).List(ctx, q)
+	if err != nil {
+		return nil, total, fmt.Errorf("failed to fetch batch: %w", err)
 	}
 
-	results := make([]urth.Result, 0, len(ids))
-	for _, rid := range ids {
-		resource, ok, err := apiClient.Results(scenarioId).Get(ctx, rid)
-		if !ok && err == nil {
-			return nil, fmt.Errorf("%w: scenarioId=%v, runId=%v", ErrResourceNotFound, scenarioId, ids)
-		}
+	return resources, total, err
 
-		results = append(results, resource)
-	}
+	// results := make([]urth.Result, 0, len(resources))
+	// for _, resource := range resources {
+	// 	r, err := urth.NewResult(resource)
+	// 	if err != nil {
+	// 		return results, total, fmt.Errorf("error while parsing batch results: %w", err)
+	// 	}
+	// 	results = append(results, r)
+	// }
 
-	return results, nil
+	// return results, total, nil
 }
 
 func fetchArtifact(ctx context.Context, apiClient *urth.RestApiClient, id manifest.ResourceName) (urth.Artifact, error) {

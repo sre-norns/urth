@@ -126,25 +126,35 @@ type ResultSpec struct {
 	ScenarioID manifest.ResourceID `json:"-" yaml:"-"`
 	Scenario   Scenario            `json:"-" yaml:"-" gorm:"foreignKey:ScenarioID;references:UID"`
 
+	// ProbKind is the kind of prob that produced this results object.
+	// Note that since scenario can be updated, current value of Scenario.Spec.Prob.Kind - might be different
+	ProbKind ProbKind `form:"probKind" json:"probKind,omitempty" yaml:"probKind,omitempty" xml:"probKind"`
+
 	// Timestamp when a job has been picked-up by a worked
-	TimeStarted *time.Time `form:"start_time" json:"start_time" yaml:"start_time" xml:"start_time" gorm:"type:TIMESTAMP NULL"`
+	TimeStarted *time.Time `form:"start_time" json:"start_time,omitempty" yaml:"start_time,omitempty" xml:"start_time" gorm:"type:TIMESTAMP NULL"`
 
 	// Timestamp when execution finished, if it finished
-	TimeEnded *time.Time `form:"end_time" json:"end_time" yaml:"end_time" xml:"end_time" time_format:"unix" gorm:"type:TIMESTAMP NULL"`
+	TimeEnded *time.Time `form:"end_time" json:"end_time,omitempty" yaml:"end_time,omitempty" xml:"end_time" time_format:"unix" gorm:"type:TIMESTAMP NULL"`
 }
 
 type ResultStatus struct {
 	// Status is the status of job in the job-scheduling life-cycle
-	Status JobStatus `form:"status" json:"status" yaml:"status" xml:"status"  binding:"required"`
+	Status JobStatus `form:"status" json:"status,omitempty" yaml:"status,omitempty" xml:"status"`
 
 	// Result of the job execution, if job has been scheduled and finished one way or the other.
-	Result RunStatus `form:"result" json:"result" yaml:"result" xml:"result"  binding:"required"`
+	Result RunStatus `form:"result" json:"result,omitempty" yaml:"result,omitempty" xml:"result"`
+
+	// NumberArtifacts is the number of artifacts associated with this results object
+	NumberArtifacts uint64 `json:"numberArtifacts,omitempty" yaml:"numberArtifacts,omitempty" gorm:"-"`
 
 	// Artifacts produced as a result of the job execution. Logs, traces, image, etc. depending on the nature of the Prob
-	Artifacts []Artifact `json:"artifacts,omitempty" yaml:"artifacts,omitempty" gorm:"foreignKey:UID"`
+	Artifacts []Artifact `json:"artifacts,omitempty" yaml:"artifacts,omitempty" gorm:"foreignKey:ResultID"`
 }
 
 type ArtifactSpec struct {
+	ResultID manifest.ResourceID `json:"-" yaml:"-"`
+	Result   Result              `json:"-" yaml:"-" gorm:"foreignKey:ResultID;references:UID"`
+
 	// ExpireTime is a point in time after which the artifact can be removed by the system. If nil - artifact is 'pinned' and will not be purged, unless manually deleted.
 	ExpireTime *time.Time `form:"expire_time,omitempty" json:"expire_time,omitempty" yaml:"expire_time,omitempty" xml:"expire_time,omitempty" time_format:"unix" gorm:"type:TIMESTAMP NULL"`
 
@@ -348,6 +358,12 @@ func (u *Scenario) AfterFind(tx *gorm.DB) (err error) {
 
 func (u *Runner) AfterFind(tx *gorm.DB) (err error) {
 	u.Status.NumberInstances = uint64(tx.Model(u).Association("Instances").Count())
+
+	return
+}
+
+func (u *Result) AfterFind(tx *gorm.DB) (err error) {
+	u.Status.NumberArtifacts = uint64(tx.Model(u).Association("Artifacts").Count())
 
 	return
 }
