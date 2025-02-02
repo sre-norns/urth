@@ -26,8 +26,8 @@ var (
 type ApiClientConfig struct {
 	HttpClient *http.Client `kong:"-"`
 
-	Token            ApiToken      `help:"API token to register this runner instance"`
-	ApiServerAddress string        `help:"URL address of the API server" default:"http://localhost:8080/api"`
+	Token            ApiToken      `help:"API token to authenticate to the API server"`
+	ApiServerAddress string        `help:"URL of the API server" default:"http://localhost:8080/api"`
 	Timeout          time.Duration `help:"Communication timeout for API server" default:"1m"`
 }
 
@@ -461,6 +461,25 @@ func (c *runnersApiClient) Update(ctx context.Context, id manifest.VersionedReso
 		return
 	default:
 		return result, readApiError(resp)
+	}
+}
+
+func (m *runnersApiClient) GetToken(ctx context.Context, runnerName manifest.ResourceName) (ApiToken, bool, error) {
+	targetApi := urlForPath(m.baseUrl, fmt.Sprintf("v1/auth/runners/%v", runnerName), nil)
+	resp, err := m.getWithAuth(ctx, targetApi, "", nil)
+	if err != nil {
+		return ApiToken(""), false, err
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusOK, http.StatusAccepted, http.StatusCreated:
+		token, err := io.ReadAll(resp.Body)
+		return ApiToken(token), true, err
+	case http.StatusNotFound:
+		return ApiToken(""), false, nil
+	default:
+		return ApiToken(""), false, readApiError(resp)
 	}
 }
 

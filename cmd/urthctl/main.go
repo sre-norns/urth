@@ -6,14 +6,13 @@ import (
 	// TODO: Add dotenv autoloader
 
 	"github.com/alecthomas/kong"
-	"github.com/sre-norns/urth/pkg/runner"
 	"github.com/sre-norns/urth/pkg/urth"
 	"github.com/sre-norns/wyrd/pkg/grace"
 )
 
 type commandContext struct {
 	*urth.ApiClientConfig
-	*runner.RunnerConfig
+	// *runner.RunnerConfig
 
 	OutputFormatter formatter
 	Context         context.Context
@@ -32,16 +31,17 @@ func (f outputFormat) AfterApply(cfg *commandContext) (err error) {
 
 var appCli struct {
 	urth.ApiClientConfig
-	runner.RunnerConfig `embed:"" prefix:"runner."`
 
 	// short:"o"
 	Format outputFormat `enum:"yaml,yml,json" help:"Data output format" default:"yml"`
 
-	Run    RunCmd    `cmd:"" help:"Run a scenario or a script locally"`
-	Get    GetCmd    `cmd:"" help:"Get and display a managed resource(s) from the server"`
-	Apply  ApplyCmd  `cmd:"" help:"Apply a new configuration to a resource"`
-	Logs   getLogs   `cmd:"" help:"Show logs for a scenario run"`
-	Create createCmd `cmd:"" help:"Create a resource on the server form a manifest"`
+	AuthWorker AuthWorkerCmd `cmd:"" help:"Authenticate an instance of a runner"`
+	Create     createCmd     `cmd:"" help:"Create a resource on the server form a manifest"`
+	Apply      ApplyCmd      `cmd:"" help:"Apply a new configuration to a resource"`
+
+	Run  RunCmd  `cmd:"" help:"Run a scenario or a script locally"`
+	Get  GetCmd  `cmd:"" help:"Get and display a managed resource(s) from the server"`
+	Logs getLogs `cmd:"" help:"Show logs for a scenario run"`
 
 	Convert ConvertHar `cmd:"" help:"Convert HAR file into a .http file format"`
 }
@@ -52,7 +52,6 @@ func main() {
 		Context:         mainContext,
 		OutputFormatter: yamlFormatter,
 		ApiClientConfig: &appCli.ApiClientConfig,
-		RunnerConfig:    &appCli.RunnerConfig,
 	}
 	appCtx := kong.Parse(&appCli,
 		kong.Name("urthctl"),

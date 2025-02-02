@@ -52,8 +52,8 @@ type (
 	}
 
 	Labels struct {
-		Kind     string `help:"Kind of object that we want to query labels for"`
-		Selector string `help:"Keys to match" optional:"" name:"selector" short:"l"`
+		Kind     manifest.Kind `help:"Kind of object that we want to query labels for" arg:""`
+		Selector string        `help:"Keys to match" optional:"" name:"selector" short:"l"`
 	}
 
 	GetCmd struct {
@@ -345,13 +345,13 @@ func (c *Labels) Run(cfg *commandContext) error {
 
 	var kind manifest.Kind
 	switch c.Kind {
-	case string(urth.KindArtifact):
+	case urth.KindArtifact:
 		kind = urth.KindArtifact
-	case string(urth.KindScenario):
+	case urth.KindScenario:
 		kind = urth.KindScenario
-	case string(urth.KindResult):
+	case urth.KindResult:
 		kind = urth.KindResult
-	case string(urth.KindRunner):
+	case urth.KindRunner:
 		kind = urth.KindRunner
 	default:
 		return fmt.Errorf("unknown Kind: %v", c.Kind)

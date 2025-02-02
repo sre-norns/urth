@@ -26,10 +26,11 @@ const (
 )
 
 var kindMap = map[string]manifest.Kind{
-	string(urth.KindScenario): urth.KindScenario,
-	string(urth.KindRunner):   urth.KindRunner,
-	string(urth.KindResult):   urth.KindResult,
-	string(urth.KindArtifact): urth.KindArtifact,
+	string(urth.KindWorkerInstance): urth.KindWorkerInstance,
+	string(urth.KindRunner):         urth.KindRunner,
+	string(urth.KindScenario):       urth.KindScenario,
+	string(urth.KindResult):         urth.KindResult,
+	string(urth.KindArtifact):       urth.KindArtifact,
 }
 
 type KindRequest struct {
@@ -99,6 +100,25 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 			token := bark.RequireBearerToken(ctx)
 			bark.Manifest(ctx).Created(srv.Runners().Auth(ctx.Request.Context(), urth.ApiToken(token), bark.RequireManifest(ctx)))
 		})
+		// Request a JWT token to be used by workers to Auth as a Runner instance
+		v1.GET("/auth/runners/:id" /*bark.AuthBearerAPI(),*/, bark.ResourceAPI(), func(ctx *gin.Context) {
+			ctx.Header(bark.HTTPHeaderCacheControl, "no-store")
+
+			// TODO: Validate user's credentials and ACL
+			// token := bark.RequireBearerToken(ctx)
+			token, found, err := srv.Runners().GetToken(ctx.Request.Context(), bark.RequireResourceName(ctx))
+			if err != nil {
+				bark.AbortWithError(ctx, http.StatusBadRequest, err)
+				return
+			} else if !found {
+				bark.AbortWithError(ctx, http.StatusNotFound, bark.ErrResourceNotFound)
+				return
+			}
+
+			ctx.Header(bark.HTTPHeaderContentType, "application/jwt")
+			ctx.Writer.Write([]byte(token))
+		})
+
 		// "/scenarios/:id/results/:runId/auth"
 		v1.POST("/auth//scenarios/:id/:runId", func(ctx *gin.Context) {
 			var resourceRequest urth.ScenarioRunResultsRequest

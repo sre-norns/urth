@@ -141,9 +141,11 @@ go run ./cmd/urthctl get scenarios -o wide
 ##------------------------------
 ## Start some workers and connect them to the job queue
 ##------------------------------
+# Generate an Auth token for a worker. Run command using the same resource file used to create a runner
+go run ./cmd/urthctl auth-worker -f ./examples/runner.json
 
-# Start an instance of runner. Note the token is generated for this example to authorize as `./examples/runner.json`
-go run ./cmd/asynq-runner --client.token="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJleGFtcGxlLXJ1bm5lci1qc29uIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.nXfHt_2ejYA6XinTuL2MLCojq54FJmLLy9EnRE-T6xU"
+# Start an instance of a runner. Note user the token generated on a previous step
+go run ./cmd/asynq-runner --client.token="$RUNNER_TOKEN"
 
 ##------------------------------
 ## Trigger a scenario run manually

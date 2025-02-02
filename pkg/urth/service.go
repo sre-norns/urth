@@ -48,6 +48,9 @@ type RunnersApi interface {
 	ReadableResourceApi[manifest.ResourceManifest]
 	ManageableResourceApi
 
+	// GetToken generates a JWT token for a worker instance to auth as a Runner
+	GetToken(ctx context.Context, runID manifest.ResourceName) (ApiToken, bool, error)
+
 	// Authenticate a worker and receive Identity from the server
 	Auth(ctx context.Context, token ApiToken, worker manifest.ResourceManifest) (manifest.ResourceManifest, error)
 }
@@ -494,7 +497,7 @@ func (m *resultsApiImpl) Auth(ctx context.Context, resultName manifest.ResourceN
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	tokenString, err := token.SignedString(m.resultsSigningKey)
 	if err != nil {
-		return AuthJobResponse{}, fmt.Errorf("failed to sing an auth token: %w", err)
+		return AuthJobResponse{}, fmt.Errorf("failed to sign an auth token: %w", err)
 	}
 
 	log.Print("authorizing worker ", authRequest.RunnerID, " to execute ", entry.Name, " for at most ", authRequest.Timeout)
@@ -708,6 +711,34 @@ func manifestMatch(entry manifest.ObjectMeta) manifest.SearchQuery {
 	}
 }
 
+func (m *runnersApiImpl) GetToken(ctx context.Context, runnerName manifest.ResourceName) (ApiToken, bool, error) {
+	var runner Runner
+	if exist, err := m.store.GetByName(ctx, &runner, runnerName); err != nil {
+		return ApiToken(""), false, err
+	} else if !exist {
+		return ApiToken(""), false, nil
+	}
+
+	now := time.Now()
+	// Generate JWT with valid-until clause, to give worker a time to post
+	claims := &jwt.RegisteredClaims{
+		// ExpiresAt: jwt.NewNumericDate(time.Now().Add(30 * time.Minute)),
+		IssuedAt:  jwt.NewNumericDate(now),
+		ExpiresAt: jwt.NewNumericDate(now.Add(23 * time.Hour)),
+		Subject:   string(runner.UID),
+		// Issuer: ,
+		// ID: ,
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	tokenString, err := token.SignedString(m.hmacSampleSecret)
+	if err != nil {
+		return ApiToken(tokenString), true, fmt.Errorf("failed to sign the JWT token: %w", err)
+	}
+
+	return ApiToken(tokenString), true, nil
+}
+
 func (m *runnersApiImpl) Auth(ctx context.Context, apiToken ApiToken, newEntry manifest.ResourceManifest) (manifest.ResourceManifest, error) {
 	var result manifest.ResourceManifest
 	token, err := jwt.Parse(string(apiToken), func(token *jwt.Token) (interface{}, error) {
@@ -729,7 +760,7 @@ func (m *runnersApiImpl) Auth(ctx context.Context, apiToken ApiToken, newEntry m
 	}
 
 	var runner Runner
-	if ok, err := m.store.GetByName(ctx, &runner, manifest.ResourceName(tokenSubj),
+	if ok, err := m.store.GetByUID(ctx, &runner, manifest.ResourceID(tokenSubj),
 		dbstore.Expand("Instances", manifestMatch(newEntry.Metadata))); err != nil {
 		return result, err
 	} else if !ok {

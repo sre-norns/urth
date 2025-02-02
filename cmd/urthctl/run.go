@@ -24,15 +24,17 @@ import (
 )
 
 type RunCmd struct {
-	Files []string `arg:"" optional:"" name:"file" help:"A script file to execute" type:"existingfile" xor:"scenario"`
-	Kind  string   `help:"The type of the scenario to run. Will try to guess if not specified"`
+	runner.RunnerConfig `embed:"" prefix:"runner."`
 
-	ScenarioId manifest.ResourceName `help:"Id of the scenario" name:"scenario" xor:"file"`
+	ScenarioId manifest.ResourceName `help:"Id of the scenario" name:"scenario" arg:"" optional:"" group:"scenario" xor:"file"`
 
-	KeepTemp        bool `help:"If true, temporary work directory is kept after run is complete"`
+	Files []string `name:"file" help:"A resource manifest file with the scenario" short:"f" type:"existingfile" group:"file" xor:"scenario"`
+	Kind  string   `help:"The type of the scenario to run. Will try to guess if not specified" group:"file" `
+
+	KeepTemp        bool `help:"If true, temporary work directory is kept after run is complete" prefix:"runner."`
 	SaveHAR         bool `help:"If true, save HAR recording of HTTP scripts if applicable"`
-	Headless        bool `help:"If true, puppeteer scripts are run in a headless mode"`
-	PageSlowSeconds int  `help:"For browser-based probs, slowdown page loads in seconds"`
+	Headless        bool `help:"If true, puppeteer scripts are run in a headless mode" prefix:"puppeteer."`
+	PageSlowSeconds int  `help:"For browser-based probs, slowdown page loads in seconds" prefix:"puppeteer."`
 }
 
 func (c *RunCmd) runScenario(cmdCtx context.Context, sourceName string, prob urth.ProbManifest, workingDir string, timeout time.Duration) error {
@@ -105,17 +107,17 @@ func getScenarioProb(kind manifest.Kind, scenarioSpec any) (urth.ProbManifest, e
 }
 
 func jobFromFile(filename string, kindHint string) (urth.ProbManifest, error) {
-	content, ext, err := readContent(filename)
-	if err != nil {
-		return urth.ProbManifest{}, fmt.Errorf("failed to read content: %w", err)
-	}
-
 	if kindHint == "" {
 		if scenario, ok, err := manifestFromFile(filename); err != nil {
 			return urth.ProbManifest{}, err
 		} else if ok {
 			return getScenarioProb(scenario.Kind, scenario.Spec)
 		}
+	}
+
+	content, ext, err := readContent(filename)
+	if err != nil {
+		return urth.ProbManifest{}, fmt.Errorf("failed to read content: %w", err)
 	}
 
 	kind := urth.ProbKind(kindHint)
@@ -186,7 +188,7 @@ func (c *RunCmd) Run(cfg *commandContext) error {
 			return err
 		}
 
-		return c.runScenario(cfg.Context, string(resource.Name), resource.Spec.Prob, cfg.WorkingDirectory, cfg.RunnerConfig.Timeout)
+		return c.runScenario(cfg.Context, string(resource.Name), resource.Spec.Prob, c.WorkingDirectory, c.RunnerConfig.Timeout)
 	}
 
 	for _, filename := range c.Files {
@@ -195,7 +197,7 @@ func (c *RunCmd) Run(cfg *commandContext) error {
 			return err
 		}
 
-		if err := c.runScenario(cfg.Context, strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename)), prob, cfg.WorkingDirectory, cfg.RunnerConfig.Timeout); err != nil {
+		if err := c.runScenario(cfg.Context, strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename)), prob, c.WorkingDirectory, c.RunnerConfig.Timeout); err != nil {
 			return err
 		}
 	}
