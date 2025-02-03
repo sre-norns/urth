@@ -165,20 +165,50 @@ go run ./cmd/urthctl get scenarios -o wide
 
 ## Test scenario development
 To develop a new scenario, fist start by creating a scenario manifest file.
-Once the manifest is ready, you can run the scenario locally:
+Once the manifest is ready, you can run the scenario locally. Note that local run does not upload any of the run results and thus does not alter scenario run-history.
 
 ```shell
+# Run a scenario locally
 go run ./cmd/urthctl run -f ./my-new-scenario.yaml
 ```
 
 In case you'd like to inspect run artifact to troubleshoot the script, use `runner.keep-temp` flag:
 ```sh
+# Run a scenario locally and preserve 
 go run ./cmd/urthctl run -f ./my-new-scenario.yaml --runner.keep-temp
 ```
 
+## Troubleshooting scenarios
+Its `urthctl run` can also be used to run a scenario as it is on the server.
+```sh
+# Will run server version of basic-rest-self-prober-http scenario
+go run ./cmd/urthctl run basic-rest-self-prober-http --runner.keep-temp
+```
+
 More advanced scenarios might include WebUI, such as Puppeteer probers and might required extra flag.
-See [puppeteer](./examples/scenario.puppeteer.yaml) for example of advanced scenarios:
+See [scenario.puppeteer](./examples/scenario.puppeteer.yaml) for example of advanced scenarios:
 
 ```sh
 go run ./cmd/urthctl run -f ./examples/scenario.puppeteer.yaml --puppeteer.headless --runner.keep-temp
 ```
+
+# WIP
+Note that this project is still Work And Progress and some planned pieces are still missing. 
+For example there is __no__ `scheduler` as a stand-alone process to schedule scenarios (Coming with next update)
+
+## Shedules
+`Urth` is using a simple crontab expression to define scenario run shedules.
+In particular it uses [gronx](https://github.com/adhocore/gronx) go-module to parse cron-expression.
+It means that extra syntax is available and they are converted to real cron expressions before parsing:
+
+- @yearly or @annually - every year
+- @monthly - every month
+- @daily - every day
+- @weekly - every week
+- @hourly - every hour
+- @5minutes - every 5 minutes
+- @10minutes - every 10 minutes
+- @15minutes - every 15 minutes
+- @30minutes - every 30 minutes
+- @always - every minute
+- @everysecond - every second
