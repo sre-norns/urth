@@ -112,10 +112,13 @@ func RunScript(ctx context.Context, probSpec any, logger *runner.RunLog, options
 
 	cmd := exec.CommandContext(ctx, "node", "-")
 	// cmd.Env = append(cmd.Env, fmt.Sprintf("PUPPETEER_CACHE_DIR=%v", options.Puppeteer.WorkingDirectory))
-	hasDisplay := os.Getenv("DISPLAY")
-	if hasDisplay != "" {
-		cmd.Env = append(cmd.Env, fmt.Sprintf("DISPLAY=%v", hasDisplay))
-	}
+
+	// FIXME: Breaks on latest version of puppeteer
+	// hasDisplay := os.Getenv("DISPLAY")
+	// if hasDisplay != "" {
+	// 	cmd.Env = append(cmd.Env, fmt.Sprintf("DISPLAY=%v", hasDisplay))
+	// }
+
 	cmd.Env = append(cmd.Env, fmt.Sprintf("URTH_PUPPETEER_HEADLESS=%t", options.Puppeteer.Headless))
 	if options.Puppeteer.PageWaitSeconds != 0 {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("URTH_PUPPETEER_PAGE_WAIT=%d", options.Puppeteer.PageWaitSeconds))

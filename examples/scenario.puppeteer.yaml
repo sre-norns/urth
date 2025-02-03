@@ -1,0 +1,43 @@
+apiVersion: v1
+kind: scenarios
+metadata:
+  name: puppeteer-self-prober
+  labels:
+    app: puppeteer-prob
+    function: front-end
+spec:
+  description: "Puppeteer based prober that opens URTH localhost UI and tests it every 5 minutes"
+  active: true
+  schedule: "@5minutes"
+  requirements:
+    matchLabels:
+      os: "puppeteer"
+    matchSelector:
+      - { key: "env", operator: "NotIn",  values: ["dev", "testing"] }
+  prob:
+    kind: puppeteer
+    spec:
+      script: |
+        const puppeteer = require('puppeteer');
+        const PuppeteerHar = require('puppeteer-har');
+
+        async function test1(browser, page) {
+          await page.goto('http://localhost:3000/scenarios');
+          await page.screenshot({ path: 'selfie.png' });
+        }
+        (async () => {
+          const browser = await puppeteer.launch({
+            headless: ("URTH_PUPPETEER_HEADLESS" in process.env) ? (process.env.URTH_PUPPETEER_HEADLESS === 'true') : "new",
+            slowMo: process.env.URTH_PUPPETEER_PAGE_WAIT
+          });
+          const page = await browser.newPage();
+          const har = new PuppeteerHar(page);
+          await har.start({ path: 'results.har' });
+
+          await test1(browser, page)
+
+          await har.stop();
+          await browser.close();
+        })();
+
+

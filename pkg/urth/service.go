@@ -403,6 +403,11 @@ func (m *resultsApiImpl) Create(ctx context.Context, newEntry manifest.ResourceM
 		return Result{}, bark.ErrForbidden
 	}
 
+	// Check if a scenario has a prob section, otherwise it can't be scheduled
+	if entry.Spec.Scenario.Spec.Prob.Kind == "" || entry.Spec.Scenario.Spec.Prob.Spec == nil {
+		return Result{}, bark.ErrForbidden
+	}
+
 	// Should we override of just trust the value passed in?
 	entry.Spec.ProbKind = entry.Spec.Scenario.Spec.Prob.Kind
 

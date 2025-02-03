@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: scenarios
+metadata:
+  name: scenario-template
+  labels:
+    function: educate
+spec:
+  description: "<My example scenario>"
+  active: true
+  schedule: "@5minutes"

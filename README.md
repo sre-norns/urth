@@ -100,7 +100,7 @@ When requirements match workers's _capabilities_ than it can take and perform a 
 A new worker must first be registered with the `API server` by creating a _slot_. Creation of such _slot_ generates token that a `worker` instance must present to the `API server` issuer as part of initial configuration process. Presentation of a valid token notifies `API server` that a worker is ready to pick up jobs. After successful authorization, a worker joins a job queue and awaits.
 When a job is available, worker picks it up notifies `API server` that it picked the job. This constitutes authorization of a particular instance of a worker to the API server for a specific job. At this point (WIP) API server will check that worker is indeed authorized to perform the job in question and if successful will issue a short-living token that must be used by the worker to post results back to the API server. Token life-time is chosen by the server to be approximately the maximum allowed run-duration of the task + some buffer time to account communication delays. This mechanism is designed to prevent workers from replaying jobs or posting already existing job results after restart and restore. 
 
-# Running demo:
+# Running demo
 
 ```shell
 ##------------------------------
@@ -116,7 +116,7 @@ podman run -p 6379:6379 redis
 ##------------------------------
 
 # Start API server in a separate terminal and point it to the Postgres instance. check
-go run ./cmd/api-server --store.url="postgres://dbusername:<db_password>@localhost:5432"  
+go run ./cmd/api-server --store.url="postgres://dbusername:<db_password>@localhost:5432"
 
 # Start WebUI using dev server, in a separate terminal
 cd website && npm start
@@ -160,4 +160,25 @@ go run ./cmd/urthctl get scenarios -o wide
 
 # Inspect run results:
 > http ':8080/api/v1/scenarios/basic-rest-self-prober-http/results'
+```
+
+
+## Test scenario development
+To develop a new scenario, fist start by creating a scenario manifest file.
+Once the manifest is ready, you can run the scenario locally:
+
+```shell
+go run ./cmd/urthctl run -f ./my-new-scenario.yaml
+```
+
+In case you'd like to inspect run artifact to troubleshoot the script, use `runner.keep-temp` flag:
+```sh
+go run ./cmd/urthctl run -f ./my-new-scenario.yaml --runner.keep-temp
+```
+
+More advanced scenarios might include WebUI, such as Puppeteer probers and might required extra flag.
+See [puppeteer](./examples/scenario.puppeteer.yaml) for example of advanced scenarios:
+
+```sh
+go run ./cmd/urthctl run -f ./examples/scenario.puppeteer.yaml --puppeteer.headless --runner.keep-temp
 ```

@@ -32,7 +32,7 @@ type RunCmd struct {
 	Kind  string   `help:"The type of the scenario to run. Will try to guess if not specified" group:"file" `
 
 	KeepTemp        bool `help:"If true, temporary work directory is kept after run is complete" prefix:"runner."`
-	SaveHAR         bool `help:"If true, save HAR recording of HTTP scripts if applicable"`
+	SaveHAR         bool `help:"If true, save HAR recording of the browser calls if applicable"`
 	Headless        bool `help:"If true, puppeteer scripts are run in a headless mode" prefix:"puppeteer."`
 	PageSlowSeconds int  `help:"For browser-based probs, slowdown page loads in seconds" prefix:"puppeteer."`
 }
@@ -46,7 +46,7 @@ func (c *RunCmd) runScenario(cmdCtx context.Context, sourceName string, prob urt
 			Headless:         c.Headless,
 			PageWaitSeconds:  c.PageSlowSeconds,
 			WorkingDirectory: workingDir,
-			TempDirPrefix:    fmt.Sprintf("run-%v-%v-", sourceName, 0),
+			TempDirPrefix:    fmt.Sprintf("%v-", sourceName), // Working dir name for the run
 			KeepTempDir:      c.KeepTemp,
 		},
 		Http: runner.HttpOptions{
@@ -69,7 +69,7 @@ func (c *RunCmd) runScenario(cmdCtx context.Context, sourceName string, prob urt
 		log.Print("artifact: ", artifact.Rel)
 
 		if artifact.Rel == "har" && c.SaveHAR {
-			filename := fmt.Sprintf("run-%v.har", sourceName)
+			filename := fmt.Sprintf("%v.har", sourceName)
 			if err := os.WriteFile(filename, artifact.Content, 0644); err != nil {
 				return fmt.Errorf("failed to write HAR artifact: %w", err)
 			}
