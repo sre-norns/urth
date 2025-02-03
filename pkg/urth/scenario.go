@@ -4,19 +4,6 @@ import (
 	"net/http"
 )
 
-// Well-know labels for scenarios
-const (
-	LabelScenarioId      = "scenario.name"
-	LabelScenarioVersion = "scenario.version"
-	LabelScenarioKind    = "scenario.kind"
-
-	LabelScenarioArtifactKind = "artifact.kind"
-
-	LabelRunResultsName      = "run.name"
-	LabelRunResultsId        = "run.id"
-	LabelRunResultsMessageId = "run.messageId"
-)
-
 var kindToMimeMap = map[ProbKind]string{}
 
 func ScriptKindToMimeType(kind ProbKind) string {

@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/sre-norns/urth/pkg/urth"
 	"github.com/sre-norns/wyrd/pkg/manifest"
@@ -105,25 +104,46 @@ func fetchArtifact(ctx context.Context, apiClient *urth.RestApiClient, id manife
 	return result, err
 }
 
-func fetchLogs(ctx context.Context, apiClient *urth.RestApiClient, resultsName manifest.ResourceName, customSelector string) (chan io.Reader, error) {
-	labels := []string{}
+func contains(label string, requirements manifest.Requirements) bool {
+	for _, requirement := range requirements {
+		if requirement.Key() == label {
+			return true
+		}
+	}
+	return false
+}
+
+func fetchLogs(ctx context.Context, apiClient *urth.RestApiClient, resultsName manifest.ResourceName, query manifest.SearchQuery) (chan io.Reader, error) {
+	var requirements manifest.Requirements
+	if query.Selector != nil {
+		rs, ok := query.Selector.Requirements()
+		if ok {
+			// return nil, fmt.Errorf("(client) failed to create a new selector requirement: %w", err)
+			requirements = rs
+		}
+	}
+
 	if resultsName != "" {
-		labels = append(labels, fmt.Sprintf("%v=%v", urth.LabelRunResultsName, resultsName))
+		requirement, err := manifest.NewRequirement(urth.LabelResultName, manifest.Equals, []string{string(resultsName)})
+		if err != nil {
+			return nil, fmt.Errorf("(client) failed to create a new selector requirement: %w", err)
+		}
+		requirements = append(requirements, requirement)
 	}
 
-	if !strings.Contains(customSelector, urth.LabelScenarioArtifactKind) {
-		labels = append(labels, fmt.Sprintf("%v=%v", urth.LabelScenarioArtifactKind, "log"))
+	if !contains(urth.LabelArtifactKind, requirements) {
+		requirement, err := manifest.NewRequirement(urth.LabelArtifactKind, manifest.Equals, []string{"log"})
+		if err != nil {
+			return nil, fmt.Errorf("(client) failed to create a new requirement for artifact kind: %w", err)
+		}
+		requirements = append(requirements, requirement)
 	}
 
-	if customSelector != "" {
-		labels = append(labels, customSelector)
-	}
+	// if customSelector != "" {
+	// 	labels = append(labels, customSelector)
+	// }
 
-	selector, err := manifest.ParseSelector(strings.Join(labels, ","))
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse labels selector: %w", err)
-	}
-
+	selector := manifest.NewSelector(requirements...)
 	resources, _, err := apiClient.Artifacts().List(ctx, manifest.SearchQuery{
 		Selector: selector,
 	})

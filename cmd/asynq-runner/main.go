@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/user"
+	"strings"
 	"time"
 
 	"github.com/alecthomas/kong"
@@ -28,12 +29,14 @@ type WorkerConfig struct {
 	urth.ApiClientConfig `embed:"" prefix:"client."`
 	runner.RunnerConfig  `embed:"" `
 
-	RedisAddress           string        `help:"Redis server address:port to connect to" default:"localhost:6379"`
-	ApiRegistrationTimeout time.Duration `help:"Maximum time alloted for this worker to register with API server" default:"1m"`
-	Name                   string        `help:"Custom name for this worker" env:"WORKER_NAME"`
+	RedisAddress           string                `help:"Redis server address:port to connect to" default:"localhost:6379"`
+	ApiRegistrationTimeout time.Duration         `help:"Maximum time alloted for this worker to register with API server" default:"1m"`
+	Name                   manifest.ResourceName `help:"Custom name for this worker" env:"WORKER_NAME"`
 
 	apiClient urth.Service
-	identity  urth.Runner
+
+	runner    urth.Runner
+	identityT *urth.WorkerInstance
 }
 
 // HandleWelcomeEmailTask handler for welcome email task.
@@ -66,13 +69,14 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 	// Authorize this worker to pick up this job:
 	log.Print("jobID: ", runID, " requesting authorization to execute")
 	runAuth, err := resultsApiClient.Auth(ctx, job.ResultName, urth.AuthJobRequest{
-		WorkerID: w.identity.Status.Instances[0].GetVersionedID(),
-		RunnerID: w.identity.GetVersionedID(),
+		WorkerID: w.identityT.GetVersionedID(),
+		RunnerID: w.runner.GetVersionedID(),
 		Timeout:  timeout,
+		// Present worker's capabilities
 		Labels: manifest.MergeLabels(
-			w.LabelJob(w.identity.Name, w.identity.GetVersionedID(), job),
+			w.LabelJob(w.runner.ObjectMeta, w.identityT.ObjectMeta, job),
 			manifest.Labels{
-				urth.LabelRunResultsMessageId: messageId,
+				urth.LabelResultMessageId: messageId,
 			},
 		),
 	})
@@ -116,15 +120,15 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 				runAuth.Token,
 				manifest.ResourceManifest{
 					TypeMeta: manifest.TypeMeta{
-						Kind: urth.KindArtifact,
+						APIVersion: "v1",
+						Kind:       urth.KindArtifact,
 					},
 					Metadata: manifest.ObjectMeta{
 						Name: manifest.ResourceName(fmt.Sprintf("%v.%v", runID, artifact.Rel)),
 						Labels: manifest.MergeLabels(
-							w.LabelJob(w.identity.Name, w.identity.GetVersionedID(), job),
+							w.LabelJob(w.runner.ObjectMeta, w.identityT.ObjectMeta, job),
 							manifest.Labels{
-								urth.LabelScenarioArtifactKind: artifact.Rel, // Groups all artifacts produced by the content type: logs / HAR / etc
-								urth.LabelRunResultsMessageId:  messageId,
+								urth.LabelResultMessageId: messageId,
 							},
 						),
 					},
@@ -162,6 +166,28 @@ var appConfig = WorkerConfig{
 	RunnerConfig: runner.NewDefaultConfig(),
 }
 
+func generateName() manifest.ResourceName {
+	name := ""
+	if uname, err := user.Current(); err == nil && manifest.ValidateSubdomainName(uname.Name) == nil {
+		name = uname.Name
+	}
+
+	if hostname, err := os.Hostname(); err == nil && manifest.ValidateSubdomainName(hostname) == nil {
+		if name != "" {
+			name += "."
+		}
+
+		name += hostname
+	}
+
+	// If produced name is still not valid, generate a random one
+	if manifest.ValidateSubdomainName(name) != nil {
+		name = string(urth.NewRandToken(16))
+	}
+
+	return manifest.ResourceName(strings.ToLower(name))
+}
+
 func main() {
 	log.SetFlags(0)
 
@@ -175,21 +201,7 @@ func main() {
 	}
 
 	if appConfig.Name == "" {
-		if uname, err := user.Current(); err == nil && manifest.ValidateSubdomainName(uname.Name) == nil {
-			appConfig.Name = uname.Name
-		}
-
-		if name, err := os.Hostname(); err == nil && manifest.ValidateSubdomainName(name) == nil {
-			if appConfig.Name != "" {
-				appConfig.Name += "."
-			}
-
-			appConfig.Name += name
-		}
-
-		if appConfig.Name == "" {
-			appConfig.Name = string(urth.NewRandToken(16))
-		}
+		appConfig.Name = generateName()
 	}
 
 	apiClient, err := appConfig.NewClient()
@@ -203,7 +215,7 @@ func main() {
 	// Request Auth to join the workers queue
 	identity, err := apiClient.Runners().Auth(regoCtx, appConfig.Token, urth.WorkerInstance{
 		ObjectMeta: manifest.ObjectMeta{
-			Name:   manifest.ResourceName(appConfig.Name),
+			Name:   appConfig.Name,
 			Labels: appConfig.GetEffectiveLabels(),
 		},
 		Spec: urth.WorkerInstanceSpec{
@@ -215,17 +227,19 @@ func main() {
 	// TODO: Should be back-off and retry ?
 	grace.SuccessRequired(err, "failed to Auth to the Runner API")
 
-	appConfig.identity, err = urth.NewRunner(identity)
+	appConfig.runner, err = urth.NewRunner(identity)
 	grace.SuccessRequired(err, "Auth API returner unexpected type")
 
-	if len(appConfig.identity.Status.Instances) == 0 {
+	if len(appConfig.runner.Status.Instances) == 0 {
 		log.Fatal("returned Runner identity does not contain worker rego, abort")
+	} else {
+		appConfig.identityT = &appConfig.runner.Status.Instances[0]
 	}
 
-	log.Print("Registered with API server as Runner: ", appConfig.identity.Name,
-		", Id: ", appConfig.identity.GetVersionedID(),
+	log.Print("Registered with API server as Runner: ", appConfig.runner.Name,
+		", Id: ", appConfig.runner.GetVersionedID(),
 	)
-	log.Printf("...Worker ID: %q, Name: %q", appConfig.identity.Status.Instances[0].GetVersionedID(), appConfig.identity.Status.Instances[0].Name)
+	log.Printf("...Worker ID: %q, Name: %q", appConfig.identityT.GetVersionedID(), appConfig.identityT.Name)
 
 	// Create and configuring Redis connection.
 	redisConnection := asynq.RedisClientOpt{

@@ -24,6 +24,9 @@ type WorkerInstanceSpec struct {
 
 	// RequestedTTL is the desired TTL value
 	RequestedTTL time.Duration `form:"requestedTTL,omitempty" json:"requestedTTL,omitempty" yaml:"requestedTTL,omitempty" xml:"requestedTTL,omitempty"`
+
+	// Capabilities of this worker
+	// Capabilities manifest.Labels `json:"capabilities,omitempty" yaml:"capabilities,omitempty" gorm:"serializer:json;type:json"`
 }
 
 type WorkerInstanceStatus struct {

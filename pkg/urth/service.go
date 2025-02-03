@@ -364,15 +364,6 @@ func (m *resultsApiImpl) Create(ctx context.Context, newEntry manifest.ResourceM
 		log.Print("manual run, generated name: ", newEntry.Metadata.Name)
 	}
 
-	// Ensure labels are set correctly
-	newEntry.Metadata.Labels = manifest.MergeLabels(
-		// scenario.Labels,
-		newEntry.Metadata.Labels,
-		manifest.Labels{
-			LabelScenarioId: string(m.scenarioId),
-		},
-	)
-
 	entry, err := NewResult(newEntry)
 	if err != nil {
 		return entry, err
@@ -416,6 +407,21 @@ func (m *resultsApiImpl) Create(ctx context.Context, newEntry manifest.ResourceM
 		Status: JobPending,
 		Result: RunNotFinished,
 	}
+
+	// Ensure labels are set correctly
+	entry.Labels = manifest.MergeLabels(
+		// scenario.Labels,
+		entry.Labels,
+		manifest.Labels{
+			LabelScenarioName:    string(entry.Spec.Scenario.Name),
+			LabelScenarioUID:     string(entry.Spec.Scenario.UID),
+			LabelScenarioVersion: entry.Spec.Scenario.Version.String(),
+			LabelScenarioKind:    string(entry.Spec.ProbKind),
+
+			LabelResultJobState: string(entry.Status.Status),
+			// LabelResultStatus: string(entry.Status.Result),
+		},
+	)
 
 	// TODO: Validate that request is from an authentic worker that is allowed to take jobs!
 	if err := m.store.Create(ctx, &entry); err != nil {
@@ -482,10 +488,10 @@ func (m *resultsApiImpl) Auth(ctx context.Context, resultName manifest.ResourceN
 
 	entry.Labels = manifest.MergeLabels(
 		entry.Labels,
-		authRequest.Labels,
-		// Last to ensure that LabelScenarioId can not be overriden by the worker labels
+		// authRequest.Labels,
+		// Set labels to reflect results pending status
 		manifest.Labels{
-			LabelScenarioId: string(m.scenarioId),
+			LabelResultJobState: string(entry.Status.Status),
 		},
 	)
 
@@ -570,6 +576,17 @@ func (m *resultsApiImpl) UpdateStatus(ctx context.Context, id manifest.Versioned
 	entry.Spec.TimeEnded = &now
 	entry.Status.Status = JobCompleted
 	entry.Status.Result = runResults.Result
+
+	entry.Labels = manifest.MergeLabels(
+		entry.Labels,
+		// Set labels to reflect results pending status
+		manifest.Labels{
+			// TODO: Add duration!
+			// TODO: Add worker details
+			LabelResultJobState: string(entry.Status.Status),
+			LabelResultStatus:   string(entry.Status.Result),
+		},
+	)
 
 	if ok, err := m.store.Update(ctx, &entry, entry.GetVersionedID()); err != nil {
 		return bark.CreatedResponse{}, err
@@ -786,6 +803,10 @@ func (m *runnersApiImpl) Auth(ctx context.Context, apiToken ApiToken, newEntry m
 	if err != nil {
 		return result, err
 	}
+
+	// TODO: Validate that the worker matches runner's requirements
+	// runner.Spec.Requirements.AsSelector()
+
 	// TODO: Should do min with pre-set TTL
 	worker.Status.TTL = worker.Spec.RequestedTTL
 	worker.Spec.Runner = runner
@@ -896,6 +917,27 @@ func (m *artifactApiImp) Create(ctx context.Context, apiToken ApiToken, newEntry
 		return manifest.ResourceManifest{}, err
 	}
 	entry.Spec.Result = result
+
+	if entry.Spec.Rel == "" {
+		return manifest.ResourceManifest{}, bark.ErrNotAcceptableMediaType
+	}
+
+	// Update entry labels:
+	entry.Labels = manifest.MergeLabels(
+		entry.Labels,
+		manifest.Labels{
+			LabelArtifactKind: entry.Spec.Rel,      // Groups all artifacts produced by the content type: logs / HAR / etc
+			LabelArtifactMime: entry.Spec.MimeType, // Groups all artifacts produced by the content type: logs / HAR / etc
+
+			LabelResultName:    string(result.Name),
+			LabelResultUID:     string(result.UID),
+			LabelResultVersion: result.Version.String(),
+
+			// Updated concurrently and will not be up-to-date
+			// LabelResultJobState: string(result.Status.Status),
+			// LabelResultStatus:   string(result.Status.Result),
+		},
+	)
 
 	log.Printf("Result has %d artifacts with Name matches", len(result.Status.Artifacts))
 	if len(result.Status.Artifacts) > 0 && result.Status.Artifacts[0].Name == entry.Name {

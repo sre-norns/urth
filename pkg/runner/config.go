@@ -15,21 +15,14 @@ import (
 )
 
 const (
-	LabelOS   = "runner.os"
-	LabelArch = "runner.arch"
+	LabelCapPrefix = urth.LabelsPrefix + "capability."
 
 	// Runtimes available:
-	LabelNodeJsVersion      = "runner.node.version"
-	LabelNodeJsVersionMajor = "runner.node.version" + ".major"
+	LabelNodeJsVersion      = LabelCapPrefix + "node.version"
+	LabelNodeJsVersionMajor = LabelNodeJsVersion + ".major"
 
-	LabelPythonVersion      = "runner.python.version"
+	LabelPythonVersion      = LabelCapPrefix + "python.version"
 	LabelPythonVersionMajor = LabelPythonVersion + ".major"
-
-	// Well-known labels used by runners:
-	LabelBuildVersion  = "runner.version"
-	LabelRunnerName    = "runner.name"
-	LabelRunnerUID     = "runner.uid"
-	LabelRunnerVersion = "runner.version"
 )
 
 type RunnerConfig struct {
@@ -79,11 +72,11 @@ func GetRuntimeLabels() manifest.Labels {
 		log.Print("[ERROR] failed to get Build info")
 	}
 
-	bi.Main.Version = strings.Trim(bi.Main.Version, "()")
+	bi.Main.Version = strings.Trim(bi.Main.Version, "() ")
 	return manifest.Labels{
-		LabelArch:         runtime.GOARCH,
-		LabelOS:           runtime.GOOS,
-		LabelBuildVersion: bi.Main.Version,
+		urth.LabelWorkerArch:         runtime.GOARCH,
+		urth.LabelWorkerOS:           runtime.GOOS,
+		urth.LabelWorkerBuildVersion: bi.Main.Version,
 	}
 }
 
@@ -106,7 +99,7 @@ func NewDefaultConfig() RunnerConfig {
 }
 
 func kindAsLabel(kind urth.ProbKind) string {
-	return fmt.Sprintf("runner.prob.%v", kind)
+	return fmt.Sprintf("%vcapability.prob.%v", urth.LabelsPrefix, kind)
 }
 
 // Expose loaded probers as Labels
@@ -120,18 +113,22 @@ func ProberAsLabels() manifest.Labels {
 	return result
 }
 
-func (c *RunnerConfig) LabelJob(runnerName manifest.ResourceName, runnerId manifest.VersionedResourceID, job urth.Job) manifest.Labels {
+func (c *RunnerConfig) LabelJob(runner manifest.ObjectMeta, worker manifest.ObjectMeta, job urth.Job) manifest.Labels {
 	return manifest.MergeLabels(
 		job.Labels,
-		c.GetEffectiveLabels(),
+		c.CustomLabels,
 		manifest.Labels{
-			LabelRunnerName:    string(runnerName),        // Groups all artifacts produced by the same runner
-			LabelRunnerUID:     string(runnerId.ID),       // Groups all artifacts produced by the same runner
-			LabelRunnerVersion: runnerId.Version.String(), // Groups all artifacts produced by the same runner
+			urth.LabelRunnerName:    string(runner.Name),     // Groups all artifacts produced by the same runner
+			urth.LabelRunnerUID:     string(runner.UID),      // Groups all artifacts produced by the same runner
+			urth.LabelRunnerVersion: runner.Version.String(), // Groups all artifacts produced by the same runner
 
-			urth.LabelRunResultsName: string(job.ResultName),   // Groups all artifacts produced in the same run
-			urth.LabelScenarioId:     string(job.ScenarioName), // Groups all artifacts produced by the same scenario regardless of version
-			// urth.LabelScenarioVersion: job.ScenarioID.String(),  // Groups all artifacts produced by the same version of the scenario
+			urth.LabelWorkerName:    string(worker.Name),     // Groups all artifacts produced by the same worker
+			urth.LabelWorkerUID:     string(worker.UID),      // Groups all artifacts produced by the same worker
+			urth.LabelWorkerVersion: worker.Version.String(), // Groups all artifacts produced by the same worker
+
+			urth.LabelResultName:   string(job.ResultName),   // Groups all artifacts produced in the same run
+			urth.LabelScenarioName: string(job.ScenarioName), // Groups all artifacts produced by the same scenario regardless of version
+
 			urth.LabelScenarioKind: string(job.Prob.Kind), // Groups all artifacts produced by the type of script: TCP probe, HTTP probe, etc.
 		},
 	)

@@ -22,10 +22,18 @@ func (c *getLogs) Run(cfg *commandContext) error {
 		return fmt.Errorf("failed to initialize API Client: %w", err)
 	}
 
+	selector, err := manifest.ParseSelector(c.Selector)
+	if err != nil {
+		return fmt.Errorf("failed to parse labels selector: %w", err)
+	}
+	q := manifest.SearchQuery{
+		Selector: selector,
+	}
+
 	ctx, cancel := context.WithTimeout(cfg.Context, 30*time.Second)
 	defer cancel()
 
-	logStream, err := fetchLogs(ctx, apiClient, c.RunID, c.Selector)
+	logStream, err := fetchLogs(ctx, apiClient, c.RunID, q)
 	if err != nil {
 		return err
 	}
