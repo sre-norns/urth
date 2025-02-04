@@ -99,7 +99,7 @@ func NewDefaultConfig() RunnerConfig {
 }
 
 func kindAsLabel(kind urth.ProbKind) string {
-	return fmt.Sprintf("%vcapability.prob.%v", urth.LabelsPrefix, kind)
+	return fmt.Sprintf("%v%v", urth.LabelWorkerCapProbPrefix, kind)
 }
 
 // Expose loaded probers as Labels

@@ -1,9 +1,13 @@
 package urth
 
 // Common prefix for Urth managed resources
-const LabelsPrefix = "urth/"
 
 const (
+	LabelsPrefix = "urth/"
+
+	LabelWorkerCapPrefix     = LabelsPrefix + "capability."
+	LabelWorkerCapProbPrefix = LabelWorkerCapPrefix + "prob."
+
 	// Well-known worker labels:
 	LabelWorkerOS           = LabelsPrefix + "worker.os"
 	LabelWorkerArch         = LabelsPrefix + "worker.arch"

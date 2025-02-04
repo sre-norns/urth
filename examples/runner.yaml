@@ -9,5 +9,8 @@ spec:
   active: true
   description: "A runner resource"
   requirements:
-    matchLabels:
-      cloud: "wha?"
+    matchSelector:
+      - { "key": "urth/capability.prob.tcp", "operator":"NotIn"}
+      - { "key": "urth/capability.prob.http", "operator":"NotIn"}
+      - { "key": "urth/capability.prob.har", "operator":"NotIn"}
+      - { "key": "urth/capability.prob.puppeteer", "operator":"NotIn"}

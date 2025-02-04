@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"strings"
 	"time"
 
@@ -656,6 +657,12 @@ func (m *runnersApiImpl) create(ctx context.Context, newEntry Runner) (Runner, e
 	// TODO: Generate auth token?
 	// 	IdToken: randToken(16),
 
+	// Validate runner's requirements
+	if _, err := newEntry.Spec.Requirements.AsSelector(); err != nil {
+		// Note, failed to parse Runner's requirements so wont be able auth any workers
+		return newEntry, fmt.Errorf("runner's requirements are invalid: %v", err)
+	}
+
 	err := m.store.Create(ctx, &newEntry)
 	return newEntry, err
 }
@@ -670,6 +677,12 @@ func (m *runnersApiImpl) update(ctx context.Context, id manifest.VersionedResour
 	// Identity check
 	if result.Name != newEntry.Name {
 		return result, bark.ErrResourceNotFound
+	}
+
+	// Validate runner's requirements
+	if _, err := newEntry.Spec.Requirements.AsSelector(); err != nil {
+		// Note, failed to parse Runner's requirements so wont be able auth any workers
+		return newEntry, fmt.Errorf("runner's requirements are invalid: %v", err)
 	}
 
 	result.Labels = newEntry.Labels
@@ -805,7 +818,26 @@ func (m *runnersApiImpl) Auth(ctx context.Context, apiToken ApiToken, newEntry m
 	}
 
 	// TODO: Validate that the worker matches runner's requirements
-	// runner.Spec.Requirements.AsSelector()
+	reqSelector, err := runner.Spec.Requirements.AsSelector()
+	if err != nil {
+		// Note, failed to parse Runner's requirements so can't auth any workers
+		return result, &bark.ErrorResponse{
+			Code:    http.StatusUnauthorized,
+			Message: fmt.Sprintf("runner's requirements are invalid: %v", err),
+		}
+	}
+
+	log.Printf("Checking if a worker matches runner's requirements: %q", runner.Spec.Requirements.AsLabels())
+	if !reqSelector.Matches(worker.Labels) {
+		log.Printf("worker doesn't matches runner's requirements: %q", runner.Spec.Requirements.AsLabels())
+		// Note, failed to parse Runner's requirements so can't auth any workers
+		return result, &bark.ErrorResponse{
+			Code:    http.StatusUnauthorized,
+			Message: "worker does not satisfy runner's requirements",
+		}
+	} else {
+		log.Printf("...its a match!")
+	}
 
 	// TODO: Should do min with pre-set TTL
 	worker.Status.TTL = worker.Spec.RequestedTTL

@@ -15,7 +15,7 @@ require (
 	github.com/google/martian v2.1.0+incompatible
 	github.com/hibiken/asynq v0.25.1
 	github.com/jedib0t/go-pretty/v6 v6.6.5
-	github.com/sre-norns/wyrd v0.1.27
+	github.com/sre-norns/wyrd v0.1.28
 	github.com/stretchr/testify v1.10.0
 	golang.org/x/mod v0.22.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -27,7 +27,6 @@ require (
 	github.com/bytedance/sonic v1.12.8 // indirect
 	github.com/bytedance/sonic/loader v0.2.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/chromedp/sysutil v1.1.0 // indirect
 	github.com/cloudwego/base64x v0.1.5 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
@@ -39,7 +38,6 @@ require (
 	github.com/go-playground/validator/v10 v10.24.0 // indirect
 	github.com/go-sql-driver/mysql v1.8.1 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
-	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/ijt/go-anytime v1.9.2 // indirect
 	github.com/ijt/goparsify v0.0.0-20221203142333-3a5276334b8d // indirect
