@@ -399,7 +399,7 @@ func (c *Artifact) Run(cfg *commandContext) error {
 	}
 
 	// FIXME: Broken!
-	_, err = os.Stdout.Write(resource.Spec.Content)
+	_, err = os.Stdout.Write(resource.Spec.Artifact.Content)
 
 	return err
 }

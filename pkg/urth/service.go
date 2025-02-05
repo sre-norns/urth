@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"reflect"
 	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/sre-norns/urth/pkg/prob"
 	"github.com/sre-norns/wyrd/pkg/bark"
 	"github.com/sre-norns/wyrd/pkg/dbstore"
 	"github.com/sre-norns/wyrd/pkg/manifest"
@@ -60,7 +62,7 @@ type ScenarioApi interface {
 	ReadableResourceApi[manifest.ResourceManifest]
 	ManageableResourceApi
 
-	UpdateScript(ctx context.Context, id manifest.VersionedResourceID, entry ProbManifest) (bark.CreatedResponse, bool, error)
+	UpdateScript(ctx context.Context, id manifest.VersionedResourceID, entry prob.Manifest) (bark.CreatedResponse, bool, error)
 
 	// ClientAPI: Can it be done using filters?
 	ListRunnable(ctx context.Context, query manifest.SearchQuery) ([]Scenario, error)
@@ -240,9 +242,18 @@ func (m *scenarioApiImpl) update(ctx context.Context, id manifest.VersionedResou
 		return entry, bark.ErrResourceNotFound
 	}
 
-	result.Labels = entry.Labels
 	result.Spec = entry.Spec
 
+	// TODO: Update system labels!
+	result.Labels = entry.Labels
+	result.Labels = manifest.MergeLabels(
+		entry.Labels,
+		manifest.Labels{
+			LabelScenarioKind: string(result.Spec.Prob.Kind),
+		},
+	)
+
+	log.Printf("updating scenario: prod.kind: %q, prod.type %q", result.Spec.Prob.Kind, reflect.TypeOf(result.Spec.Prob.Spec))
 	ok, err := m.store.Update(ctx, &result, result.GetVersionedID())
 	if err != nil {
 		return result, err
@@ -277,7 +288,7 @@ func (m *scenarioApiImpl) Delete(ctx context.Context, id manifest.VersionedResou
 	return m.store.Delete(ctx, &Scenario{}, id.ID, id.Version)
 }
 
-func (m *scenarioApiImpl) UpdateScript(ctx context.Context, id manifest.VersionedResourceID, prob ProbManifest) (bark.CreatedResponse, bool, error) {
+func (m *scenarioApiImpl) UpdateScript(ctx context.Context, id manifest.VersionedResourceID, prob prob.Manifest) (bark.CreatedResponse, bool, error) {
 	var result Scenario
 	if ok, err := m.store.GetByUIDWithVersion(ctx, &result, id); !ok || err != nil {
 		return bark.CreatedResponse{}, ok, err
@@ -406,7 +417,7 @@ func (m *resultsApiImpl) Create(ctx context.Context, newEntry manifest.ResourceM
 	// Ensure initial status is set to pending
 	entry.Status = ResultStatus{
 		Status: JobPending,
-		Result: RunNotFinished,
+		Result: prob.RunNotFinished,
 	}
 
 	// Ensure labels are set correctly
@@ -890,7 +901,7 @@ func (m *artifactApiImp) List(ctx context.Context, query manifest.SearchQuery) (
 	results = make([]manifest.ResourceManifest, 0, len(models))
 	for _, model := range models {
 		// Note: Do not return artifact value when listing
-		model.Spec.Content = nil
+		model.Spec.Artifact.Content = nil
 		results = append(results, model.ToManifest())
 	}
 
@@ -902,7 +913,7 @@ func (m *artifactApiImp) Get(ctx context.Context, id manifest.ResourceName) (res
 	exist, err = m.store.GetByName(ctx, &model, id, dbstore.Omit("Content"))
 
 	// TODO: Find a better way to not-expand content
-	model.Spec.Content = nil
+	model.Spec.Artifact.Content = nil
 
 	result = model.ToManifest()
 	return
@@ -950,7 +961,7 @@ func (m *artifactApiImp) Create(ctx context.Context, apiToken ApiToken, newEntry
 	}
 	entry.Spec.Result = result
 
-	if entry.Spec.Rel == "" {
+	if entry.Spec.Artifact.Rel == "" {
 		return manifest.ResourceManifest{}, bark.ErrNotAcceptableMediaType
 	}
 
@@ -958,8 +969,8 @@ func (m *artifactApiImp) Create(ctx context.Context, apiToken ApiToken, newEntry
 	entry.Labels = manifest.MergeLabels(
 		entry.Labels,
 		manifest.Labels{
-			LabelArtifactKind: entry.Spec.Rel,      // Groups all artifacts produced by the content type: logs / HAR / etc
-			LabelArtifactMime: entry.Spec.MimeType, // Groups all artifacts produced by the content type: logs / HAR / etc
+			LabelArtifactKind: entry.Spec.Artifact.Rel,      // Groups all artifacts produced by the content type: logs / HAR / etc
+			LabelArtifactMime: entry.Spec.Artifact.MimeType, // Groups all artifacts produced by the content type: logs / HAR / etc
 
 			LabelResultName:    string(result.Name),
 			LabelResultUID:     string(result.UID),

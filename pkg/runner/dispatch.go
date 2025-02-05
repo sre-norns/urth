@@ -3,105 +3,73 @@ package runner
 import (
 	"context"
 	"fmt"
+	"time"
 
+	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/sre-norns/urth/pkg/prob"
 	"github.com/sre-norns/urth/pkg/urth"
+
+	_ "github.com/sre-norns/urth/pkg/probers/dns"
+	_ "github.com/sre-norns/urth/pkg/probers/grpc"
+	_ "github.com/sre-norns/urth/pkg/probers/har"
+	_ "github.com/sre-norns/urth/pkg/probers/http"
+	_ "github.com/sre-norns/urth/pkg/probers/icmp"
+	_ "github.com/sre-norns/urth/pkg/probers/puppeteer"
+
+	// _ "github.com/sre-norns/urth/pkg/probers/pypuppeteer"
+	_ "github.com/sre-norns/urth/pkg/probers/tcp"
 )
-
-var (
-	ErrNilRunner = fmt.Errorf("prob run function is nil")
-)
-
-type PuppeteerOptions struct {
-	Headless        bool
-	PageWaitSeconds int
-
-	WorkingDirectory string
-	KeepTempDir      bool
-	TempDirPrefix    string
-}
-
-type HttpOptions struct {
-	CaptureResponseBody bool
-	CaptureRequestBody  bool
-	IgnoreRedirects     bool
-}
-
-type HarOptions struct {
-	CompareWithOriginal bool
-}
-
-type RunOptions struct {
-	Puppeteer PuppeteerOptions
-	Http      HttpOptions
-	Har       HarOptions
-}
-
-type ScriptRunner func(context.Context, any, *RunLog, RunOptions) (urth.ResultStatus, []urth.ArtifactSpec, error)
-
-type ProbRegistration struct {
-	// Function to execute a script
-	RunFunc ScriptRunner
-
-	// Sem-version of the prober module loaded
-	Version string
-
-	// Mime type of the script.
-	ContentType string
-
-	// Types of artifacts this prob is expected to produce
-	Produce []string
-}
-
-// Registrar of Probing modules
-var (
-	kindRunnerMap = map[urth.ProbKind]ProbRegistration{}
-)
-
-// Register new kind of prob
-func RegisterProbKind(kind urth.ProbKind, proto any, probInfo ProbRegistration) error {
-	if probInfo.RunFunc == nil {
-		return ErrNilRunner
-	}
-
-	if err := urth.RegisterProbKind(kind, proto); err != nil {
-		return err
-	}
-
-	// TODO: Should be return an error?
-	kindRunnerMap[kind] = probInfo
-	return nil
-}
-
-// Unregister given prober kind
-func UnregisterProbKind(kind urth.ProbKind) error {
-	urth.UnregisterProbKind(kind)
-	delete(kindRunnerMap, kind)
-
-	return nil
-}
-
-// List all registered probers
-// Note: function makes a copy of the module list to avoid accidental modification of registration info
-func ListProbs() map[urth.ProbKind]ProbRegistration {
-	result := make(map[urth.ProbKind]ProbRegistration, len(kindRunnerMap))
-	for kind, info := range kindRunnerMap {
-		result[kind] = info
-	}
-
-	return result
-}
 
 // Execute a single scenario
-func Play(ctx context.Context, prob urth.ProbManifest, options RunOptions) (urth.ResultStatus, []urth.ArtifactSpec, error) {
-	if prob.Spec == nil {
-		return urth.NewRunResults(urth.RunFinishedError, urth.WithStatus(urth.JobErrored)), nil, fmt.Errorf("no prob spec")
+func Play(ctx context.Context, probSpec prob.Manifest, options prob.RunOptions) (urth.ResultStatus, []urth.ArtifactSpec, error) {
+	if probSpec.Spec == nil {
+		return urth.NewRunResults(prob.RunFinishedError, urth.WithStatus(urth.JobErrored)), nil, fmt.Errorf("no prob spec")
 	}
 
-	probInfo, ok := kindRunnerMap[prob.Kind]
+	probFunc, ok := prob.FindRunFunc(probSpec.Kind)
 	if !ok {
-		return urth.NewRunResults(urth.RunFinishedError, urth.WithStatus(urth.JobErrored)), nil, fmt.Errorf("unsupported script kind: %q", prob.Kind)
+		return urth.NewRunResults(prob.RunFinishedError, urth.WithStatus(urth.JobErrored)), nil, fmt.Errorf("unsupported script kind: %q", probSpec.Kind)
 	}
+
+	probeSuccessGauge := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "probe_success",
+		Help: "Displays whether or not the probe was a success",
+	})
+	probeDurationGauge := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "probe_duration_seconds",
+		Help: "Returns how long the probe took to complete in seconds",
+	})
 
 	var logger RunLog
-	return probInfo.RunFunc(ctx, prob.Spec, &logger, options)
+	slLogger := log.NewLogfmtLogger(&logger) // .Default() // TODO: Add a wrapper .New(logger)
+
+	start := time.Now()
+	registry := prometheus.NewRegistry()
+	registry.MustRegister(probeSuccessGauge)
+	registry.MustRegister(probeDurationGauge)
+
+	slLogger.Log("Beginning probe", "kind", probSpec.Kind) //, "timeout_seconds", options.)
+	result, sideEffects, err := probFunc(ctx, probSpec.Spec, options, registry, slLogger)
+
+	duration := time.Since(start).Seconds()
+	probeDurationGauge.Set(duration)
+	if result == prob.RunFinishedSuccess {
+		probeSuccessGauge.Set(1)
+		slLogger.Log("Probe succeeded", "duration_seconds", duration)
+	} else {
+		slLogger.Log("Probe failed", "duration_seconds", duration)
+	}
+
+	artifacts := make([]urth.ArtifactSpec, 0, len(sideEffects)+1)
+	for _, effect := range sideEffects {
+		artifacts = append(artifacts, urth.ArtifactSpec{
+			Artifact: effect,
+		})
+	}
+
+	artifacts = append(artifacts, logger.ToArtifact())
+
+	return urth.NewRunResults(result), artifacts, err
 }

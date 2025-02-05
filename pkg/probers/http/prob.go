@@ -14,16 +14,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	httpparser "github.com/sre-norns/urth/pkg/http-parser"
-	"github.com/sre-norns/urth/pkg/runner"
-	"github.com/sre-norns/urth/pkg/urth"
+	"github.com/sre-norns/urth/pkg/prob"
 	"github.com/sre-norns/wyrd/pkg/manifest"
 
 	"github.com/google/martian/har"
 )
 
 const (
-	Kind           = urth.ProbKind("http")
+	Kind           = prob.Kind("http")
 	ScriptMimeType = "application/http"
 )
 
@@ -33,16 +34,16 @@ type Spec struct {
 }
 
 func init() {
-	moduleVersion := "unknown"
+	moduleVersion := "devel"
 	if bi, ok := debug.ReadBuildInfo(); ok {
 		moduleVersion = strings.Trim(bi.Main.Version, "()")
 	}
 
 	// Ignore double registration error
-	_ = runner.RegisterProbKind(
+	_ = prob.RegisterProbKind(
 		Kind,
 		&Spec{},
-		runner.ProbRegistration{
+		prob.ProbRegistration{
 			RunFunc:     RunScript,
 			ContentType: ScriptMimeType,
 			Version:     moduleVersion,
@@ -66,16 +67,16 @@ type httpRequestTracer struct {
 	timeResponseReceived time.Time
 }
 
-func newHttpRequestTracer(logger *runner.RunLog) *httpRequestTracer {
+func newHttpRequestTracer(logger log.Logger) *httpRequestTracer {
 	result := &httpRequestTracer{}
 
 	tracer := &httptrace.ClientTrace{
 		DNSStart: func(info httptrace.DNSStartInfo) {
-			logger.Log("DNS resolving: ", info.Host)
+			logger.Log("DNS resolving", "host", info.Host)
 			result.dnsResolutionStarted = time.Now()
 		},
 		DNSDone: func(info httptrace.DNSDoneInfo) {
-			logger.Log("DNS resolved: ", info.Addrs)
+			logger.Log("DNS resolved", "address", info.Addrs)
 			result.dnsResolutionFinished = time.Now()
 		},
 
@@ -85,16 +86,16 @@ func newHttpRequestTracer(logger *runner.RunLog) *httpRequestTracer {
 		},
 
 		TLSHandshakeDone: func(tlsState tls.ConnectionState, err error) {
-			logger.Logf("TLS handshake done: err=%v: %v", err, tlsState)
+			logger.Log("TLS handshake done", "tlsState", tlsState, "err", err)
 			result.tlsFinished = time.Now()
 		},
 
 		ConnectStart: func(network, addr string) {
-			logger.Logf("net=%q connecting to: addr=%q", network, addr)
+			logger.Log("connecting", "addr", addr, "net", network)
 			result.connectionStarted = time.Now()
 		},
 		ConnectDone: func(network, addr string, err error) {
-			logger.Logf("net=%q connected to: addr=%q, err=%v", network, addr, err)
+			logger.Log("connected", "addr", addr, "net", network, "err", err)
 			result.connectionFinished = time.Now()
 		},
 
@@ -103,15 +104,15 @@ func newHttpRequestTracer(logger *runner.RunLog) *httpRequestTracer {
 			result.timeHeaderWritten = time.Now()
 		},
 		WroteRequest: func(info httptrace.WroteRequestInfo) {
-			logger.Log("done writing request: err=", info.Err)
+			logger.Log("done writing request", "err", info.Err)
 			result.timeRequestWritten = time.Now()
 		},
 		GotConn: func(connInfo httptrace.GotConnInfo) {
-			logger.Log("established connection: ", connInfo)
+			logger.Log("established connection", "info", connInfo)
 		},
 
 		Got1xxResponse: func(code int, header textproto.MIMEHeader) error {
-			logger.Logf("got response %d: %+v", code, header)
+			logger.Log("got response", "code", code, "header", header)
 			return nil
 		},
 
@@ -152,36 +153,36 @@ func formatResponse(resp *http.Response) string {
 	return result.String()
 }
 
-func RunHttpRequests(ctx context.Context, logger *runner.RunLog, requests []httpparser.TestRequest, options runner.RunOptions) (urth.ResultStatus, []urth.ArtifactSpec, error) {
+func RunHttpRequests(ctx context.Context, requests []httpparser.TestRequest, options prob.RunOptions, logger log.Logger) (prob.RunStatus, []prob.Artifact, error) {
 	harLogger := har.NewLogger()
 	harLogger.SetOption(har.BodyLogging(options.Http.CaptureResponseBody))
 	harLogger.SetOption(har.PostDataLogging(options.Http.CaptureRequestBody))
 
-	outcome := urth.RunFinishedSuccess
+	outcome := prob.RunFinishedSuccess
 	client := http.Client{}
 	tracer := newHttpRequestTracer(logger)
 
 	for i, req := range requests {
 		id := fmt.Sprintf("%d", i)
-		logger.Logf("HTTP Request %d / %d\n%v\n", i+1, len(requests), formatRequest(req.Request))
+		logger.Log(fmt.Sprintf("HTTP Request %d/%d", i+1, len(requests)), "req", formatRequest(req.Request))
 
 		if err := harLogger.RecordRequest(id, req.Request); err != nil {
 			logger.Log("...failed to record request: ", err)
-			return urth.NewRunResults(urth.RunFinishedError), logger.Package(), nil
+			return prob.RunFinishedError, nil, nil
 		}
 
 		res, err := client.Do(tracer.TraceRequest(req.Request))
 		if err != nil {
 			logger.Log("...failed: ", err)
-			return urth.NewRunResults(urth.RunFinishedError), logger.Package(), nil
+			return prob.RunFinishedError, nil, nil
 		}
 
 		if err := harLogger.RecordResponse(id, res); err != nil {
 			logger.Log("...failed to record response: ", err)
-			return urth.NewRunResults(urth.RunFinishedError), logger.Package(), nil
+			return prob.RunFinishedError, nil, nil
 		}
 
-		logger.Logf("Response:\n%v\n", formatResponse(res))
+		logger.Log("Response:", "resp", formatResponse(res))
 
 		if _, err := io.Copy(io.Discard, res.Body); err != nil {
 			logger.Log("...failed while reading response body: ", err)
@@ -192,7 +193,7 @@ func RunHttpRequests(ctx context.Context, logger *runner.RunLog, requests []http
 		// TODO: Capture HTTP log
 
 		if res.StatusCode >= 400 {
-			outcome = urth.RunFinishedFailed
+			outcome = prob.RunFinishedFailed
 			break
 		}
 	}
@@ -201,12 +202,11 @@ func RunHttpRequests(ctx context.Context, logger *runner.RunLog, requests []http
 	harData, err := json.Marshal(har)
 	if err != nil {
 		logger.Log("...error: failed to serialize HAR file ", err)
-		return urth.NewRunResults(urth.RunFinishedError), logger.Package(), nil
+		return prob.RunFinishedError, nil, nil
 	}
 
-	return urth.NewRunResults(outcome),
-		[]urth.ArtifactSpec{
-			logger.ToArtifact(),
+	return outcome,
+		[]prob.Artifact{
 			{
 				Rel:      "har",
 				MimeType: "application/json",
@@ -215,19 +215,19 @@ func RunHttpRequests(ctx context.Context, logger *runner.RunLog, requests []http
 		}, nil
 }
 
-func RunScript(ctx context.Context, probSpec any, logger *runner.RunLog, options runner.RunOptions) (urth.ResultStatus, []urth.ArtifactSpec, error) {
-	prob, ok := probSpec.(*Spec)
+func RunScript(ctx context.Context, probSpec any, config prob.RunOptions, registry *prometheus.Registry, logger log.Logger) (prob.RunStatus, []prob.Artifact, error) {
+	spec, ok := probSpec.(*Spec)
 	if !ok {
-		return urth.NewRunResults(urth.RunFinishedError), logger.Package(), fmt.Errorf("%w: got %q, expected %q", manifest.ErrUnexpectedSpecType, reflect.TypeOf(probSpec), reflect.TypeOf(&Spec{}))
+		return prob.RunFinishedError, nil, fmt.Errorf("%w: got %q, expected %q", manifest.ErrUnexpectedSpecType, reflect.TypeOf(probSpec), reflect.TypeOf(&Spec{}))
 	}
 
-	logger.Logf("parsing %v scenario...", Kind)
-	requests, err := httpparser.Parse(strings.NewReader(prob.Script))
+	logger.Log("Parsing scenario", "kind", Kind)
+	requests, err := httpparser.Parse(strings.NewReader(spec.Script))
 	if err != nil {
-		logger.Logf("failed to parse %v prober script: %v", Kind, err)
-		return urth.NewRunResults(urth.RunFinishedError), logger.Package(), nil
+		logger.Log("Failed to parse prob script", "kind", Kind, "err", err)
+		return prob.RunFinishedError, nil, nil
 	}
 
-	logger.Logf("running %v script: %d requests", Kind, len(requests))
-	return RunHttpRequests(ctx, logger, requests, options)
+	logger.Log("running script", "kind", Kind, "count(requests)", len(requests))
+	return RunHttpRequests(ctx, requests, config, logger)
 }

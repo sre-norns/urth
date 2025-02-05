@@ -162,7 +162,7 @@ func fetchLogs(ctx context.Context, apiClient *urth.RestApiClient, resultsName m
 				return
 			}
 
-			logStream <- bytes.NewReader(l.Content)
+			logStream <- bytes.NewReader(l.Artifact.Content)
 		}
 	}()
 

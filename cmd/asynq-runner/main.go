@@ -6,23 +6,19 @@ import (
 	"log"
 	"os"
 	"os/user"
+	"reflect"
 	"strings"
 	"time"
 
 	"github.com/alecthomas/kong"
 	"github.com/hibiken/asynq"
 
+	"github.com/sre-norns/urth/pkg/prob"
 	"github.com/sre-norns/urth/pkg/redqueue"
 	"github.com/sre-norns/urth/pkg/runner"
 	"github.com/sre-norns/urth/pkg/urth"
 	"github.com/sre-norns/wyrd/pkg/grace"
 	"github.com/sre-norns/wyrd/pkg/manifest"
-
-	_ "github.com/sre-norns/urth/pkg/probers/har"
-	_ "github.com/sre-norns/urth/pkg/probers/http"
-	_ "github.com/sre-norns/urth/pkg/probers/puppeteer"
-	_ "github.com/sre-norns/urth/pkg/probers/pypuppeteer"
-	_ "github.com/sre-norns/urth/pkg/probers/tcp"
 )
 
 type WorkerConfig struct {
@@ -58,53 +54,54 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 		timeout = job.Prob.Timeout
 	}
 
-	runID := job.ResultName
-	log.Print("jobID: ", runID)
-
-	// TODO: Check requirements!
+	// TODO: Should a worker check requirements?
 
 	resultsApiClient := w.apiClient.Results(job.ScenarioName)
 	// Notify API-server that a job has been accepted by this worker
 	// FIXME: Worker must use its credentials jwt
 	// Authorize this worker to pick up this job:
-	log.Print("jobID: ", runID, " requesting authorization to execute")
-	runAuth, err := resultsApiClient.Auth(ctx, job.ResultName, urth.AuthJobRequest{
-		WorkerID: w.identityT.GetVersionedID(),
-		RunnerID: w.runner.GetVersionedID(),
-		Timeout:  timeout,
-		// Present worker's capabilities
-		Labels: manifest.MergeLabels(
-			w.LabelJob(w.runner.ObjectMeta, w.identityT.ObjectMeta, job),
-			manifest.Labels{
-				urth.LabelResultMessageId: messageId,
-			},
-		),
-	})
+	log.Print("requesting authorization to execute jobID: ", job.ResultName)
+	runAuth, err := resultsApiClient.Auth(ctx,
+		job.ResultName,
+		urth.AuthJobRequest{
+			WorkerID: w.identityT.GetVersionedID(),
+			RunnerID: w.runner.GetVersionedID(),
+			Timeout:  timeout,
+			// Present worker's capabilities
+			Labels: manifest.MergeLabels(
+				w.LabelJob(w.runner.ObjectMeta, w.identityT.ObjectMeta, job),
+				manifest.Labels{
+					urth.LabelResultMessageId: messageId,
+				},
+			),
+		})
 	if err != nil {
-		log.Printf("failed to register new run %q: %v", runID, err)
+		log.Printf("failed to register new run of %q: %v", job.ResultName, err)
 		// TODO: Log and count metrics
 		return err // Note: job can be re-tried
 	}
 
 	workCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	log.Print("jobID: ", runID, ", starting timeout: ", timeout)
 
-	runResult, artifacts, err := runner.Play(workCtx, job.Prob, runner.RunOptions{
-		Http: runner.HttpOptions{
-			CaptureResponseBody: false,
-			CaptureRequestBody:  false,
-			IgnoreRedirects:     false,
-		},
-		Puppeteer: runner.PuppeteerOptions{
-			Headless:         true,
-			WorkingDirectory: w.WorkingDirectory,
-			TempDirPrefix:    string(job.ResultName),
-			KeepTempDir:      job.IsKeepDirectory,
-		},
-	})
+	log.Print("jobID: ", job.ResultName, ", kind: ", job.Prob.Kind, ", timeout: ", timeout, ", type: ", reflect.TypeOf(job.Prob.Spec))
+	runResult, artifacts, err := runner.Play(workCtx,
+		job.Prob,
+		prob.RunOptions{
+			Http: prob.HttpOptions{
+				CaptureResponseBody: false,
+				CaptureRequestBody:  false,
+				IgnoreRedirects:     false,
+			},
+			Puppeteer: prob.PuppeteerOptions{
+				Headless:         true, // TODO: Should be config option
+				WorkingDirectory: w.WorkingDirectory,
+				TempDirPrefix:    string(job.ResultName),
+				KeepTempDir:      job.IsKeepDirectory,
+			},
+		})
 	if err != nil {
-		log.Printf("failed to run the job %q: %v", runID, err)
+		log.Printf("failed to run the job %q: %v", job.ResultName, err)
 		// Note this error - does not abort the task as details(logs and status) must be posted back to the server
 	}
 
@@ -124,7 +121,7 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 						Kind:       urth.KindArtifact,
 					},
 					Metadata: manifest.ObjectMeta{
-						Name: manifest.ResourceName(fmt.Sprintf("%v.%v", runID, artifact.Rel)),
+						Name: manifest.ResourceName(fmt.Sprintf("%v.%v", job.ResultName, artifact.Artifact.Rel)),
 						Labels: manifest.MergeLabels(
 							w.LabelJob(w.runner.ObjectMeta, w.identityT.ObjectMeta, job),
 							manifest.Labels{
@@ -137,7 +134,7 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 			)
 
 			if err != nil {
-				log.Printf("failed to post artifact %q for %q: %v", artifact.Rel, runID, err)
+				log.Printf("failed to post artifact %q for %q: %v", artifact.Artifact.Rel, job.ResultName, err)
 				return err // TODO: retry or not? Add results into the retry queue to post later?
 			}
 
@@ -149,16 +146,16 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 	wg.Go(func() error {
 		created, err := resultsApiClient.UpdateStatus(ctx, runAuth.VersionedResourceID, runAuth.Token, runResult)
 		if err != nil {
-			log.Printf("failed to post run results for %q: %v", runID, err)
+			log.Printf("failed to post run results for %q: %v", job.ResultName, err)
 			return err // TODO: retry or not? Add results into the retry queue to post later?
 		}
 
-		log.Print("jobID: ", runID, ", resultID: ", created.VersionedResourceID)
+		log.Print("jobID: ", job.ResultName, ", resultID: ", created.VersionedResourceID)
 		return nil
 	})
 
 	wg.Wait()
-	log.Print("jobID: ", runID, ", competed: ", runResult.Result)
+	log.Print("jobID: ", job.ResultName, ", competed: ", runResult.Result)
 	return nil
 }
 
@@ -213,16 +210,18 @@ func main() {
 	defer cancel()
 
 	// Request Auth to join the workers queue
-	identity, err := apiClient.Runners().Auth(regoCtx, appConfig.Token, urth.WorkerInstance{
-		ObjectMeta: manifest.ObjectMeta{
-			Name:   appConfig.Name,
-			Labels: appConfig.GetEffectiveLabels(),
-		},
-		Spec: urth.WorkerInstanceSpec{
-			IsActive:     false,
-			RequestedTTL: 0,
-		},
-	}.ToManifest())
+	identity, err := apiClient.Runners().Auth(regoCtx,
+		appConfig.Token,
+		urth.WorkerInstance{
+			ObjectMeta: manifest.ObjectMeta{
+				Name:   appConfig.Name,
+				Labels: appConfig.GetEffectiveLabels(),
+			},
+			Spec: urth.WorkerInstanceSpec{
+				IsActive:     false,
+				RequestedTTL: 0,
+			},
+		}.ToManifest())
 
 	// TODO: Should be back-off and retry ?
 	grace.SuccessRequired(err, "failed to Auth to the Runner API")

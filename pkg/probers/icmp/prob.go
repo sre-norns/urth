@@ -1,7 +1,6 @@
-package har
+package icmp
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"reflect"
@@ -9,20 +8,21 @@ import (
 	"strings"
 
 	"github.com/go-kit/log"
+	bxconfig "github.com/prometheus/blackbox_exporter/config"
+	"github.com/prometheus/blackbox_exporter/prober"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sre-norns/urth/pkg/prob"
-	"github.com/sre-norns/urth/pkg/probers/http"
 	"github.com/sre-norns/wyrd/pkg/manifest"
 )
 
 const (
-	Kind           = prob.Kind("har")
-	ScriptMimeType = "application/json"
+	Kind           = prob.Kind("icmp")
+	ScriptMimeType = "application/yaml"
 )
 
 type Spec struct {
-	FollowRedirects bool   `json:"followRedirects,omitempty" yaml:"followRedirects,omitempty"`
-	Script          string `json:"script,omitempty" yaml:"script,omitempty"`
+	Target string             `json:"target,omitempty" yaml:"target,omitempty"`
+	ICMP   bxconfig.ICMPProbe `json:"icmp,omitempty" yaml:"icmp,omitempty"`
 }
 
 func init() {
@@ -39,7 +39,8 @@ func init() {
 			RunFunc:     RunScript,
 			ContentType: ScriptMimeType,
 			Version:     moduleVersion,
-		})
+		},
+	)
 }
 
 func RunScript(ctx context.Context, probSpec any, config prob.RunOptions, registry *prometheus.Registry, logger log.Logger) (prob.RunStatus, []prob.Artifact, error) {
@@ -48,18 +49,13 @@ func RunScript(ctx context.Context, probSpec any, config prob.RunOptions, regist
 		return prob.RunFinishedError, nil, fmt.Errorf("%w: got %q, expected %q", manifest.ErrUnexpectedSpecType, reflect.TypeOf(probSpec), reflect.TypeOf(&Spec{}))
 	}
 
-	logger.Log("replaying HAR file")
-	harLog, err := UnmarshalHAR(bytes.NewReader([]byte(spec.Script)))
-	if err != nil {
-		logger.Log("...failed to deserialize HAR file: ", err)
-		return prob.RunFinishedError, nil, nil
+	if spec.Target == "" {
+		return prob.RunFinishedError, nil, prob.ErrNoTarget
 	}
 
-	requests, err := ConvertHarToHttpTester(harLog.Log.Entries)
-	if err != nil {
-		logger.Log("...failed to convert HAR file requests: ", err)
-		return prob.RunFinishedError, nil, err
+	if success := prober.ProbeICMP(ctx, spec.Target, bxconfig.Module{ICMP: spec.ICMP}, registry, logger); !success {
+		return prob.RunFinishedFailed, nil, nil
 	}
 
-	return http.RunHttpRequests(ctx, requests, config, logger)
+	return prob.RunFinishedSuccess, nil, nil
 }

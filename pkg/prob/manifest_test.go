@@ -1,10 +1,10 @@
-package urth_test
+package prob_test
 
 import (
 	"encoding/json"
 	"testing"
 
-	"github.com/sre-norns/urth/pkg/urth"
+	"github.com/sre-norns/urth/pkg/prob"
 	"github.com/sre-norns/wyrd/pkg/manifest"
 	"github.com/stretchr/testify/require"
 )
@@ -16,16 +16,16 @@ func TestCustomMarshaling_JSON(t *testing.T) {
 	}
 
 	testCases := map[string]struct {
-		given       urth.ProbManifest
+		given       prob.Manifest
 		expect      string
 		expectError bool
 	}{
 		"nothing": {
-			given:  urth.ProbManifest{},
+			given:  prob.Manifest{},
 			expect: `{}`,
 		},
 		"min-spec": {
-			given: urth.ProbManifest{
+			given: prob.Manifest{
 				Spec: &TestSpec{
 					Value: 1,
 					Name:  "life",
@@ -34,7 +34,7 @@ func TestCustomMarshaling_JSON(t *testing.T) {
 			expect: `{"spec":{"value":1,"name":"life"}}`,
 		},
 		"basic": {
-			given: urth.ProbManifest{
+			given: prob.Manifest{
 				Kind: manifest.Kind("testSpec"),
 				Spec: &TestSpec{
 					Value: 42,
@@ -62,27 +62,27 @@ func TestCustomUnmarshaling_JSON(t *testing.T) {
 	}
 
 	testKind := manifest.Kind("testSpec")
-	require.NoError(t, urth.RegisterProbKind(testKind, &TestSpec{}))
-	defer urth.UnregisterProbKind(testKind)
+	require.NoError(t, prob.RegisterKind(testKind, &TestSpec{}))
+	defer prob.UnregisterKind(testKind)
 
 	testCases := map[string]struct {
 		given       string
-		expect      urth.ProbManifest
+		expect      prob.Manifest
 		expectError bool
 	}{
 		"nothing-object": {
 			given:  `{}`,
-			expect: urth.ProbManifest{},
+			expect: prob.Manifest{},
 		},
 		"unknown-kind": {
 			given: `{"kind":"unknownSpec","spec":{"field":"xyz","desc":"unknown"}}`,
-			expect: urth.ProbManifest{
+			expect: prob.Manifest{
 				Kind: manifest.Kind("unknownSpec"),
 				Spec: map[string]any{"field": "xyz", "desc": "unknown"},
 			},
 		},
 		"basic": {
-			expect: urth.ProbManifest{
+			expect: prob.Manifest{
 				Kind: testKind,
 				Spec: &TestSpec{
 					Value: 42,
@@ -100,7 +100,7 @@ func TestCustomUnmarshaling_JSON(t *testing.T) {
 	for name, tc := range testCases {
 		test := tc
 		t.Run(name, func(t *testing.T) {
-			var got urth.ProbManifest
+			var got prob.Manifest
 			err := json.Unmarshal([]byte(test.given), &got)
 			if test.expectError {
 				require.Error(t, err, "expected error")

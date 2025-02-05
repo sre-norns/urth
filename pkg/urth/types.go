@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/adhocore/gronx"
+	"github.com/sre-norns/urth/pkg/prob"
 	"github.com/sre-norns/wyrd/pkg/manifest"
 	"gorm.io/gorm"
 )
@@ -71,7 +72,7 @@ type ScenarioSpec struct {
 	IsActive bool `form:"active" json:"active" yaml:"active" xml:"active"`
 
 	// Script is the actual test scenario that a qualified runner executes
-	Prob ProbManifest `form:"prob" json:"prob,omitempty" yaml:"prob,omitempty" xml:"prob" gorm:"serializer:json"`
+	Prob prob.Manifest `form:"prob" json:"prob,omitempty" yaml:"prob,omitempty" xml:"prob" gorm:"serializer:json"`
 }
 
 // ComputeNextRun compute next point in time when a given Scenario can be scheduled to run
@@ -98,9 +99,6 @@ type ScenarioStatus struct {
 // JobStatus represents a state of job: pending -> running -> completed | timeout | errored
 type JobStatus string
 
-// RunStatus represents the state of script execution once job has been successfully run
-type RunStatus string
-
 const (
 	// A new request has been created and is waiting for a runner to pick it up
 	JobPending JobStatus = "pending"
@@ -112,14 +110,6 @@ const (
 	JobCompleted JobStatus = "completed"
 	// A server failed to schedule the job
 	JobErrored JobStatus = "errored"
-
-	// A run completed with a status
-	RunNotFinished      RunStatus = ""
-	RunFinishedSuccess  RunStatus = "success"
-	RunFinishedFailed   RunStatus = "failed"
-	RunFinishedError    RunStatus = "errored"
-	RunFinishedCanceled RunStatus = "canceled"
-	RunFinishedTimeout  RunStatus = "timeout"
 )
 
 type ResultSpec struct {
@@ -128,7 +118,7 @@ type ResultSpec struct {
 
 	// ProbKind is the kind of prob that produced this results object.
 	// Note that since scenario can be updated, current value of Scenario.Spec.Prob.Kind - might be different
-	ProbKind ProbKind `form:"probKind" json:"probKind,omitempty" yaml:"probKind,omitempty" xml:"probKind"`
+	ProbKind prob.Kind `form:"probKind" json:"probKind,omitempty" yaml:"probKind,omitempty" xml:"probKind"`
 
 	// Timestamp when a job has been picked-up by a worked
 	TimeStarted *time.Time `form:"start_time" json:"start_time,omitempty" yaml:"start_time,omitempty" xml:"start_time" gorm:"type:TIMESTAMP NULL"`
@@ -142,7 +132,7 @@ type ResultStatus struct {
 	Status JobStatus `form:"status" json:"status,omitempty" yaml:"status,omitempty" xml:"status"`
 
 	// Result of the job execution, if job has been scheduled and finished one way or the other.
-	Result RunStatus `form:"result" json:"result,omitempty" yaml:"result,omitempty" xml:"result"`
+	Result prob.RunStatus `form:"result" json:"result,omitempty" yaml:"result,omitempty" xml:"result"`
 
 	// NumberArtifacts is the number of artifacts associated with this results object
 	NumberArtifacts uint64 `json:"numberArtifacts,omitempty" yaml:"numberArtifacts,omitempty" gorm:"-"`
@@ -158,14 +148,16 @@ type ArtifactSpec struct {
 	// ExpireTime is a point in time after which the artifact can be removed by the system. If nil - artifact is 'pinned' and will not be purged, unless manually deleted.
 	ExpireTime *time.Time `form:"expire_time,omitempty" json:"expire_time,omitempty" yaml:"expire_time,omitempty" xml:"expire_time,omitempty" time_format:"unix" gorm:"type:TIMESTAMP NULL"`
 
-	// Relation type: log / HAR / etc? Determines how content is consumed by clients
-	Rel string `form:"rel,omitempty" json:"rel,omitempty" yaml:"rel,omitempty" xml:"rel,omitempty"`
+	// // Relation type: log / HAR / etc? Determines how content is consumed by clients
+	// Rel string `form:"rel,omitempty" json:"rel,omitempty" yaml:"rel,omitempty" xml:"rel,omitempty"`
 
-	// MimeType of the content
-	MimeType string `form:"mimeType,omitempty" json:"mimeType,omitempty" yaml:"mimeType,omitempty" xml:"mimeType,omitempty"`
+	// // MimeType of the content
+	// MimeType string `form:"mimeType,omitempty" json:"mimeType,omitempty" yaml:"mimeType,omitempty" xml:"mimeType,omitempty"`
 
-	// Blob content of the artifact
-	Content []byte `form:"content,omitempty" json:"content,omitempty" yaml:"content,omitempty" xml:"content,omitempty"`
+	// // Blob content of the artifact
+	// Content []byte `form:"content,omitempty" json:"content,omitempty" yaml:"content,omitempty" xml:"content,omitempty"`
+
+	prob.Artifact `json:",inline" yaml:",inline" gorm:"embedded"`
 }
 
 func (r Runner) ToManifest() manifest.ResourceManifest {
@@ -331,7 +323,7 @@ func WithStatus(value JobStatus) RunResultOption {
 	}
 }
 
-func NewRunResults(runResult RunStatus, options ...RunResultOption) ResultStatus {
+func NewRunResults(runResult prob.RunStatus, options ...RunResultOption) ResultStatus {
 	result := ResultStatus{
 		Status: JobCompleted,
 		Result: runResult,

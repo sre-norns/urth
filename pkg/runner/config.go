@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sre-norns/urth/pkg/prob"
 	"github.com/sre-norns/urth/pkg/urth"
 	"github.com/sre-norns/wyrd/pkg/manifest"
 	"golang.org/x/mod/semver"
@@ -98,13 +99,13 @@ func NewDefaultConfig() RunnerConfig {
 	}
 }
 
-func kindAsLabel(kind urth.ProbKind) string {
+func kindAsLabel(kind prob.Kind) string {
 	return fmt.Sprintf("%v%v", urth.LabelWorkerCapProbPrefix, kind)
 }
 
 // Expose loaded probers as Labels
 func ProberAsLabels() manifest.Labels {
-	probs := ListProbs()
+	probs := prob.ListProbs()
 	result := make(manifest.Labels, len(probs))
 	for kind, prob := range probs {
 		result[kindAsLabel(kind)] = prob.Version

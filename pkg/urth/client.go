@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sre-norns/urth/pkg/prob"
 	"github.com/sre-norns/wyrd/pkg/bark"
 	"github.com/sre-norns/wyrd/pkg/manifest"
 )
@@ -681,7 +682,7 @@ func (c *artifactApiClient) GetContent(ctx context.Context, id manifest.Resource
 		return
 	}
 	defer body.Close()
-	resource.Content, err = io.ReadAll(body)
+	resource.Artifact.Content, err = io.ReadAll(body)
 
 	return
 }
@@ -760,7 +761,7 @@ func (c *scenariosApiClient) ListRunnable(ctx context.Context, query manifest.Se
 	return nil, nil
 }
 
-func (c *scenariosApiClient) UpdateScript(ctx context.Context, id manifest.VersionedResourceID, prob ProbManifest) (bark.CreatedResponse, bool, error) {
+func (c *scenariosApiClient) UpdateScript(ctx context.Context, id manifest.VersionedResourceID, prob prob.Manifest) (bark.CreatedResponse, bool, error) {
 	return bark.CreatedResponse{}, false, nil
 }
 

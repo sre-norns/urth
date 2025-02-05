@@ -324,8 +324,8 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 				return
 			}
 
-			ctx.Writer.Header().Set("Content-Type", resource.MimeType)
-			ctx.Writer.Write(resource.Content)
+			ctx.Writer.Header().Set("Content-Type", resource.Artifact.MimeType)
+			ctx.Writer.Write(resource.Artifact.Content)
 		})
 
 		// TODO: POST("/artifacts/:id/content") ???

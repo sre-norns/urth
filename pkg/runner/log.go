@@ -1,10 +1,10 @@
 package runner
 
 import (
-	"fmt"
 	"log"
 	"strings"
 
+	"github.com/sre-norns/urth/pkg/prob"
 	"github.com/sre-norns/urth/pkg/urth"
 )
 
@@ -20,25 +20,27 @@ func (l *RunLog) Write(p []byte) (n int, err error) {
 	return
 }
 
-func (l *RunLog) Log(v ...any) {
-	fmt.Fprint(&l.content, v...)
-	fmt.Fprint(&l.content, "\n")
+// func (l *RunLog) Log(v ...any) {
+// 	fmt.Fprint(&l.content, v...)
+// 	fmt.Fprint(&l.content, "\n")
 
-	log.Print(v...)
-}
+// 	log.Print(v...)
+// }
 
-func (l *RunLog) Logf(format string, v ...any) {
-	l.Log(fmt.Sprintf(format, v...))
-}
+// func (l *RunLog) Logf(format string, v ...any) {
+// 	l.Log(fmt.Sprintf(format, v...))
+// }
 
 func (l *RunLog) ToArtifact() urth.ArtifactSpec {
 	return urth.ArtifactSpec{
-		Rel:      "log",
-		MimeType: "text/plain",
-		Content:  []byte(l.content.String()),
+		Artifact: prob.Artifact{
+			Rel:      "log",
+			MimeType: "text/plain",
+			Content:  []byte(l.content.String()),
+		},
 	}
 }
 
-func (l *RunLog) Package() []urth.ArtifactSpec {
-	return []urth.ArtifactSpec{l.ToArtifact()}
-}
+// func (l *RunLog) Package() []urth.ArtifactSpec {
+// 	return []urth.ArtifactSpec{l.ToArtifact()}
+// }

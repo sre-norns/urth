@@ -12,13 +12,14 @@ import (
 	"runtime/debug"
 	"strings"
 
-	"github.com/sre-norns/urth/pkg/runner"
-	"github.com/sre-norns/urth/pkg/urth"
+	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/sre-norns/urth/pkg/prob"
 	"github.com/sre-norns/wyrd/pkg/manifest"
 )
 
 const (
-	Kind           = urth.ProbKind("puppeteer")
+	Kind           = prob.Kind("puppeteer")
 	ScriptMimeType = "text/javascript"
 )
 
@@ -33,16 +34,16 @@ type Spec struct {
 }
 
 func init() {
-	moduleVersion := "unknown"
+	moduleVersion := "devel"
 	if bi, ok := debug.ReadBuildInfo(); ok {
 		moduleVersion = strings.Trim(bi.Main.Version, "()")
 	}
 
 	// Ignore double registration error
-	_ = runner.RegisterProbKind(
+	_ = prob.RegisterProbKind(
 		Kind,
 		&Spec{},
-		runner.ProbRegistration{
+		prob.ProbRegistration{
 			RunFunc:     RunScript,
 			ContentType: ScriptMimeType,
 			Version:     moduleVersion,
@@ -63,52 +64,53 @@ func installPuppeteer(dir string) error {
 	return cmd.Run()
 }
 
-func SetupRunEnv(workDir string, logger *runner.RunLog) error {
+func SetupRunEnv(workDir string, logger log.Logger) error {
 	if _, err := os.Stat(path.Join(workDir, "package.json")); err == nil {
 		return nil
 	}
 
-	logger.Logf("Creating node working directory at %q", workDir)
+	logger.Log("Creating node working directory", "dir", workDir)
 	if err := setupNodeDir(workDir); err != nil {
+		logger.Log("Failed to create working directory", "dir", workDir, "err", err)
 		return err
 	}
 
-	logger.Logf("installing Puppeteer and dependecies %q", workDir)
+	logger.Log("Installing Puppeteer and dependencies", "dir", workDir)
 	if err := installPuppeteer(workDir); err != nil {
+		logger.Log("Failed to install Puppeteer and dependencies", "dir", workDir, "err", err)
 		return err
 	}
 
 	return nil
 }
 
-func RunScript(ctx context.Context, probSpec any, logger *runner.RunLog, options runner.RunOptions) (urth.ResultStatus, []urth.ArtifactSpec, error) {
-	prob, ok := probSpec.(*Spec)
+func RunScript(ctx context.Context, probSpec any, config prob.RunOptions, registry *prometheus.Registry, logger log.Logger) (prob.RunStatus, []prob.Artifact, error) {
+	spec, ok := probSpec.(*Spec)
 	if !ok {
-		return urth.NewRunResults(urth.RunFinishedError), logger.Package(), fmt.Errorf("%w: got %q, expected %q", manifest.ErrUnexpectedSpecType, reflect.TypeOf(probSpec), reflect.TypeOf(&Spec{}))
+		return prob.RunFinishedError, nil, fmt.Errorf("%w: got %q, expected %q", manifest.ErrUnexpectedSpecType, reflect.TypeOf(probSpec), reflect.TypeOf(&Spec{}))
 	}
 	logger.Log("Running puppeteer script")
 
 	// TODO: Check that working directory exists and writable!
-	if err := SetupRunEnv(options.Puppeteer.WorkingDirectory, logger); err != nil {
-		err = fmt.Errorf("failed to initialize work directory: %w", err)
-		logger.Log(err)
+	if err := SetupRunEnv(config.Puppeteer.WorkingDirectory, logger); err != nil {
+		logger.Log("Failed to setup work environment", "err", err)
 
-		return urth.NewRunResults(urth.RunFinishedError), logger.Package(), nil
+		return prob.RunFinishedError, nil, fmt.Errorf("failed to initialize work directory: %w", err)
 	}
 
-	workDir, err := os.MkdirTemp(options.Puppeteer.WorkingDirectory, options.Puppeteer.TempDirPrefix)
+	workDir, err := os.MkdirTemp(config.Puppeteer.WorkingDirectory, config.Puppeteer.TempDirPrefix)
 	if err != nil {
-		err = fmt.Errorf("failed to create work directory: %w", err)
-		logger.Log(err)
-		return urth.NewRunResults(urth.RunFinishedError), logger.Package(), nil
+		logger.Log("Failed to create work directory", "err", err)
+
+		return prob.RunFinishedError, nil, fmt.Errorf("failed to create work directory: %w", err)
 	}
 
 	defer func(dir string, keep bool) {
 		if !keep {
 			os.RemoveAll(dir)
 		}
-	}(workDir, options.Puppeteer.KeepTempDir)
-	logger.Logf("working directory: %q (will be kept?: %t)", workDir, options.Puppeteer.KeepTempDir)
+	}(workDir, config.Puppeteer.KeepTempDir)
+	logger.Log("Working directory configured", "dir", workDir, "keep", config.Puppeteer.KeepTempDir)
 
 	cmd := exec.CommandContext(ctx, "node", "-")
 	// cmd.Env = append(cmd.Env, fmt.Sprintf("PUPPETEER_CACHE_DIR=%v", options.Puppeteer.WorkingDirectory))
@@ -119,9 +121,9 @@ func RunScript(ctx context.Context, probSpec any, logger *runner.RunLog, options
 	// 	cmd.Env = append(cmd.Env, fmt.Sprintf("DISPLAY=%v", hasDisplay))
 	// }
 
-	cmd.Env = append(cmd.Env, fmt.Sprintf("URTH_PUPPETEER_HEADLESS=%t", options.Puppeteer.Headless))
-	if options.Puppeteer.PageWaitSeconds != 0 {
-		cmd.Env = append(cmd.Env, fmt.Sprintf("URTH_PUPPETEER_PAGE_WAIT=%d", options.Puppeteer.PageWaitSeconds))
+	cmd.Env = append(cmd.Env, fmt.Sprintf("URTH_PUPPETEER_HEADLESS=%t", config.Puppeteer.Headless))
+	if config.Puppeteer.PageWaitSeconds != 0 {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("URTH_PUPPETEER_PAGE_WAIT=%d", config.Puppeteer.PageWaitSeconds))
 	}
 
 	cmd.Dir = workDir
@@ -130,36 +132,36 @@ func RunScript(ctx context.Context, probSpec any, logger *runner.RunLog, options
 	if err != nil {
 		err := fmt.Errorf("failed to open input pipe: %w", err)
 		logger.Log(err)
-		return urth.NewRunResults(urth.RunFinishedError), logger.Package(), nil
+		return prob.RunFinishedError, nil, nil
 	}
 
 	// TODO: Write common prolog for all scrips
 	go func() {
 		defer inPipe.Close()
-		n, err := inPipe.Write([]byte(prob.Script))
+		n, err := inPipe.Write([]byte(spec.Script))
 		if err != nil {
 			logger.Log("failed to write script into the nodejs input pipe: ", err)
 		}
-		logger.Logf("script loaded: %d bytes", n)
+		logger.Log("Script loaded", "bytes", n)
 	}()
 
 	// TODO: Capture artifacts and store HAR file
-	runResult := urth.RunFinishedSuccess
+	runResult := prob.RunFinishedSuccess
 
-	cmd.Stderr = logger
-	cmd.Stdout = logger
+	cmd.Stderr = log.NewStdlibAdapter(logger)
+	cmd.Stdout = log.NewStdlibAdapter(logger)
 
 	// Run the proces
 	if err := cmd.Run(); err != nil {
-		logger.Log("failed to execture cmd: ", err)
-		runResult = urth.RunFinishedError
+		logger.Log("Failed to execute command", "err", err)
+		runResult = prob.RunFinishedError
 	}
 
 	// Capture artifacts:
-	artifacts := make([]urth.ArtifactSpec, 0)
+	artifacts := make([]prob.Artifact, 0)
 	workDirEntries, err := os.ReadDir(workDir)
 	if err != nil {
-		logger.Log("Failed to open working directory. No artifacts will be captured: ", err)
+		logger.Log("Failed to open working directory (No artifacts can be captured)", "err", err)
 	} else {
 		for _, entry := range workDirEntries {
 			if entry.Name() == "node_modules" || entry.Name() == "package.json" {
@@ -177,7 +179,7 @@ func RunScript(ctx context.Context, probSpec any, logger *runner.RunLog, options
 				continue
 			}
 
-			artifacts = append(artifacts, urth.ArtifactSpec{
+			artifacts = append(artifacts, prob.Artifact{
 				Rel:      filepath.Ext(entry.Name()),
 				MimeType: http.DetectContentType(data),
 				Content:  data,
@@ -185,5 +187,5 @@ func RunScript(ctx context.Context, probSpec any, logger *runner.RunLog, options
 		}
 	}
 
-	return urth.NewRunResults(runResult), append(artifacts, logger.ToArtifact()), nil
+	return runResult, artifacts, nil
 }

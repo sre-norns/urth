@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: scenarios
+metadata:
+  name: example-dns-prob
+  labels:
+    app: web-prob
+    function: front-end
+spec:
+  description: "HTTP prober checking api/version every 5 minutes"
+  active: true
+  schedule: "@5minutes"
+  prob:
+    kind: dns
+    spec:
+      target: "8.8.8.8"
+      dns:
+        query_name: google.com
+        preferred_ip_protocol: ip4
+      # ip_protocol_fallback: false
+      # validate_answer_rrs:
+      #   fail_if_matches_regexp: [test]
+
+

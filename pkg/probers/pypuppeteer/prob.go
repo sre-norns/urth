@@ -6,34 +6,35 @@ import (
 	"runtime/debug"
 	"strings"
 
-	"github.com/sre-norns/urth/pkg/runner"
-	"github.com/sre-norns/urth/pkg/urth"
+	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/sre-norns/urth/pkg/prob"
 )
 
 const (
-	Kind           = urth.ProbKind("pypuppeteer")
+	Kind           = prob.Kind("pypuppeteer")
 	ScriptMimeType = "text/x-python"
 )
 
 func init() {
-	moduleVersion := "unknown"
+	moduleVersion := "devel"
 	if bi, ok := debug.ReadBuildInfo(); ok {
 		moduleVersion = strings.Trim(bi.Main.Version, "()")
 	}
 
 	// Ignore double registration error
-	_ = runner.RegisterProbKind(
+	_ = prob.RegisterProbKind(
 		Kind,
 		"",
-		runner.ProbRegistration{
+		prob.ProbRegistration{
 			RunFunc:     RunScript,
 			ContentType: ScriptMimeType,
 			Version:     moduleVersion,
 		})
 }
 
-func RunScript(ctx context.Context, prob any, logger *runner.RunLog, options runner.RunOptions) (urth.ResultStatus, []urth.ArtifactSpec, error) {
-	logger.Log("FIXME: PyPuppeteer scenarios are not implemented....yet")
+func RunScript(ctx context.Context, probSpec any, config prob.RunOptions, registry *prometheus.Registry, logger log.Logger) (prob.RunStatus, []prob.Artifact, error) {
+	logger.Log("FIXME: PyPuppeteer scenarios runner is not implemented....yet")
 
-	return urth.NewRunResults(urth.RunFinishedError), nil, fmt.Errorf("not implemented yet")
+	return prob.RunFinishedError, nil, fmt.Errorf("not implemented yet")
 }

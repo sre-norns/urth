@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: scenarios
+metadata:
+  name: example-icmp-test
+  labels:
+    function: icmp-google
+spec:
+  description: "Check that a target can respond to ping, every 5 minutes"
+  active: true
+  schedule: "@5minutes"
+  prob:
+    kind: icmp
+    timeout: 5s
+    spec:
+      target: "google.com"
+      icmp:
+        preferred_ip_protocol: ip4

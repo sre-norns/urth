@@ -3,46 +3,39 @@ package tcp
 import (
 	"context"
 	"fmt"
-	"net"
-	"net/netip"
 	"reflect"
 	"runtime/debug"
 	"strings"
 
-	"github.com/sre-norns/urth/pkg/runner"
-	"github.com/sre-norns/urth/pkg/urth"
+	"github.com/go-kit/log"
+	bxconfig "github.com/prometheus/blackbox_exporter/config"
+	"github.com/prometheus/blackbox_exporter/prober"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/sre-norns/urth/pkg/prob"
 	"github.com/sre-norns/wyrd/pkg/manifest"
 )
 
 const (
-	Kind           = urth.ProbKind("tcp")
+	Kind           = prob.Kind("tcp")
 	ScriptMimeType = "text/plain"
 )
 
 type Spec struct {
-	Net  string `json:"net,omitempty" yaml:"net,omitempty"` // tcp, tcp4, tcp6, udp, udp4, udp6...
-	Port string `json:"port,omitempty" yaml:"port,omitempty"`
-	Host string `json:"host,omitempty" yaml:"host,omitempty"`
-}
-
-type TcpProbSpec1 struct {
-	Aggregation string // All / Any / First
-	Address     []Spec
-	Payload     []byte
-	Expects     []byte
+	Target string            `json:"target,omitempty" yaml:"target,omitempty"`
+	TCP    bxconfig.TCPProbe `json:"tcp,omitempty" yaml:"tcp,omitempty"`
 }
 
 func init() {
-	moduleVersion := "unknown"
+	moduleVersion := "devel"
 	if bi, ok := debug.ReadBuildInfo(); ok {
 		moduleVersion = strings.Trim(bi.Main.Version, "()")
 	}
 
 	// Ignore double registration error
-	_ = runner.RegisterProbKind(
+	_ = prob.RegisterProbKind(
 		Kind,
 		&Spec{},
-		runner.ProbRegistration{
+		prob.ProbRegistration{
 			RunFunc:     RunScript,
 			ContentType: ScriptMimeType,
 			Version:     moduleVersion,
@@ -50,67 +43,18 @@ func init() {
 	)
 }
 
-func RunScript(ctx context.Context, probSpec any, logger *runner.RunLog, options runner.RunOptions) (urth.ResultStatus, []urth.ArtifactSpec, error) {
-	prob, ok := probSpec.(*Spec)
+func RunScript(ctx context.Context, probSpec any, config prob.RunOptions, registry *prometheus.Registry, logger log.Logger) (prob.RunStatus, []prob.Artifact, error) {
+	spec, ok := probSpec.(*Spec)
 	if !ok {
-		return urth.NewRunResults(urth.RunFinishedError), logger.Package(), fmt.Errorf("%w: got %q, expected %q", manifest.ErrUnexpectedSpecType, reflect.TypeOf(probSpec), reflect.TypeOf(&Spec{}))
+		return prob.RunFinishedError, nil, fmt.Errorf("%w: got %q, expected %q", manifest.ErrUnexpectedSpecType, reflect.TypeOf(probSpec), reflect.TypeOf(&Spec{}))
 	}
-	if prob.Net == "" {
-		prob.Net = "tcp"
-	}
-
-	logger.Log("fondling TCP port")
-	logger.Logf("prob: net=%q host=%q port=%v", prob.Net, prob.Host, prob.Port)
-	resolver := net.DefaultResolver
-
-	// TODO: Trace
-	addrs, err := resolver.LookupHost(ctx, prob.Host)
-	if err != nil {
-		logger.Log("failed to resolve host name: ", err)
-		return urth.NewRunResults(urth.RunFinishedError), logger.Package(), nil
-	}
-	logger.Logf("hostname resolved into %d address(es)", len(addrs))
-
-	// TODO: Trace
-	port, err := resolver.LookupPort(ctx, prob.Net, prob.Port)
-	if err != nil {
-		logger.Log("failed to resolve host name: ", err)
-		return urth.NewRunResults(urth.RunFinishedError), logger.Package(), nil
-	}
-	logger.Logf("service port resolved as: %d", port)
-
-	ips := make([]netip.Addr, 0, len(addrs))
-	for _, addr := range addrs {
-		ip, err := netip.ParseAddr(addr)
-		if err == nil {
-			ips = append(ips, ip)
-		}
-	}
-	logger.Logf("... %d non null IPs", len(ips))
-
-	// TODO: Is it ok to have no valid addresses?
-	if len(ips) == 0 {
-		logger.Log("no non-null IP addresses for host: ", prob.Host)
-		return urth.NewRunResults(urth.RunFinishedError), logger.Package(), nil
+	if spec.Target == "" {
+		return prob.RunFinishedError, nil, prob.ErrNoTarget
 	}
 
-	ip := ips[0] // Implement strategy selector. For now copy what GO-libs do
-	addr := &net.TCPAddr{
-		IP:   ip.AsSlice(),
-		Port: port,
-		Zone: ip.Zone(),
+	if success := prober.ProbeICMP(ctx, spec.Target, bxconfig.Module{TCP: spec.TCP}, registry, logger); !success {
+		return prob.RunFinishedFailed, nil, nil
 	}
 
-	logger.Logf("address resolved as: %q", addr)
-
-	// TODO: Trace
-	con, err := net.DialTCP(prob.Net, nil, addr)
-	if err != nil {
-		logger.Log("failed to connect: ", err)
-		return urth.NewRunResults(urth.RunFinishedError), logger.Package(), nil
-	}
-	logger.Log("connected successfully")
-	defer con.Close()
-
-	return urth.NewRunResults(urth.RunFinishedSuccess), logger.Package(), nil
+	return prob.RunFinishedSuccess, nil, nil
 }

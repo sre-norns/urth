@@ -2,11 +2,13 @@ package urth
 
 import (
 	"net/http"
+
+	"github.com/sre-norns/urth/pkg/prob"
 )
 
-var kindToMimeMap = map[ProbKind]string{}
+var kindToMimeMap = map[prob.Kind]string{}
 
-func ScriptKindToMimeType(kind ProbKind) string {
+func ScriptKindToMimeType(kind prob.Kind) string {
 	mtype, known := kindToMimeMap[kind]
 	if !known {
 		return "text/plain"
@@ -15,7 +17,7 @@ func ScriptKindToMimeType(kind ProbKind) string {
 	return mtype
 }
 
-func contentTypeToKind(contentType string) (ProbKind, bool) {
+func contentTypeToKind(contentType string) (prob.Kind, bool) {
 	for k, v := range kindToMimeMap {
 		if v == contentType {
 			return k, true
@@ -25,9 +27,9 @@ func contentTypeToKind(contentType string) (ProbKind, bool) {
 	return "", false
 }
 
-func GuessScenarioKind(hint string, contentType string, data []byte) ProbKind {
+func GuessScenarioKind(hint string, contentType string, data []byte) prob.Kind {
 	if hint != "" {
-		h := ProbKind(hint)
+		h := prob.Kind(hint)
 		_, exists := kindToMimeMap[h]
 		if exists {
 			return h

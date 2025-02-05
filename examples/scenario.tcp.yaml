@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: scenarios
+metadata:
+  name: tcp-self-fondle
+  labels:
+    host: localhost
+spec:
+  active: true
+  description: "TCP Prob checking if TCP port is open"
+  schedule: "* * * * *"
+  prob:
+    kind: "tcp"
+    spec:
+      target": "localhost:8080"
+      tcp:
+        # query_response:
+        # - expect: "^+OK"
+        # tls: true
+        # tls_config:
+        #   insecure_skip_verify: false

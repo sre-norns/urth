@@ -13,6 +13,7 @@ import (
 
 	"github.com/sre-norns/wyrd/pkg/manifest"
 
+	"github.com/sre-norns/urth/pkg/prob"
 	"github.com/sre-norns/urth/pkg/probers/har"
 	"github.com/sre-norns/urth/pkg/probers/http"
 	"github.com/sre-norns/urth/pkg/probers/puppeteer"
@@ -37,19 +38,19 @@ type RunCmd struct {
 	PageSlowSeconds int  `help:"For browser-based probs, slowdown page loads in seconds" prefix:"puppeteer."`
 }
 
-func (c *RunCmd) runScenario(cmdCtx context.Context, sourceName string, prob urth.ProbManifest, workingDir string, timeout time.Duration) error {
+func (c *RunCmd) runScenario(cmdCtx context.Context, sourceName string, probSpec prob.Manifest, workingDir string, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(cmdCtx, timeout)
 	defer cancel()
 
-	runResult, artifacts, err := runner.Play(ctx, prob, runner.RunOptions{
-		Puppeteer: runner.PuppeteerOptions{
+	runResult, artifacts, err := runner.Play(ctx, probSpec, prob.RunOptions{
+		Puppeteer: prob.PuppeteerOptions{
 			Headless:         c.Headless,
 			PageWaitSeconds:  c.PageSlowSeconds,
 			WorkingDirectory: workingDir,
 			TempDirPrefix:    fmt.Sprintf("%v-", sourceName), // Working dir name for the run
 			KeepTempDir:      c.KeepTemp,
 		},
-		Http: runner.HttpOptions{
+		Http: prob.HttpOptions{
 			CaptureResponseBody: false,
 			CaptureRequestBody:  false,
 			IgnoreRedirects:     false,
@@ -59,18 +60,18 @@ func (c *RunCmd) runScenario(cmdCtx context.Context, sourceName string, prob urt
 		return err
 	}
 
-	if runResult.Result == urth.RunFinishedSuccess {
+	if runResult.Result == prob.RunFinishedSuccess {
 		log.Print("artifacts produced: ", len(artifacts))
 	}
 	log.Printf("script finished: %q", runResult.Result)
 
 	// Process artifacts produced by the local run - no uploading
 	for _, artifact := range artifacts {
-		log.Print("artifact: ", artifact.Rel)
+		log.Print("artifact: ", artifact.Artifact.Rel)
 
-		if artifact.Rel == "har" && c.SaveHAR {
+		if artifact.Artifact.Rel == "har" && c.SaveHAR {
 			filename := fmt.Sprintf("%v.har", sourceName)
-			if err := os.WriteFile(filename, artifact.Content, 0644); err != nil {
+			if err := os.WriteFile(filename, artifact.Artifact.Content, 0644); err != nil {
 				return fmt.Errorf("failed to write HAR artifact: %w", err)
 			}
 		}
@@ -93,23 +94,23 @@ func readContent(filename string) ([]byte, string, error) {
 	return content, filepath.Ext(filename), err
 }
 
-func getScenarioProb(kind manifest.Kind, scenarioSpec any) (urth.ProbManifest, error) {
+func getScenarioProb(kind manifest.Kind, scenarioSpec any) (prob.Manifest, error) {
 	if kind != urth.KindScenario {
-		return urth.ProbManifest{}, fmt.Errorf("non-runnable manifest file of kind %q", kind)
+		return prob.Manifest{}, fmt.Errorf("non-runnable manifest file of kind %q", kind)
 	}
 
 	spec, ok := scenarioSpec.(*urth.ScenarioSpec)
 	if !ok {
-		return urth.ProbManifest{}, fmt.Errorf("unexpected Spec type %q for the resource (kind=%q)", reflect.TypeOf(scenarioSpec), kind)
+		return prob.Manifest{}, fmt.Errorf("unexpected Spec type %q for the resource (kind=%q)", reflect.TypeOf(scenarioSpec), kind)
 	}
 
 	return spec.Prob, nil
 }
 
-func jobFromFile(filename string, kindHint string) (urth.ProbManifest, error) {
+func jobFromFile(filename string, kindHint string) (prob.Manifest, error) {
 	if kindHint == "" {
 		if scenario, ok, err := manifestFromFile(filename); err != nil {
-			return urth.ProbManifest{}, err
+			return prob.Manifest{}, err
 		} else if ok {
 			return getScenarioProb(scenario.Kind, scenario.Spec)
 		}
@@ -117,10 +118,10 @@ func jobFromFile(filename string, kindHint string) (urth.ProbManifest, error) {
 
 	content, ext, err := readContent(filename)
 	if err != nil {
-		return urth.ProbManifest{}, fmt.Errorf("failed to read content: %w", err)
+		return prob.Manifest{}, fmt.Errorf("failed to read content: %w", err)
 	}
 
-	kind := urth.ProbKind(kindHint)
+	kind := prob.Kind(kindHint)
 	if kindHint == "" { // Kind guessing
 		switch ext {
 		case ".js", ".mjs":
@@ -138,33 +139,33 @@ func jobFromFile(filename string, kindHint string) (urth.ProbManifest, error) {
 
 	// Did we guess anything?
 	if string(kind) == "" {
-		return urth.ProbManifest{}, fmt.Errorf("no kind provided for the input file (ext: %q)", ext)
+		return prob.Manifest{}, fmt.Errorf("no kind provided for the input file (ext: %q)", ext)
 	}
 
 	switch kind {
 	case puppeteer.Kind:
-		return urth.ProbManifest{
+		return prob.Manifest{
 			Kind: kind,
 			Spec: &puppeteer.Spec{
 				Script: string(content),
 			},
 		}, nil
 	case http.Kind:
-		return urth.ProbManifest{
+		return prob.Manifest{
 			Kind: kind,
 			Spec: &http.Spec{
 				Script: string(content),
 			},
 		}, nil
 	case har.Kind:
-		return urth.ProbManifest{
+		return prob.Manifest{
 			Kind: kind,
 			Spec: &har.Spec{
 				Script: string(content),
 			},
 		}, nil
 	default:
-		return urth.ProbManifest{}, fmt.Errorf("kind %v can not be run locally (yet)", kind)
+		return prob.Manifest{}, fmt.Errorf("kind %v can not be run locally (yet)", kind)
 	}
 }
 

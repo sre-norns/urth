@@ -1,9 +1,9 @@
 package urth
 
 import (
-	"encoding/json"
-
+	"github.com/sre-norns/urth/pkg/prob"
 	"github.com/sre-norns/wyrd/pkg/manifest"
+	"gopkg.in/yaml.v3"
 )
 
 type Job struct {
@@ -17,21 +17,30 @@ type Job struct {
 	Labels manifest.Labels `form:"labels,omitempty" json:"labels,omitempty" yaml:"labels,omitempty" xml:"labels,omitempty" `
 
 	// Script of a job to be performed by a runner
-	Prob ProbManifest `form:"prob" json:"prob" yaml:"prob" xml:"prob"`
+	Prob prob.Manifest `form:"prob" json:"prob" yaml:"prob" xml:"prob"`
 
 	// True if you want the worker to keep temp working directory with run artifacts
 	IsKeepDirectory bool `form:"keepDir" json:"keepDir" yaml:"keepDir" xml:"keepDir"`
 }
 
 func UnmarshalJob(data []byte) (result Job, err error) {
-	// err = yaml.Unmarshal(data, &result)
-	err = json.Unmarshal(data, &result)
+	err = yaml.Unmarshal(data, &result)
+	// err = json.Unmarshal(data, &result)
+	// dec := gob.NewDecoder(bytes.NewBuffer(data))
+	// err = dec.Decode(&result)
+
 	return
 }
 
 func MarshalJob(job Job) ([]byte, error) {
-	// return yaml.Marshal(&runScenario)
-	return json.Marshal(&job)
+	return yaml.Marshal(&job)
+	// return json.Marshal(&job)
+
+	// var buf bytes.Buffer        // Stand-in for a network connection
+	// enc := gob.NewEncoder(&buf) // Will write to network.
+
+	// err := enc.Encode(job)
+	// return buf.Bytes(), err
 }
 
 // RunScenarioJob represents a job to be picked by a qualifying worker

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sre-norns/urth/pkg/prob"
 	"github.com/sre-norns/urth/pkg/probers/http"
 	"github.com/sre-norns/urth/pkg/urth"
 	"github.com/sre-norns/wyrd/pkg/manifest"
@@ -103,7 +104,7 @@ spec:
 					IsActive:    true,
 					RunSchedule: "* * * * *",
 					Description: "Awesome",
-					Prob: urth.ProbManifest{
+					Prob: prob.Manifest{
 						Kind:    "http",
 						Timeout: time.Second * 120,
 						Spec: &http.Spec{
@@ -150,9 +151,11 @@ spec:
 					},
 				},
 				Spec: &urth.ArtifactSpec{
-					Rel:      "har",
-					MimeType: "data",
-					Content:  nil,
+					Artifact: prob.Artifact{
+						Rel:      "har",
+						MimeType: "data",
+						Content:  nil,
+					},
 				},
 			},
 		},
@@ -274,7 +277,7 @@ func TestResourceManifest_UnmarshalingJson(t *testing.T) {
 					IsActive:    true,
 					RunSchedule: "* * * * *",
 					Description: "Awesome",
-					Prob: urth.ProbManifest{
+					Prob: prob.Manifest{
 						Kind: "http",
 						// Timeout: time.Second * 120,
 						Spec: &http.Spec{
@@ -325,9 +328,11 @@ func TestResourceManifest_UnmarshalingJson(t *testing.T) {
 					},
 				},
 				Spec: &urth.ArtifactSpec{
-					Rel:      "har",
-					MimeType: "data",
-					Content:  nil,
+					Artifact: prob.Artifact{
+						Rel:      "har",
+						MimeType: "data",
+						Content:  nil,
+					},
 				},
 			},
 		},
