@@ -28,7 +28,9 @@
     "redux-logger": "^3.0.6",
     "redux-thunk": "^2.4.2",
     "the-new-css-reset": "^1.11.0",
-    "wouter": "^3.0.0"
+    "use-debounce": "^10.0.4",
+    "wouter": "^3.0.0",
+    "wouter-search": "^1.3.0"
   },
   "devDependencies": {
     "@babel/core": "^7.22.20",

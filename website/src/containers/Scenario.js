@@ -104,14 +104,14 @@ function scheduleBreakdown(schedule, status) {
   // }
 }
 
-const Scenario = ({ data, odd }) => {
+const Scenario = ({ data, odd, onCapsuleClick }) => {
   const { metadata, spec, status } = data
   const { uid, name, labels } = metadata
   const { active, description, schedule, prob } = spec
 
   const lastRunStatus = status.results && status.results.length > 0
     ? `${status.results[0].status.status}/${status.results[0].status.result}`
-    : 'unknown';
+    : 'new';
 
   const statusColor = statusToColor(lastRunStatus)
 
@@ -164,7 +164,7 @@ const Scenario = ({ data, odd }) => {
             {/*<TextSpan level={2} weight={500}>{data.lastRun && data.lastRun.date.toLocaleString() || 'never'}</TextSpan>*/}
             <TextSpan aria-hidden> · </TextSpan>
             <TextSpan>Status: </TextSpan>
-            <TextSpan level={2} weight={500}>
+            <TextSpan level={2} weight={500} color={statusColor}>
               {lastRunStatus}
             </TextSpan>
           </TextDiv>
@@ -178,7 +178,7 @@ const Scenario = ({ data, odd }) => {
           </StopButton>
         </ActionsContainer>
       </TopContainer>
-      <ScenarioCapsules value={labels} />
+      <ScenarioCapsules value={labels} onCapsuleClick={onCapsuleClick} />
     </OddContainer>
   )
 }
@@ -217,6 +217,7 @@ const ScenarioManifest = PropTypes.shape({
 Scenario.propTypes = {
   data: ScenarioManifest.isRequired,
   odd: PropTypes.bool,
+  onCapsuleClick: PropTypes.func
 }
 
 export default Scenario

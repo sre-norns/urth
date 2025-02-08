@@ -7,6 +7,7 @@ import NavLink from '../components/NavLink.js'
 import Nav from '../components/Nav.js'
 import NavRowContainer from '../components/NavRowContainer.js'
 import TextInput from '../components/TextInput.js'
+import { useDebounce } from "use-debounce";
 
 const onNonClick = (e) => {
   e.preventDefault()
@@ -15,6 +16,30 @@ const onNonClick = (e) => {
 const SearchInput = styled(TextInput)`
   flex-grow: 1;
 `
+
+const SearchTextInput = () => {
+  const [searchInput, setSearchInput] = useState('');
+  const [debouncedValue] = useDebounce(searchInput, 500);
+
+  const [currentQueryParameters, setSearchParams] = useSearchParams();
+  const newQueryParameters = new URLSearchParams();
+
+  const inputHandler = (e) => {
+    if (debouncedValue) {
+      newQueryParameters.set("labels", debouncedValue);
+    }
+
+    console.log("setting search query to", newQueryParameters)
+    setSearchParams(newQueryParameters);
+    setSearchInput(e.target.value)
+  }
+
+  return (<SearchInput
+    placeholder="Search"
+    value={searchInput}
+    onChange={inputHandler}
+  />)
+}
 
 const HeaderMock = () => (
   <Nav>
@@ -46,7 +71,7 @@ const HeaderMock = () => (
         <NavLink href="#" onClick={onNonClick} active>
           All
         </NavLink>
-        <SearchInput placeholder="Search" />
+        <SearchTextInput />
       </NavRow>
     </NavRowContainer>
   </Nav>
