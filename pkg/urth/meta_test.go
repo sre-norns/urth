@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/sre-norns/urth/pkg/prob"
-	"github.com/sre-norns/urth/pkg/probers/http"
+	"github.com/sre-norns/urth/pkg/probers/rest"
 	"github.com/sre-norns/urth/pkg/urth"
 	"github.com/sre-norns/wyrd/pkg/manifest"
 	"github.com/stretchr/testify/require"
@@ -105,9 +105,9 @@ spec:
 					RunSchedule: "* * * * *",
 					Description: "Awesome",
 					Prob: prob.Manifest{
-						Kind:    "http",
+						Kind:    "rest",
 						Timeout: time.Second * 120,
-						Spec: &http.Spec{
+						Spec: &rest.Spec{
 							Script: "http://localhost:8080/api/v1/version",
 						},
 					},
@@ -278,9 +278,9 @@ func TestResourceManifest_UnmarshalingJson(t *testing.T) {
 					RunSchedule: "* * * * *",
 					Description: "Awesome",
 					Prob: prob.Manifest{
-						Kind: "http",
+						Kind: "rest",
 						// Timeout: time.Second * 120,
-						Spec: &http.Spec{
+						Spec: &rest.Spec{
 							Script: "http://localhost:8080/api/v1/version",
 						},
 					},

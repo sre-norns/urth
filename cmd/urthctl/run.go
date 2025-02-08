@@ -15,10 +15,9 @@ import (
 
 	"github.com/sre-norns/urth/pkg/prob"
 	"github.com/sre-norns/urth/pkg/probers/har"
-	"github.com/sre-norns/urth/pkg/probers/http"
 	"github.com/sre-norns/urth/pkg/probers/puppeteer"
 	"github.com/sre-norns/urth/pkg/probers/pypuppeteer"
-	"github.com/sre-norns/urth/pkg/probers/tcp"
+	"github.com/sre-norns/urth/pkg/probers/rest"
 
 	"github.com/sre-norns/urth/pkg/runner"
 	"github.com/sre-norns/urth/pkg/urth"
@@ -128,10 +127,8 @@ func jobFromFile(filename string, kindHint string) (prob.Manifest, error) {
 			kind = puppeteer.Kind
 		case ".py":
 			kind = pypuppeteer.Kind
-		case ".tcp":
-			kind = tcp.Kind
 		case ".http", ".rest":
-			kind = http.Kind
+			kind = rest.Kind
 		case ".har":
 			kind = har.Kind
 		}
@@ -150,10 +147,10 @@ func jobFromFile(filename string, kindHint string) (prob.Manifest, error) {
 				Script: string(content),
 			},
 		}, nil
-	case http.Kind:
+	case rest.Kind:
 		return prob.Manifest{
 			Kind: kind,
-			Spec: &http.Spec{
+			Spec: &rest.Spec{
 				Script: string(content),
 			},
 		}, nil

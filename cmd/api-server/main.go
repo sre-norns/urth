@@ -8,6 +8,7 @@ import (
 	"reflect"
 
 	"github.com/alecthomas/kong"
+	_ "github.com/joho/godotenv/autoload"
 	"github.com/sre-norns/urth/pkg/redqueue"
 	"github.com/sre-norns/urth/pkg/urth"
 	"github.com/sre-norns/wyrd/pkg/bark"

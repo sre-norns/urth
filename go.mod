@@ -16,6 +16,7 @@ require (
 	github.com/google/martian v2.1.0+incompatible
 	github.com/hibiken/asynq v0.25.1
 	github.com/jedib0t/go-pretty/v6 v6.6.5
+	github.com/joho/godotenv v1.5.1
 	github.com/prometheus/blackbox_exporter v0.25.0
 	github.com/prometheus/client_golang v1.20.5
 	github.com/sre-norns/wyrd v0.1.28

@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: scenarios
+metadata:
+  name: bb-http-self-prob
+  labels:
+    app: http-prob
+    function: backend
+spec:
+  description: "HTTP bb-exporter example prober checking Urht's api/version every 5 minutes"
+  active: true
+  schedule: "@5minutes"
+  requirements:
+    matchLabels:
+      os: "linux"
+    matchSelector:
+      - { key: "env", operator: "NotIn",  values: ["dev", "testing"] }
+  prob:
+    kind: http
+    timeout: 5s
+    spec:
+      target: http://localhost:8080/api/v1/version
+      http:
+        method: GET
+        # headers:
+        #   Origin: prob.fabric.io
+        # fail_if_header_not_matches:
+        # - header: Access-Control-Allow-Origin
+        #   regexp: '(\*|example\.com)'
+        #   allow_missing: false

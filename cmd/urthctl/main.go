@@ -3,9 +3,8 @@ package main
 import (
 	"context"
 
-	// TODO: Add dotenv autoloader
-
 	"github.com/alecthomas/kong"
+	_ "github.com/joho/godotenv/autoload"
 	"github.com/sre-norns/urth/pkg/urth"
 	"github.com/sre-norns/wyrd/pkg/grace"
 )

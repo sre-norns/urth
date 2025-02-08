@@ -12,6 +12,7 @@ import (
 
 	"github.com/alecthomas/kong"
 	"github.com/hibiken/asynq"
+	_ "github.com/joho/godotenv/autoload"
 
 	"github.com/sre-norns/urth/pkg/prob"
 	"github.com/sre-norns/urth/pkg/redqueue"

@@ -19,6 +19,7 @@ import (
 	_ "github.com/sre-norns/urth/pkg/probers/puppeteer"
 
 	// _ "github.com/sre-norns/urth/pkg/probers/pypuppeteer"
+	_ "github.com/sre-norns/urth/pkg/probers/rest"
 	_ "github.com/sre-norns/urth/pkg/probers/tcp"
 )
 

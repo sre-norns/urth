@@ -11,7 +11,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sre-norns/urth/pkg/prob"
-	"github.com/sre-norns/urth/pkg/probers/http"
+	"github.com/sre-norns/urth/pkg/probers/rest"
 	"github.com/sre-norns/wyrd/pkg/manifest"
 )
 
@@ -61,5 +61,5 @@ func RunScript(ctx context.Context, probSpec any, config prob.RunOptions, regist
 		return prob.RunFinishedError, nil, err
 	}
 
-	return http.RunHttpRequests(ctx, requests, config, logger)
+	return rest.RunHttpRequests(ctx, requests, config, logger)
 }
