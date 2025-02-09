@@ -11,7 +11,7 @@ spec:
   prob:
     kind: "tcp"
     spec:
-      target": "localhost:8080"
+      target: "localhost:8080"
       tcp:
         # query_response:
         # - expect: "^+OK"

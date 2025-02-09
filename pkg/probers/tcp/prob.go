@@ -52,7 +52,7 @@ func RunScript(ctx context.Context, probSpec any, config prob.RunOptions, regist
 		return prob.RunFinishedError, nil, prob.ErrNoTarget
 	}
 
-	if success := prober.ProbeICMP(ctx, spec.Target, bxconfig.Module{TCP: spec.TCP}, registry, logger); !success {
+	if success := prober.ProbeTCP(ctx, spec.Target, bxconfig.Module{TCP: spec.TCP}, registry, logger); !success {
 		return prob.RunFinishedFailed, nil, nil
 	}
 
