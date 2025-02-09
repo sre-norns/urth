@@ -55,9 +55,6 @@ const Runner = ({ data, odd }) => {
 
     const statusColor = statusToColor(active)
 
-    const runnerActions = useSelector((s) => s.scenarioActions)
-    const { fetching, response, error } = runnerActions[name] || {}
-
     const instanceCounter = maxInstance
         ? `${numberInstances || 0}/${maxInstance}`
         : `${numberInstances || 0}`;

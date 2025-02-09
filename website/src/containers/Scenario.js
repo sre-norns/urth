@@ -9,10 +9,12 @@ import Capsule from '../components/Capsule.js'
 import RagIndicator from '../components/RagIndicator.js'
 import TextSpan, { TextDiv } from '../components/TextSpan.js'
 import { cyrb53 } from '../utils/hash.js'
+import { statusToColor } from '../utils/status-color.js'
 import Button from '../components/Button.js'
 import Link from '../components/Link.js'
 import runScenario from '../actions/runScenario.js'
 import ObjectCapsules from '../components/ObjectCapsules.js'
+import StatusHistory from '../components/StatusHistory.js'
 
 const TopContainer = styled.div`
   display: flex;
@@ -49,26 +51,10 @@ const ScenarioCapsules = styled(ObjectCapsules)`
   padding-top: 0.25rem;
 `
 
-const statusToColor = (status) => {
-  switch (status) {
-    case 'pending/':
-      return 'warning'
-    case 'running/':
-      return 'primary'
-    case 'completed/success':
-      return 'success'
-    case 'completed/failure':
-      return 'error'
-    case 'completed/errored':
-      return 'error'
-    case 'completed/canceled':
-      return 'error'
-    case 'completed/timeout':
-      return 'error'
-    default:
-      return 'neutral'
-  }
-}
+const ScenarioStatusHistory = styled(StatusHistory)`
+  padding-top: 0.25rem;
+  justify-content: space-evenly;
+`
 
 function scheduleBreakdown(schedule, status) {
   if (!schedule) {
@@ -109,11 +95,12 @@ const Scenario = ({ data, odd, onCapsuleClick }) => {
   const { uid, name, labels } = metadata
   const { active, description, schedule, prob } = spec
 
-  const lastRunStatus = status.results && status.results.length > 0
+  const hasStatus = (status?.results && status?.results?.length > 0)
+  const lastRunStatus = hasStatus
     ? `${status.results[0].status.status}/${status.results[0].status.result}`
     : 'new';
 
-  const statusColor = statusToColor(lastRunStatus)
+  const statusColor = hasStatus ? statusToColor(status.results[0].status) : "neutral";
 
   const executable = !!prob?.kind
   const playDisabled = !(active && executable)
@@ -179,6 +166,7 @@ const Scenario = ({ data, odd, onCapsuleClick }) => {
         </ActionsContainer>
       </TopContainer>
       <ScenarioCapsules value={labels} onCapsuleClick={onCapsuleClick} />
+      <ScenarioStatusHistory value={data} limit={60} />
     </OddContainer>
   )
 }
