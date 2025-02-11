@@ -3,7 +3,7 @@ import { parseSelectorExpression, stringify } from './k8s-labels.js'
 class SearchQuery {
     constructor(urlQueryParams) {
         this.sourceQuery = urlQueryParams || new URLSearchParams();
-        this.name = urlQueryParams.get("name")
+        this.name = this.sourceQuery.get("name")
 
         const page = this.sourceQuery.get("page")
         if (page) {

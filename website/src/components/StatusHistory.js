@@ -8,6 +8,7 @@ import SpinnerInlay from '../components/SpinnerInlay.js'
 import ErrorInlay from '../components/ErrorInlay.js'
 import { statusToColor } from '../utils/status-color.js'
 import fetchScenarioResults from '../actions/fetchScenarioResults.js'
+import { SearchQuery } from '../utils/searchQuery.js';
 
 const color = (props) => props.theme.color[props.color || 'neutral']
 
@@ -23,14 +24,25 @@ const StatusHistoryContainer = styled.div`
   gap: 0.25rem 0.5rem;
 `
 
-const StatusBox = styled.div`
+const BaseStatusBox = styled.div`
   width: 0.5em;
   height: 2em;
 //   padding: 15px 6px 20px;
-  background-color: ${backgroundColor};
   border-radius: 0.5rem;
   margin-left: -0.3em;
   margin-top: 0.7em;
+  color: white;
+  background-color: #989acd70;
+`
+
+const EmptyStatusBox = styled(BaseStatusBox)`
+  border: dashed;
+  border-width: thin;
+  background-color: #989acd70;
+`
+
+const StatusBox = styled(BaseStatusBox)`
+  background-color: ${backgroundColor};
   transition: 0.4s;
   &:hover {
     margin-top: -0.2em;
@@ -55,7 +67,7 @@ const timeDistance = (date1, date2) => {
 }
 
 
-const Status = ({ result }) => {
+const Status = ({ result, onClick }) => {
     const { metadata, spec, status } = result
 
     return (
@@ -95,14 +107,15 @@ const Status = ({ result }) => {
                 }
             </Tooltip>)}
 
-            <StatusBox data-tooltip-id={result.name ? `${result.name}-tooltip` : ""}
-                color={statusToColor(status)}
-            />
+            {status
+                ? (<StatusBox color={statusToColor(status)} data-tooltip-id={`${result.name}-tooltip`} />)
+                : (<EmptyStatusBox />)
+            }
         </div>
     )
 }
 
-const StatusHistory = forwardRef(({ value, limit, ...props }, ref) => {
+const StatusHistory = forwardRef(({ value, limit, onClick, ...props }, ref) => {
     const { metadata, } = value
     const { uid, name } = metadata
 
@@ -111,7 +124,9 @@ const StatusHistory = forwardRef(({ value, limit, ...props }, ref) => {
     const { fetching, response, error } = scenarioResults[name] || {}
 
     React.useEffect(() => {
-        dispatch(fetchScenarioResults(name))
+        const query = new SearchQuery()
+        query.pageSize = limit
+        dispatch(fetchScenarioResults(name, query))
     }, [])
 
 
@@ -129,24 +144,14 @@ const StatusHistory = forwardRef(({ value, limit, ...props }, ref) => {
     }
     if (statuses.length < limit) {
         for (let i = statuses.length; i < limit; i++) {
-            statuses.push({
-                status: {
-                    status: "fake"
-                }
-            })
+            statuses.push({})
         }
     }
 
     return (
         <StatusHistoryContainer {...props} ref={ref}>
             {statuses.map((status, i) => (
-                <Status key={status.name || i} result={status}
-                // name={name}
-                // value={value}
-                // color={colors[cyrb53(name, 11) % colors.length]}
-                // href="#"
-                // onClick={clickHandlers[name]}
-                />
+                <Status key={status.name || i} result={status} onClick={onClick} />
             ))}
         </StatusHistoryContainer>
     )
@@ -155,7 +160,7 @@ const StatusHistory = forwardRef(({ value, limit, ...props }, ref) => {
 StatusHistory.propTypes = {
     value: PropTypes.object,
     limit: PropTypes.number.isRequired,
-    //   onCapsuleClick: PropTypes.func,
+    onClick: PropTypes.func,
 }
 
 export default StatusHistory

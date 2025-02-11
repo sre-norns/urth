@@ -70,6 +70,13 @@ func Play(ctx context.Context, probSpec prob.Manifest, options prob.RunOptions) 
 		})
 	}
 
+	metricsArtifact, err := ToArtifact(registry, RegistryOptions{DisableCompression: true})
+	if err != nil {
+		slLogger.Log("NOTICE: Failed to collect metrics registry", "err", err)
+	} else {
+		artifacts = append(artifacts, metricsArtifact)
+	}
+
 	artifacts = append(artifacts, logger.ToArtifact())
 
 	return urth.NewRunResults(result), artifacts, err

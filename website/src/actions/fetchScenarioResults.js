@@ -1,11 +1,13 @@
 import ActionType from './ActionType.js'
 import { apiGet } from '../utils/api.js'
 
-const fetchScenarioResults = (id) => async (dispatch) => {
+const fetchScenarioResults = (id, searchQuery) => async (dispatch) => {
     dispatch({ type: ActionType.SCENARIO_RESULTS_FETCHING, id })
 
     try {
-        const response = await apiGet(`/api/v1/scenarios/${id}/results`)
+        const response = searchQuery
+            ? await apiGet(`/api/v1/scenarios/${id}/results`)
+            : await apiGet(`/api/v1/scenarios/${id}/results?${searchQuery}`)
 
         dispatch({
             type: ActionType.SCENARIO_RESULTS_FETCHED,

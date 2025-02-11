@@ -10,6 +10,7 @@ spec:
   schedule: "* * * * *"
   prob:
     kind: "tcp"
+    timeout: 3s
     spec:
       target: "localhost:8080"
       tcp:

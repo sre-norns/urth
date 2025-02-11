@@ -8,6 +8,8 @@ import (
 	"github.com/sre-norns/urth/pkg/urth"
 )
 
+const LogRelType = "log"
+
 type RunLog struct {
 	content strings.Builder
 }
@@ -34,13 +36,9 @@ func (l *RunLog) Write(p []byte) (n int, err error) {
 func (l *RunLog) ToArtifact() urth.ArtifactSpec {
 	return urth.ArtifactSpec{
 		Artifact: prob.Artifact{
-			Rel:      "log",
+			Rel:      LogRelType,
 			MimeType: "text/plain",
 			Content:  []byte(l.content.String()),
 		},
 	}
 }
-
-// func (l *RunLog) Package() []urth.ArtifactSpec {
-// 	return []urth.ArtifactSpec{l.ToArtifact()}
-// }
