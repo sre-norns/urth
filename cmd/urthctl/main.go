@@ -10,7 +10,7 @@ import (
 )
 
 type commandContext struct {
-	*urth.ApiClientConfig
+	*urth.APIClientConfig
 	// *runner.RunnerConfig
 
 	OutputFormatter formatter
@@ -20,7 +20,7 @@ type commandContext struct {
 type outputFormat string
 
 func (c *commandContext) ClientCallContext() (context.Context, context.CancelFunc) {
-	return context.WithTimeout(c.Context, c.ApiClientConfig.Timeout)
+	return context.WithTimeout(c.Context, c.APIClientConfig.Timeout)
 }
 
 func (f outputFormat) AfterApply(cfg *commandContext) (err error) {
@@ -29,7 +29,7 @@ func (f outputFormat) AfterApply(cfg *commandContext) (err error) {
 }
 
 var appCli struct {
-	urth.ApiClientConfig
+	urth.APIClientConfig
 
 	// short:"o"
 	Format outputFormat `enum:"yaml,yml,json" help:"Data output format" default:"yml"`
@@ -50,7 +50,7 @@ func main() {
 	cfg := &commandContext{
 		Context:         mainContext,
 		OutputFormatter: yamlFormatter,
-		ApiClientConfig: &appCli.ApiClientConfig,
+		APIClientConfig: &appCli.APIClientConfig,
 	}
 	appCtx := kong.Parse(&appCli,
 		kong.Name("urthctl"),

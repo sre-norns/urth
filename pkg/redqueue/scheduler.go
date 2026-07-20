@@ -51,9 +51,9 @@ func (s *asynqScheduler) Close() error {
 	return s.client.Close()
 }
 
-func (s *asynqScheduler) Schedule(ctx context.Context, result urth.Result, scenario urth.Scenario) (urth.RunId, error) {
+func (s *asynqScheduler) Schedule(ctx context.Context, result urth.Result, scenario urth.Scenario) (urth.RunID, error) {
 	if scenario.Spec.Prob.Spec == nil {
-		return urth.InvalidRunId, fmt.Errorf("can't schedule job: %w", ErrInvalidJobSpec)
+		return urth.InvalidRunID, fmt.Errorf("can't schedule job: %w", ErrInvalidJobSpec)
 	}
 
 	job := urth.Job{
@@ -66,7 +66,7 @@ func (s *asynqScheduler) Schedule(ctx context.Context, result urth.Result, scena
 	if err != nil {
 		log.Printf("Scheduling error %v, will try again later", err)
 		atomic.AddUint64(&s.totalErrors, 1)
-		return urth.InvalidRunId, err
+		return urth.InvalidRunID, err
 	}
 
 	atomic.AddUint64(&s.totalRunnables, 1)
@@ -75,9 +75,9 @@ func (s *asynqScheduler) Schedule(ctx context.Context, result urth.Result, scena
 		log.Printf("Failed to publish: %v", err)
 		atomic.AddUint64(&s.totalErrors, 1)
 
-		return urth.InvalidRunId, err
+		return urth.InvalidRunID, err
 	}
 
 	log.Printf("published task: %v", info.ID)
-	return urth.RunId(info.ID), err
+	return urth.RunID(info.ID), err
 }

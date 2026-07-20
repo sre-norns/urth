@@ -35,7 +35,7 @@ const (
 	LabelResultJobState = LabelsPrefix + "result.state"
 	LabelResultStatus   = LabelsPrefix + "result.result"
 
-	LabelResultMessageId = "run.messageId"
+	LabelResultMessageID = "run.messageId"
 
 	// Well-known artifact labels:
 	LabelArtifactKind = LabelsPrefix + "artifact.kind"

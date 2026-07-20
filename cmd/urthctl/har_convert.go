@@ -43,7 +43,7 @@ func (c *ConvertHar) Run(cfg *commandContext) error {
 			return fmt.Errorf("failed to deserialize HAR file: %w", err)
 		}
 
-		requests, err := har.ConvertHarToHttpTester(harLog.Log.Entries)
+		requests, err := har.ConvertHarToHTTPTester(harLog.Log.Entries)
 		if err != nil {
 			return fmt.Errorf("failed to convert HAR: %w", err)
 		}

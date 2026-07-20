@@ -70,7 +70,7 @@ func (p *requestParser) onFinishRequest() error {
 		return p.reset()
 	}
 
-	targetUrl, err := parseURL(p.path)
+	targetURL, err := parseURL(p.path)
 	if err != nil {
 		return fmt.Errorf("failed to parse target URL: %w", err)
 	}
@@ -79,7 +79,7 @@ func (p *requestParser) onFinishRequest() error {
 		p.method = "GET"
 	}
 
-	result, err := http.NewRequest(p.method, targetUrl.String(), nil)
+	result, err := http.NewRequest(p.method, targetURL.String(), nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -138,6 +138,8 @@ func (p *requestParser) onLine(line string) error {
 func Parse(script io.Reader) ([]TestRequest, error) {
 	parser := requestParser{}
 	scanner := bufio.NewScanner(script)
+
+	// http.ReadRequest
 
 	for scanner.Scan() {
 		if err := parser.onLine(scanner.Text()); err != nil {

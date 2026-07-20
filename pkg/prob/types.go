@@ -46,26 +46,26 @@ type Artifact struct {
 	Content []byte `form:"content,omitempty" json:"content,omitempty" yaml:"content,omitempty" xml:"content,omitempty"`
 }
 
-func (u Manifest) MarshalJSON() ([]byte, error) {
+func (m Manifest) MarshalJSON() ([]byte, error) {
 	return json.Marshal(&struct {
 		Kind    Kind          `json:"kind,omitempty"`
 		Timeout time.Duration `json:"timeout,omitempty"`
 		Spec    any           `json:"spec,omitempty"` // needed to strip any json tags
 	}{
-		Kind:    u.Kind,
-		Timeout: u.Timeout,
-		Spec:    u.Spec,
+		Kind:    m.Kind,
+		Timeout: m.Timeout,
+		Spec:    m.Spec,
 	})
 }
 
-func (s *Manifest) UnmarshalJSON(data []byte) error {
+func (m *Manifest) UnmarshalJSON(data []byte) error {
 	aux := &struct {
 		Kind    Kind            `json:"kind,omitempty"`
 		Timeout time.Duration   `json:"timeout,omitempty"`
 		Spec    json.RawMessage `json:"spec,omitempty"`
 	}{
-		Kind:    s.Kind,
-		Timeout: s.Timeout,
+		Kind:    m.Kind,
+		Timeout: m.Timeout,
 	}
 
 	if err := json.Unmarshal(data, aux); err != nil {
@@ -77,46 +77,46 @@ func (s *Manifest) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
-	s.Kind = aux.Kind
-	s.Timeout = aux.Timeout
-	s.Spec = m2.Spec
+	m.Kind = aux.Kind
+	m.Timeout = aux.Timeout
+	m.Spec = m2.Spec
 	return err
 }
 
-func (u Manifest) MarshalYAML() (interface{}, error) {
+func (m Manifest) MarshalYAML() (interface{}, error) {
 	return struct {
 		Kind    Kind          `json:"kind" yaml:"kind"`
 		Timeout time.Duration `json:"timeout,omitempty" yaml:"timeout,omitempty"`
 		Spec    interface{}   `json:"spec,omitempty" yaml:"spec,omitempty"` // needed to strip any json tags
 	}{
-		Kind:    u.Kind,
-		Timeout: u.Timeout,
-		Spec:    u.Spec,
+		Kind:    m.Kind,
+		Timeout: m.Timeout,
+		Spec:    m.Spec,
 	}, nil
 }
 
-func (s *Manifest) UnmarshalYAML(n *yaml.Node) (err error) {
+func (m *Manifest) UnmarshalYAML(n *yaml.Node) (err error) {
 	type S Manifest
 	type T struct {
 		*S   `yaml:",inline"`
 		Spec yaml.Node `yaml:"spec"`
 	}
 
-	obj := &T{S: (*S)(s)}
+	obj := &T{S: (*S)(m)}
 	if err := n.Decode(obj); err != nil {
 		return err
 	}
 
-	m2, err := InstanceOf(s.Kind)
+	m2, err := InstanceOf(m.Kind)
 	if err != nil {
 		if len(obj.Spec.Content) == 0 {
-			s.Spec = nil
+			m.Spec = nil
 			return nil
 		}
 		m2.Spec = make(map[string]any)
 	}
 
-	s.Spec = m2.Spec
+	m.Spec = m2.Spec
 
-	return obj.Spec.Decode(s.Spec)
+	return obj.Spec.Decode(m.Spec)
 }

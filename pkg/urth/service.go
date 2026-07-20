@@ -16,14 +16,14 @@ import (
 	"github.com/sre-norns/wyrd/pkg/manifest"
 )
 
-// LabelsApi models helper APIs to access resource names and label to power search
-type LabelsApi interface {
+// LabelsAPI models helper APIs to access resource names and label to power search
+type LabelsAPI interface {
 	ListNames(ctx context.Context, searchQuery manifest.SearchQuery) (result manifest.StringSet, total int64, err error)
 	ListLabels(ctx context.Context, searchQuery manifest.SearchQuery) (result manifest.StringSet, total int64, err error)
 	ListLabelValues(ctx context.Context, label string, searchQuery manifest.SearchQuery) (result manifest.StringSet, total int64, err error)
 }
 
-type ReadableResourceApi[T any] interface {
+type ReadableResourceAPI[T any] interface {
 	// List all resources matching given search query
 	List(ctx context.Context, searchQuery manifest.SearchQuery) (result []T, total int64, err error)
 
@@ -33,7 +33,7 @@ type ReadableResourceApi[T any] interface {
 	Get(ctx context.Context, id manifest.ResourceName) (resource T, exists bool, commError error)
 }
 
-type ManageableResourceApi interface {
+type ManageableResourceAPI interface {
 	CreateOrUpdate(ctx context.Context, entry manifest.ResourceManifest) (manifest.ResourceManifest, bool, error)
 
 	// Create attempts to create a new resource (Scenario) based on the manifest provided
@@ -46,30 +46,27 @@ type ManageableResourceApi interface {
 	Delete(ctx context.Context, id manifest.VersionedResourceID) (bool, error)
 }
 
-// RunnersApi encapsulate APIs to interacting with `Runners`
-type RunnersApi interface {
-	ReadableResourceApi[manifest.ResourceManifest]
-	ManageableResourceApi
+// RunnersAPI encapsulate APIs to interacting with `Runners`
+type RunnersAPI interface {
+	ReadableResourceAPI[manifest.ResourceManifest]
+	ManageableResourceAPI
 
 	// GetToken generates a JWT token for a worker instance to auth as a Runner
-	GetToken(ctx context.Context, runID manifest.ResourceName) (ApiToken, bool, error)
+	GetToken(ctx context.Context, runID manifest.ResourceName) (APIToken, bool, error)
 
 	// Authenticate a worker and receive Identity from the server
-	Auth(ctx context.Context, token ApiToken, worker manifest.ResourceManifest) (manifest.ResourceManifest, error)
+	Auth(ctx context.Context, token APIToken, worker manifest.ResourceManifest) (manifest.ResourceManifest, error)
 }
 
-type ScenarioApi interface {
-	ReadableResourceApi[manifest.ResourceManifest]
-	ManageableResourceApi
+type ScenarioAPI interface {
+	ReadableResourceAPI[manifest.ResourceManifest]
+	ManageableResourceAPI
 
 	UpdateScript(ctx context.Context, id manifest.VersionedResourceID, entry prob.Manifest) (bark.CreatedResponse, bool, error)
-
-	// ClientAPI: Can it be done using filters?
-	ListRunnable(ctx context.Context, query manifest.SearchQuery) ([]Scenario, error)
 }
 
-type RunResultApi interface {
-	ReadableResourceApi[Result]
+type RunResultAPI interface {
+	ReadableResourceAPI[Result]
 
 	Create(ctx context.Context, entry manifest.ResourceManifest) (Result, error)
 
@@ -77,15 +74,15 @@ type RunResultApi interface {
 	Auth(ctx context.Context, runID manifest.ResourceName, authRequest AuthJobRequest) (AuthJobResponse, error)
 
 	// TODO: Token can be used to look-up ID!
-	UpdateStatus(ctx context.Context, id manifest.VersionedResourceID, token ApiToken, entry ResultStatus) (bark.CreatedResponse, error)
+	UpdateStatus(ctx context.Context, id manifest.VersionedResourceID, token APIToken, entry ResultStatus) (bark.CreatedResponse, error)
 }
 
-type ArtifactApi interface {
-	ReadableResourceApi[manifest.ResourceManifest]
+type ArtifactAPI interface {
+	ReadableResourceAPI[manifest.ResourceManifest]
 
 	// Create create a new artifact resource to allow storage of artifact produced during script execution
 	// Only authorized [Runners] are allowed to create artifacts
-	Create(ctx context.Context, token ApiToken, entry manifest.ResourceManifest) (manifest.ResourceManifest, error)
+	Create(ctx context.Context, token APIToken, entry manifest.ResourceManifest) (manifest.ResourceManifest, error)
 
 	// Delete a single resource identified by a unique ID
 	Delete(ctx context.Context, id manifest.VersionedResourceID) (bool, error)
@@ -95,15 +92,15 @@ type ArtifactApi interface {
 
 type Service interface {
 	// GetLabels returns APIs to access names/labels/label values to power resource search
-	Labels(manifest.Kind) LabelsApi
+	Labels(manifest.Kind) LabelsAPI
 
-	Runners() RunnersApi
-	Scenarios() ScenarioApi
-	Results(scenarioName manifest.ResourceName) RunResultApi
-	Artifacts() ArtifactApi
+	Runners() RunnersAPI
+	Scenarios() ScenarioAPI
+	Results(scenarioName manifest.ResourceName) RunResultAPI
+	Artifacts() ArtifactAPI
 }
 
-func NewService(store dbstore.TransitionalStore, scheduler Scheduler) Service {
+func NewService(store *dbstore.DBStore, scheduler Scheduler) Service {
 	return &serviceImpl{
 		store:     store,
 		scheduler: scheduler,
@@ -112,30 +109,30 @@ func NewService(store dbstore.TransitionalStore, scheduler Scheduler) Service {
 
 type (
 	serviceImpl struct {
-		store     dbstore.TransitionalStore
+		store     *dbstore.DBStore
 		scheduler Scheduler
 	}
 )
 
-func (s *serviceImpl) Runners() RunnersApi {
-	return &runnersApiImpl{
+func (s *serviceImpl) Runners() RunnersAPI {
+	return &runnersAPIImpl{
 		store:            s.store,
 		hmacSampleSecret: []byte("my_secret_key"), // FIXME: Must be Runtime configurable secret
 	}
 }
 
-func (s *serviceImpl) Scenarios() ScenarioApi {
-	return &scenarioApiImpl{
+func (s *serviceImpl) Scenarios() ScenarioAPI {
+	return &scenarioAPIImpl{
 		store: s.store,
 	}
 }
 
-func (s *serviceImpl) Results(scenarioName manifest.ResourceName) RunResultApi {
-	return &resultsApiImpl{
+func (s *serviceImpl) Results(scenarioName manifest.ResourceName) RunResultAPI {
+	return &resultsAPIImpl{
 		store:      s.store,
-		scenarioId: scenarioName,
+		scenarioID: scenarioName,
 		scheduler:  s.scheduler,
-		workersApi: &runnersApiImpl{
+		workersAPI: &runnersAPIImpl{
 			store: s.store,
 		},
 
@@ -143,16 +140,16 @@ func (s *serviceImpl) Results(scenarioName manifest.ResourceName) RunResultApi {
 	}
 }
 
-func (s *serviceImpl) Artifacts() ArtifactApi {
-	return &artifactApiImp{
+func (s *serviceImpl) Artifacts() ArtifactAPI {
+	return &artifactAPIImp{
 		store: s.store,
 
 		resultsSigningKey: []byte("my_results signing secret key, duh"), // FIXME: Must be Runtime configurable secret
 	}
 }
 
-func (s *serviceImpl) Labels(k manifest.Kind) LabelsApi {
-	return &labelsApiImpl{
+func (s *serviceImpl) Labels(k manifest.Kind) LabelsAPI {
+	return &labelsAPIImpl{
 		kind:  k,
 		store: s.store,
 	}
@@ -161,20 +158,14 @@ func (s *serviceImpl) Labels(k manifest.Kind) LabelsApi {
 // ------------------------------
 // / Scenarios API
 // ------------------------------
-type scenarioApiImpl struct {
-	store dbstore.TransitionalStore
+type scenarioAPIImpl struct {
+	store dbstore.TransactionalStore
 }
 
-func (m *scenarioApiImpl) ListRunnable(ctx context.Context, query manifest.SearchQuery) (results []Scenario, err error) {
-	_, err = m.store.Find(ctx, &results, query)
-	// FIXME: Update query
-	return
-}
-
-func (m *scenarioApiImpl) List(ctx context.Context, query manifest.SearchQuery) (results []manifest.ResourceManifest, total int64, err error) {
+func (m *scenarioAPIImpl) List(ctx context.Context, query manifest.SearchQuery) (results []manifest.ResourceManifest, total int64, err error) {
 	var models []Scenario
 
-	total, err = m.store.Find(ctx, &models, query) //, dbstore.Expand("Results", manifest.SearchQuery{
+	total, err = m.store.Find(ctx, &models, query, dbstore.OrderByCreatedAt(dbstore.OrderAscending)) //, dbstore.Expand("Results", manifest.SearchQuery{
 	// Limit: 1,
 	// })) // , dbstore.Omit("Prob.Spec")) - omit doesn't work on a json serialized field
 	if err != nil {
@@ -191,7 +182,7 @@ func (m *scenarioApiImpl) List(ctx context.Context, query manifest.SearchQuery) 
 	return
 }
 
-func (m *scenarioApiImpl) Get(ctx context.Context, id manifest.ResourceName) (result manifest.ResourceManifest, exist bool, err error) {
+func (m *scenarioAPIImpl) Get(ctx context.Context, id manifest.ResourceName) (result manifest.ResourceManifest, exist bool, err error) {
 	var model Scenario
 	exist, err = m.store.GetByName(ctx, &model, id, dbstore.Expand("Results", manifest.SearchQuery{
 		Limit: 1,
@@ -204,7 +195,7 @@ func (m *scenarioApiImpl) Get(ctx context.Context, id manifest.ResourceName) (re
 	return
 }
 
-func (m *scenarioApiImpl) CreateOrUpdate(ctx context.Context, newEntry manifest.ResourceManifest) (manifest.ResourceManifest, bool, error) {
+func (m *scenarioAPIImpl) CreateOrUpdate(ctx context.Context, newEntry manifest.ResourceManifest) (manifest.ResourceManifest, bool, error) {
 	scenario, err := NewScenario(newEntry)
 	if err != nil {
 		return manifest.ResourceManifest{}, false, err
@@ -222,15 +213,15 @@ func (m *scenarioApiImpl) CreateOrUpdate(ctx context.Context, newEntry manifest.
 	return result.ToManifest(), false, err
 }
 
-func (m *scenarioApiImpl) create(ctx context.Context, newEntry Scenario) (Scenario, error) {
+func (m *scenarioAPIImpl) create(ctx context.Context, newEntry Scenario) (Scenario, error) {
 	err := m.store.Create(ctx, &newEntry)
 	return newEntry, err
 }
 
-func (m *scenarioApiImpl) update(ctx context.Context, id manifest.VersionedResourceID, entry Scenario) (Scenario, error) {
+func (m *scenarioAPIImpl) update(ctx context.Context, id manifest.VersionedResourceID, entry Scenario) (Scenario, error) {
 	// Find target entry to be updated
 	var result Scenario
-	if ok, err := m.store.GetByUIDWithVersion(ctx, &result, id); err != nil {
+	if ok, err := m.store.GetByUID(ctx, &result, id.ID, dbstore.WithVersion(id.Version)); err != nil {
 		return result, err
 	} else if !ok {
 		return result, bark.ErrResourceNotFound
@@ -254,7 +245,7 @@ func (m *scenarioApiImpl) update(ctx context.Context, id manifest.VersionedResou
 	)
 
 	log.Printf("updating scenario: prod.kind: %q, prod.type %q", result.Spec.Prob.Kind, reflect.TypeOf(result.Spec.Prob.Spec))
-	ok, err := m.store.Update(ctx, &result, result.GetVersionedID())
+	ok, err := m.store.Update(ctx, &result, result.UID, dbstore.WithVersion(result.Version))
 	if err != nil {
 		return result, err
 	} else if !ok {
@@ -264,7 +255,7 @@ func (m *scenarioApiImpl) update(ctx context.Context, id manifest.VersionedResou
 	return result, err
 }
 
-func (m *scenarioApiImpl) Create(ctx context.Context, newEntry manifest.ResourceManifest) (manifest.ResourceManifest, error) {
+func (m *scenarioAPIImpl) Create(ctx context.Context, newEntry manifest.ResourceManifest) (manifest.ResourceManifest, error) {
 	entry, err := NewScenario(newEntry)
 	if err != nil {
 		return manifest.ResourceManifest{}, err
@@ -274,7 +265,7 @@ func (m *scenarioApiImpl) Create(ctx context.Context, newEntry manifest.Resource
 	return result.ToManifest(), err
 }
 
-func (m *scenarioApiImpl) Update(ctx context.Context, id manifest.VersionedResourceID, newEntry manifest.ResourceManifest) (manifest.ResourceManifest, error) {
+func (m *scenarioAPIImpl) Update(ctx context.Context, id manifest.VersionedResourceID, newEntry manifest.ResourceManifest) (manifest.ResourceManifest, error) {
 	entry, err := NewScenario(newEntry)
 	if err != nil {
 		return manifest.ResourceManifest{}, err
@@ -284,18 +275,18 @@ func (m *scenarioApiImpl) Update(ctx context.Context, id manifest.VersionedResou
 	return result.ToManifest(), err
 }
 
-func (m *scenarioApiImpl) Delete(ctx context.Context, id manifest.VersionedResourceID) (bool, error) {
+func (m *scenarioAPIImpl) Delete(ctx context.Context, id manifest.VersionedResourceID) (bool, error) {
 	return m.store.Delete(ctx, &Scenario{}, id.ID, id.Version)
 }
 
-func (m *scenarioApiImpl) UpdateScript(ctx context.Context, id manifest.VersionedResourceID, prob prob.Manifest) (bark.CreatedResponse, bool, error) {
+func (m *scenarioAPIImpl) UpdateScript(ctx context.Context, id manifest.VersionedResourceID, prob prob.Manifest) (bark.CreatedResponse, bool, error) {
 	var result Scenario
-	if ok, err := m.store.GetByUIDWithVersion(ctx, &result, id); !ok || err != nil {
+	if ok, err := m.store.GetByUID(ctx, &result, id.ID, dbstore.WithVersion(id.Version)); !ok || err != nil {
 		return bark.CreatedResponse{}, ok, err
 	}
 
 	result.Spec.Prob = prob
-	ok, err := m.store.Update(ctx, &result, result.GetVersionedID())
+	ok, err := m.store.Update(ctx, &result, result.UID, dbstore.WithVersion(result.Version))
 
 	return bark.CreatedResponse{
 		TypeMeta:            manifest.TypeMeta{Kind: KindScenario},
@@ -306,52 +297,52 @@ func (m *scenarioApiImpl) UpdateScript(ctx context.Context, id manifest.Versione
 // ------------------------------
 // / Scenarios run results
 // ------------------------------
-type resultsApiImpl struct {
-	store      dbstore.TransitionalStore
-	scenarioId manifest.ResourceName
+type resultsAPIImpl struct {
+	store      *dbstore.DBStore
+	scenarioID manifest.ResourceName
 	scheduler  Scheduler
-	workersApi *runnersApiImpl
+	workersAPI *runnersAPIImpl
 
 	resultsSigningKey []byte
 }
 
-func (s *resultsApiImpl) scheduleRun(ctx context.Context, runResult Result) (RunId, error) {
-	if s.scheduler == nil || s.workersApi == nil {
-		return InvalidRunId, nil
+func (m *resultsAPIImpl) scheduleRun(ctx context.Context, runResult Result) (RunID, error) {
+	if m.scheduler == nil || m.workersAPI == nil {
+		return InvalidRunID, nil
 	}
 
 	if runResult.Spec.Scenario.Name == "" {
-		return InvalidRunId, fmt.Errorf("internal scheduling error: results.scenario has no name")
+		return InvalidRunID, fmt.Errorf("internal scheduling error: results.scenario has no name")
 	}
 
 	// Check if scenario is enabled!
 	if !runResult.Spec.Scenario.Spec.IsActive {
-		return InvalidRunId, nil
+		return InvalidRunID, nil
 	}
 
 	// Find all workers qualified to run the scenario:
 	requirement := runResult.Spec.Scenario.Spec.Requirements.AsLabels()
 	requirementsSelector, err := manifest.ParseSelector(requirement)
 	if err != nil {
-		return InvalidRunId, fmt.Errorf("failed to parse scenario requirements: %w", err)
+		return InvalidRunID, fmt.Errorf("failed to parse scenario requirements: %w", err)
 	}
 
 	// TODO: Its scheduler responsibility to match scenario to a worker. Move it there.
 	log.Printf("Scheduling scenario: looking for workers that match: %q", requirement)
-	workers, totalWorkers, err := s.workersApi.List(ctx, manifest.SearchQuery{
+	workers, totalWorkers, err := m.workersAPI.List(ctx, manifest.SearchQuery{
 		Selector: requirementsSelector,
 	})
 	if err != nil {
-		return InvalidRunId, fmt.Errorf("failed to list workers to schedule a scenario: %w", err)
+		return InvalidRunID, fmt.Errorf("failed to list workers to schedule a scenario: %w", err)
 	}
 
 	log.Printf("Scheduling scenario: %v (active=%t); qualified workers: %d / %d qualified", runResult.Spec.Scenario.Name, runResult.Spec.Scenario.Spec.IsActive, len(workers), totalWorkers)
-	return s.scheduler.Schedule(ctx, runResult, runResult.Spec.Scenario) //scenarioToRunnable(runResult, scenario))
+	return m.scheduler.Schedule(ctx, runResult, runResult.Spec.Scenario) //scenarioToRunnable(runResult, scenario))
 }
 
-func (m *resultsApiImpl) List(ctx context.Context, searchQuery manifest.SearchQuery) (results []Result, total int64, err error) {
+func (m *resultsAPIImpl) List(ctx context.Context, searchQuery manifest.SearchQuery) (results []Result, total int64, err error) {
 	var scenario Scenario
-	if exist, err := m.store.GetByName(ctx, &scenario, m.scenarioId); err != nil {
+	if exist, err := m.store.GetByName(ctx, &scenario, m.scenarioID); err != nil {
 		return nil, 0, fmt.Errorf("failed to load required scenario: %w", err)
 	} else if !exist {
 		return nil, 0, bark.ErrResourceNotFound
@@ -361,7 +352,7 @@ func (m *resultsApiImpl) List(ctx context.Context, searchQuery manifest.SearchQu
 	return
 }
 
-func (m *resultsApiImpl) Create(ctx context.Context, newEntry manifest.ResourceManifest) (Result, error) {
+func (m *resultsAPIImpl) Create(ctx context.Context, newEntry manifest.ResourceManifest) (Result, error) {
 	// scenarioIdLabelValue := string(m.scenarioId)
 	// // Validate that the Result is labeled with the correct Scenario ID, if any
 	// if v, ok := newEntry.Metadata.Labels[LabelScenarioId]; ok && v != scenarioIdLabelValue {
@@ -395,7 +386,7 @@ func (m *resultsApiImpl) Create(ctx context.Context, newEntry manifest.ResourceM
 
 	// Fetch Scenario to create a new run request
 	// scenario, ok, err := m.scenarioApi.Get(ctx, m.scenarioId)
-	if scenarioExist, err := m.store.GetByName(ctx, &entry.Spec.Scenario, m.scenarioId); err != nil {
+	if scenarioExist, err := m.store.GetByName(ctx, &entry.Spec.Scenario, m.scenarioID); err != nil {
 		return Result{}, err
 	} else if !scenarioExist {
 		return Result{}, bark.ErrResourceNotFound
@@ -446,7 +437,7 @@ func (m *resultsApiImpl) Create(ctx context.Context, newEntry manifest.ResourceM
 		// Well, scheduling failed. Might as well cancel it:
 		entry.Status.Status = JobErrored
 		// TODO: Update metrics!
-		if _, uerr := m.store.Update(ctx, &entry, entry.GetVersionedID()); uerr != nil {
+		if _, uerr := m.store.Update(ctx, &entry, entry.UID, dbstore.WithVersion(entry.Version)); uerr != nil {
 			log.Print("embarrassing error: failed to update run DB entry after failure to schedule it: ", uerr)
 		}
 		// Note: we do want to return original error, to know why we failed to schedule in a first place
@@ -456,7 +447,7 @@ func (m *resultsApiImpl) Create(ctx context.Context, newEntry manifest.ResourceM
 	return entry, err
 }
 
-func (m *resultsApiImpl) Auth(ctx context.Context, resultName manifest.ResourceName, authRequest AuthJobRequest) (AuthJobResponse, error) {
+func (m *resultsAPIImpl) Auth(ctx context.Context, resultName manifest.ResourceName, authRequest AuthJobRequest) (AuthJobResponse, error) {
 	var worker WorkerInstance
 	if ok, err := m.store.GetByUID(ctx, &worker, authRequest.WorkerID.ID); err != nil {
 		log.Print("error while looking up Worker ", authRequest.WorkerID.ID, " err", err)
@@ -524,7 +515,7 @@ func (m *resultsApiImpl) Auth(ctx context.Context, resultName manifest.ResourceN
 	}
 
 	log.Print("authorizing worker ", authRequest.RunnerID, " to execute ", entry.Name, " for at most ", authRequest.Timeout)
-	if ok, err := m.store.Update(ctx, &entry, entry.GetVersionedID()); err != nil {
+	if ok, err := m.store.Update(ctx, &entry, entry.UID, dbstore.WithVersion(entry.Version)); err != nil {
 		return AuthJobResponse{}, err
 	} else if !ok {
 		// If version update failed, it means that someone else bit us to it and took the job
@@ -535,11 +526,11 @@ func (m *resultsApiImpl) Auth(ctx context.Context, resultName manifest.ResourceN
 		CreatedResponse: bark.CreatedResponse{
 			VersionedResourceID: entry.GetVersionedID(),
 		},
-		Token: ApiToken(tokenString), // NewRandToken(32), //entry.UpdateToken,
+		Token: APIToken(tokenString), // NewRandToken(32), //entry.UpdateToken,
 	}, err
 }
 
-func (m *resultsApiImpl) validateUpdateRequest(_ context.Context, entry Result, bearerToken ApiToken) error {
+func (m *resultsAPIImpl) validateUpdateRequest(_ context.Context, entry Result, bearerToken APIToken) error {
 	token, err := jwt.Parse(string(bearerToken), func(token *jwt.Token) (interface{}, error) {
 		// Don't forget to validate the alg is what you expect:
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -571,9 +562,9 @@ func (m *resultsApiImpl) validateUpdateRequest(_ context.Context, entry Result, 
 	return nil
 }
 
-func (m *resultsApiImpl) UpdateStatus(ctx context.Context, id manifest.VersionedResourceID, token ApiToken, runResults ResultStatus) (bark.CreatedResponse, error) {
+func (m *resultsAPIImpl) UpdateStatus(ctx context.Context, id manifest.VersionedResourceID, token APIToken, runResults ResultStatus) (bark.CreatedResponse, error) {
 	var entry Result
-	if ok, err := m.store.GetByUIDWithVersion(ctx, &entry, id); err != nil {
+	if ok, err := m.store.GetByUID(ctx, &entry, id.ID, dbstore.WithVersion(id.Version)); err != nil {
 		return bark.CreatedResponse{}, bark.ErrResourceNotFound
 	} else if !ok {
 		return bark.CreatedResponse{}, bark.ErrResourceVersionConflict
@@ -600,7 +591,7 @@ func (m *resultsApiImpl) UpdateStatus(ctx context.Context, id manifest.Versioned
 		},
 	)
 
-	if ok, err := m.store.Update(ctx, &entry, entry.GetVersionedID()); err != nil {
+	if ok, err := m.store.Update(ctx, &entry, entry.UID, dbstore.WithVersion(entry.Version)); err != nil {
 		return bark.CreatedResponse{}, err
 	} else if !ok {
 		return bark.CreatedResponse{}, bark.ErrResourceVersionConflict
@@ -612,7 +603,7 @@ func (m *resultsApiImpl) UpdateStatus(ctx context.Context, id manifest.Versioned
 	}, nil
 }
 
-func (m *resultsApiImpl) Get(ctx context.Context, id manifest.ResourceName) (result Result, exist bool, err error) {
+func (m *resultsAPIImpl) Get(ctx context.Context, id manifest.ResourceName) (result Result, exist bool, err error) {
 	exist, err = m.store.GetByName(ctx, &result, id)
 	return
 }
@@ -620,14 +611,14 @@ func (m *resultsApiImpl) Get(ctx context.Context, id manifest.ResourceName) (res
 // ------------------------------
 // / Runners resources API
 // ------------------------------
-type runnersApiImpl struct {
-	store            dbstore.TransitionalStore
+type runnersAPIImpl struct {
+	store            dbstore.TransactionalStore
 	hmacSampleSecret []byte
 }
 
-func (m *runnersApiImpl) List(ctx context.Context, searchQuery manifest.SearchQuery) (results []manifest.ResourceManifest, total int64, err error) {
+func (m *runnersAPIImpl) List(ctx context.Context, searchQuery manifest.SearchQuery) (results []manifest.ResourceManifest, total int64, err error) {
 	var models []Runner
-	total, err = m.store.Find(ctx, &models, searchQuery)
+	total, err = m.store.Find(ctx, &models, searchQuery, dbstore.OrderByCreatedAt(dbstore.OrderAscending))
 	if err != nil {
 		return
 	}
@@ -639,14 +630,14 @@ func (m *runnersApiImpl) List(ctx context.Context, searchQuery manifest.SearchQu
 	return
 }
 
-func (m *runnersApiImpl) Get(ctx context.Context, id manifest.ResourceName) (result manifest.ResourceManifest, exist bool, err error) {
+func (m *runnersAPIImpl) Get(ctx context.Context, id manifest.ResourceName) (result manifest.ResourceManifest, exist bool, err error) {
 	var model Runner
 	exist, err = m.store.GetByName(ctx, &model, id)
 	result = model.ToManifest()
 	return
 }
 
-func (m *runnersApiImpl) CreateOrUpdate(ctx context.Context, newEntry manifest.ResourceManifest) (manifest.ResourceManifest, bool, error) {
+func (m *runnersAPIImpl) CreateOrUpdate(ctx context.Context, newEntry manifest.ResourceManifest) (manifest.ResourceManifest, bool, error) {
 	runner, err := NewRunner(newEntry)
 	if err != nil {
 		return manifest.ResourceManifest{}, false, err
@@ -664,7 +655,7 @@ func (m *runnersApiImpl) CreateOrUpdate(ctx context.Context, newEntry manifest.R
 	return result.ToManifest(), false, err
 }
 
-func (m *runnersApiImpl) create(ctx context.Context, newEntry Runner) (Runner, error) {
+func (m *runnersAPIImpl) create(ctx context.Context, newEntry Runner) (Runner, error) {
 	// TODO: Generate auth token?
 	// 	IdToken: randToken(16),
 
@@ -677,9 +668,9 @@ func (m *runnersApiImpl) create(ctx context.Context, newEntry Runner) (Runner, e
 	err := m.store.Create(ctx, &newEntry)
 	return newEntry, err
 }
-func (m *runnersApiImpl) update(ctx context.Context, id manifest.VersionedResourceID, newEntry Runner) (Runner, error) {
+func (m *runnersAPIImpl) update(ctx context.Context, id manifest.VersionedResourceID, newEntry Runner) (Runner, error) {
 	var result Runner
-	if ok, err := m.store.GetByUIDWithVersion(ctx, &result, id); err != nil {
+	if ok, err := m.store.GetByUID(ctx, &result, id.ID, dbstore.WithVersion(id.Version)); err != nil {
 		return result, err
 	} else if !ok {
 		return result, bark.ErrResourceVersionConflict
@@ -702,7 +693,7 @@ func (m *runnersApiImpl) update(ctx context.Context, id manifest.VersionedResour
 	// TODO: If a runner status changed to disabled, all instance must be disabled too
 
 	// Persist changes
-	ok, err := m.store.Update(ctx, &result, id)
+	ok, err := m.store.Update(ctx, &result, result.UID, dbstore.WithVersion(result.Version))
 	if err != nil {
 		return result, err
 	} else if !ok {
@@ -712,7 +703,7 @@ func (m *runnersApiImpl) update(ctx context.Context, id manifest.VersionedResour
 	return result, err
 }
 
-func (m *runnersApiImpl) Create(ctx context.Context, newEntry manifest.ResourceManifest) (manifest.ResourceManifest, error) {
+func (m *runnersAPIImpl) Create(ctx context.Context, newEntry manifest.ResourceManifest) (manifest.ResourceManifest, error) {
 	entry, err := NewRunner(newEntry)
 	if err != nil {
 		return manifest.ResourceManifest{}, err
@@ -722,7 +713,7 @@ func (m *runnersApiImpl) Create(ctx context.Context, newEntry manifest.ResourceM
 	return result.ToManifest(), err
 }
 
-func (m *runnersApiImpl) Update(ctx context.Context, id manifest.VersionedResourceID, newEntry manifest.ResourceManifest) (manifest.ResourceManifest, error) {
+func (m *runnersAPIImpl) Update(ctx context.Context, id manifest.VersionedResourceID, newEntry manifest.ResourceManifest) (manifest.ResourceManifest, error) {
 	entry, err := NewRunner(newEntry)
 	if err != nil {
 		return manifest.ResourceManifest{}, err
@@ -732,7 +723,7 @@ func (m *runnersApiImpl) Update(ctx context.Context, id manifest.VersionedResour
 	return result.ToManifest(), err
 }
 
-func (m *runnersApiImpl) Delete(ctx context.Context, id manifest.VersionedResourceID) (bool, error) {
+func (m *runnersAPIImpl) Delete(ctx context.Context, id manifest.VersionedResourceID) (bool, error) {
 	return m.store.Delete(ctx, &Runner{}, id.ID, id.Version)
 }
 
@@ -757,12 +748,12 @@ func manifestMatch(entry manifest.ObjectMeta) manifest.SearchQuery {
 	}
 }
 
-func (m *runnersApiImpl) GetToken(ctx context.Context, runnerName manifest.ResourceName) (ApiToken, bool, error) {
+func (m *runnersAPIImpl) GetToken(ctx context.Context, runnerName manifest.ResourceName) (APIToken, bool, error) {
 	var runner Runner
 	if exist, err := m.store.GetByName(ctx, &runner, runnerName); err != nil {
-		return ApiToken(""), false, err
+		return APIToken(""), false, err
 	} else if !exist {
-		return ApiToken(""), false, nil
+		return APIToken(""), false, nil
 	}
 
 	now := time.Now()
@@ -779,13 +770,13 @@ func (m *runnersApiImpl) GetToken(ctx context.Context, runnerName manifest.Resou
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	tokenString, err := token.SignedString(m.hmacSampleSecret)
 	if err != nil {
-		return ApiToken(tokenString), true, fmt.Errorf("failed to sign the JWT token: %w", err)
+		return APIToken(tokenString), true, fmt.Errorf("failed to sign the JWT token: %w", err)
 	}
 
-	return ApiToken(tokenString), true, nil
+	return APIToken(tokenString), true, nil
 }
 
-func (m *runnersApiImpl) Auth(ctx context.Context, apiToken ApiToken, newEntry manifest.ResourceManifest) (manifest.ResourceManifest, error) {
+func (m *runnersAPIImpl) Auth(ctx context.Context, apiToken APIToken, newEntry manifest.ResourceManifest) (manifest.ResourceManifest, error) {
 	var result manifest.ResourceManifest
 	token, err := jwt.Parse(string(apiToken), func(token *jwt.Token) (interface{}, error) {
 		// Don't forget to validate the alg is what you expect:
@@ -867,7 +858,7 @@ func (m *runnersApiImpl) Auth(ctx context.Context, apiToken ApiToken, newEntry m
 		worker.Spec.RunnerID = existingWorkerRecord.Spec.RunnerID
 		existingWorkerRecord.Spec = worker.Spec
 
-		_, err = m.store.Update(ctx, &existingWorkerRecord, existingWorkerRecord.GetVersionedID())
+		_, err = m.store.Update(ctx, &existingWorkerRecord, existingWorkerRecord.UID, dbstore.WithVersion(existingWorkerRecord.Version))
 	} else {
 		// Business Rule: Runner can only have a number of new worker up-to-a limit, if limit is set
 		if runner.Spec.MaxInstances > 0 && runner.Status.NumberInstances >= runner.Spec.MaxInstances {
@@ -884,15 +875,15 @@ func (m *runnersApiImpl) Auth(ctx context.Context, apiToken ApiToken, newEntry m
 // ------------------------------
 // / ArtifactsApis implementation
 // ------------------------------
-type artifactApiImp struct {
-	store dbstore.TransitionalStore
+type artifactAPIImp struct {
+	store dbstore.TransactionalStore
 
 	resultsSigningKey []byte
 }
 
-func (m *artifactApiImp) List(ctx context.Context, query manifest.SearchQuery) (results []manifest.ResourceManifest, total int64, err error) {
+func (m *artifactAPIImp) List(ctx context.Context, query manifest.SearchQuery) (results []manifest.ResourceManifest, total int64, err error) {
 	var models []Artifact
-	total, err = m.store.Find(ctx, &models, query, dbstore.Omit("Content"))
+	total, err = m.store.Find(ctx, &models, query, dbstore.Omit("Content"), dbstore.OrderByCreatedAt(dbstore.OrderAscending))
 	if err != nil {
 		return
 	}
@@ -908,7 +899,7 @@ func (m *artifactApiImp) List(ctx context.Context, query manifest.SearchQuery) (
 	return
 }
 
-func (m *artifactApiImp) Get(ctx context.Context, id manifest.ResourceName) (result manifest.ResourceManifest, exist bool, err error) {
+func (m *artifactAPIImp) Get(ctx context.Context, id manifest.ResourceName) (result manifest.ResourceManifest, exist bool, err error) {
 	var model Artifact
 	exist, err = m.store.GetByName(ctx, &model, id, dbstore.Omit("Content"))
 
@@ -919,13 +910,13 @@ func (m *artifactApiImp) Get(ctx context.Context, id manifest.ResourceName) (res
 	return
 }
 
-func (m *artifactApiImp) GetContent(ctx context.Context, name manifest.ResourceName) (resource ArtifactSpec, exists bool, commError error) {
+func (m *artifactAPIImp) GetContent(ctx context.Context, name manifest.ResourceName) (resource ArtifactSpec, exists bool, commError error) {
 	var result Artifact
 	exist, err := m.store.GetByName(ctx, &result, name)
 	return result.Spec, exist && result.Name == name, err
 }
 
-func (m *artifactApiImp) Create(ctx context.Context, apiToken ApiToken, newEntry manifest.ResourceManifest) (manifest.ResourceManifest, error) {
+func (m *artifactAPIImp) Create(ctx context.Context, apiToken APIToken, newEntry manifest.ResourceManifest) (manifest.ResourceManifest, error) {
 	token, err := jwt.Parse(string(apiToken), func(token *jwt.Token) (interface{}, error) {
 		// Don't forget to validate the alg is what you expect:
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -995,7 +986,7 @@ func (m *artifactApiImp) Create(ctx context.Context, apiToken ApiToken, newEntry
 	return entry.ToManifest(), err
 }
 
-func (m *artifactApiImp) Delete(ctx context.Context, id manifest.VersionedResourceID) (bool, error) {
+func (m *artifactAPIImp) Delete(ctx context.Context, id manifest.VersionedResourceID) (bool, error) {
 	return m.store.Delete(ctx, &Artifact{}, id.ID, id.Version)
 }
 
@@ -1019,12 +1010,12 @@ func kindToModel(kind manifest.Kind) (model any, found bool) {
 	}
 }
 
-type labelsApiImpl struct {
-	store dbstore.TransitionalStore
+type labelsAPIImpl struct {
+	store dbstore.LabelStore
 	kind  manifest.Kind
 }
 
-func (m *labelsApiImpl) ListNames(ctx context.Context, searchQuery manifest.SearchQuery) (result manifest.StringSet, total int64, err error) {
+func (m *labelsAPIImpl) ListNames(ctx context.Context, searchQuery manifest.SearchQuery) (result manifest.StringSet, total int64, err error) {
 	model, found := kindToModel(m.kind)
 	if !found {
 		return nil, 0, manifest.ErrUnknownKind
@@ -1034,7 +1025,7 @@ func (m *labelsApiImpl) ListNames(ctx context.Context, searchQuery manifest.Sear
 	return
 }
 
-func (m *labelsApiImpl) ListLabels(ctx context.Context, searchQuery manifest.SearchQuery) (result manifest.StringSet, total int64, err error) {
+func (m *labelsAPIImpl) ListLabels(ctx context.Context, searchQuery manifest.SearchQuery) (result manifest.StringSet, total int64, err error) {
 	model, found := kindToModel(m.kind)
 	if !found {
 		return nil, 0, manifest.ErrUnknownKind
@@ -1044,7 +1035,7 @@ func (m *labelsApiImpl) ListLabels(ctx context.Context, searchQuery manifest.Sea
 	return
 }
 
-func (m *labelsApiImpl) ListLabelValues(ctx context.Context, label string, searchQuery manifest.SearchQuery) (result manifest.StringSet, total int64, err error) {
+func (m *labelsAPIImpl) ListLabelValues(ctx context.Context, label string, searchQuery manifest.SearchQuery) (result manifest.StringSet, total int64, err error) {
 	model, found := kindToModel(m.kind)
 	if !found {
 		return nil, 0, manifest.ErrUnknownKind

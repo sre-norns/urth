@@ -51,7 +51,7 @@ func entryToRequest(request *har.Request) (httpparser.TestRequest, error) {
 	}, nil
 }
 
-func ConvertHarToHttpTester(entries []*har.Entry) ([]httpparser.TestRequest, error) {
+func ConvertHarToHTTPTester(entries []*har.Entry) ([]httpparser.TestRequest, error) {
 	var requests []httpparser.TestRequest
 
 	for _, entry := range entries {

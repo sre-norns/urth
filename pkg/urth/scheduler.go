@@ -5,14 +5,14 @@ import (
 	"io"
 )
 
-type RunId string
+type RunID string
 
-const InvalidRunId = RunId("")
+const InvalidRunID = RunID("")
 
 const RunScenarioTopicName = "scenario:run"
 
 type Scheduler interface {
 	io.Closer
 
-	Schedule(ctx context.Context, scenarioRun Result, scenario Scenario) (RunId, error)
+	Schedule(ctx context.Context, scenarioRun Result, scenario Scenario) (RunID, error)
 }

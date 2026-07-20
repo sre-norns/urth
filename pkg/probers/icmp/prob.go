@@ -3,11 +3,11 @@ package icmp
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"reflect"
 	"runtime/debug"
 	"strings"
 
-	"github.com/go-kit/log"
 	bxconfig "github.com/prometheus/blackbox_exporter/config"
 	"github.com/prometheus/blackbox_exporter/prober"
 	"github.com/prometheus/client_golang/prometheus"
@@ -43,7 +43,7 @@ func init() {
 	)
 }
 
-func RunScript(ctx context.Context, probSpec any, config prob.RunOptions, registry *prometheus.Registry, logger log.Logger) (prob.RunStatus, []prob.Artifact, error) {
+func RunScript(ctx context.Context, probSpec any, config prob.RunOptions, registry *prometheus.Registry, logger *slog.Logger) (prob.RunStatus, []prob.Artifact, error) {
 	spec, ok := probSpec.(*Spec)
 	if !ok {
 		return prob.RunFinishedError, nil, fmt.Errorf("%w: got %q, expected %q", manifest.ErrUnexpectedSpecType, reflect.TypeOf(probSpec), reflect.TypeOf(&Spec{}))

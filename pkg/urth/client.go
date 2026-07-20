@@ -20,102 +20,106 @@ import (
 )
 
 var (
-	ErrUnspecifiedApiVersion = errors.New("resource has no specified API Version")
-	ErrUnspecifiedApiKind    = errors.New("resource has no specified API Kind")
+	ErrUnspecifiedAPIVersion = errors.New("resource has no specified API Version")
+	ErrUnspecifiedAPIKind    = errors.New("resource has no specified API Kind")
 )
 
-type ApiClientConfig struct {
-	HttpClient *http.Client `kong:"-"`
+type APIClientConfig struct {
+	HTTPClient *http.Client `kong:"-"`
 
-	Token            ApiToken      `help:"API token to authenticate to the API server"`
-	ApiServerAddress string        `help:"URL of the API server" default:"http://localhost:8080/api"`
+	Token            APIToken      `help:"API token to authenticate to the API server"`
+	APIServerAddress string        `help:"URL of the API server" default:"http://localhost:8080/api"`
 	Timeout          time.Duration `help:"Communication timeout for API server" default:"1m"`
 }
 
-func (c *ApiClientConfig) NewClient() (*RestApiClient, error) {
-	return NewRestApiClient(c.ApiServerAddress, *c)
+func (c *APIClientConfig) NewClient() (*RestAPIClient, error) {
+	return NewRestAPIClient(c.APIServerAddress, *c)
 }
 
-type RestApiClient struct {
-	baseUrl *url.URL
+type RestAPIClient struct {
+	baseURL *url.URL
 
-	config ApiClientConfig
+	config APIClientConfig
 }
 
 type serverResourceAPIResponse struct {
-	bark.ErrorResponse
 	manifest.ResourceManifest
+
+	// Code represents error ID from a relevant domain
+	Code int
+
+	// Message is a human readable representation of the error, suitable for display
+	Message string
 }
 
 func (e *serverResourceAPIResponse) AsError() error {
-	return nil
-}
-
-type serverPaginatedAPIResponse struct {
-	bark.ErrorResponse
-	manifest.ResourceManifest
-}
-
-func NewRestApiClient(baseUrl string, config ApiClientConfig) (*RestApiClient, error) {
-	url, err := url.Parse(baseUrl)
-
-	if config.HttpClient == nil {
-		config.HttpClient = http.DefaultClient
+	if e.Code == 0 {
+		return nil
 	}
 
-	return &RestApiClient{
-		baseUrl: url,
+	return fmt.Errorf("server error: %d %s", e.Code, e.Message)
+}
+
+func NewRestAPIClient(baseURL string, config APIClientConfig) (*RestAPIClient, error) {
+	url, err := url.Parse(baseURL)
+
+	if config.HTTPClient == nil {
+		config.HTTPClient = http.DefaultClient
+	}
+
+	return &RestAPIClient{
+		baseURL: url,
 		config:  config,
 	}, err
 }
 
-// Implementation of urth.Service interface
-func (c *RestApiClient) Labels(k manifest.Kind) LabelsApi {
-	return &labelsApiRestClient{
-		RestApiClient: *c,
+// Labels implements the urth.Service interface.
+func (c *RestAPIClient) Labels(k manifest.Kind) LabelsAPI {
+	return &labelsAPIRestClient{
+		RestAPIClient: *c,
 		kind:          k,
 	}
 }
 
-// Implementation of urth.Service interface
-func (c *RestApiClient) Runners() RunnersApi {
-	return &runnersApiClient{
-		RestApiClient: *c,
+// Runners implements the urth.Service interface.
+func (c *RestAPIClient) Runners() RunnersAPI {
+	return &runnersAPIClient{
+		RestAPIClient: *c,
 	}
 }
 
-func (c *RestApiClient) Scenarios() ScenarioApi {
-	return &scenariosApiClient{
-		RestApiClient: *c,
+func (c *RestAPIClient) Scenarios() ScenarioAPI {
+	return &scenariosAPIClient{
+		RestAPIClient: *c,
 	}
 }
 
-func (c *RestApiClient) Results(scenarioName manifest.ResourceName) RunResultApi {
-	return &resultsApiRestClient{
-		RestApiClient: *c,
-		ScenarioId:    scenarioName,
+func (c *RestAPIClient) Results(scenarioName manifest.ResourceName) RunResultAPI {
+	return &resultsAPIRestClient{
+		RestAPIClient: *c,
+		ScenarioID:    scenarioName,
 	}
 }
 
-func (c *RestApiClient) Artifacts() ArtifactApi {
-	return &artifactApiClient{
-		RestApiClient: *c,
+func (c *RestAPIClient) Artifacts() ArtifactAPI {
+	return &artifactAPIClient{
+		RestAPIClient: *c,
 	}
 }
 
-func (c *RestApiClient) resourceAPICall(ctx context.Context, method string, targetApi *url.URL, data []byte) (result manifest.ResourceManifest, created bool, err error) {
-	request, err := c.requestWithAuth(ctx, method, targetApi, "", nil, bytes.NewReader(data))
+func (c *RestAPIClient) resourceAPICall(ctx context.Context, method string, targetAPI *url.URL, data []byte) (result manifest.ResourceManifest, created bool, err error) {
+	request, err := c.requestWithAuth(ctx, method, targetAPI, "", nil, bytes.NewReader(data))
 	if err != nil {
 		return result, false, err
 	}
-	resp, err := c.config.HttpClient.Do(request)
+	resp, err := c.config.HTTPClient.Do(request)
 	if err != nil {
 		return result, false, err
 	}
 
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusCreated {
-		return result, false, readApiError(resp)
+		return result, false, readAPIError(resp)
 	}
 
 	var serverResponse serverResourceAPIResponse
@@ -125,14 +129,14 @@ func (c *RestApiClient) resourceAPICall(ctx context.Context, method string, targ
 	}
 
 	if serverResponse.Code != 0 {
-		return serverResponse.ResourceManifest, resp.StatusCode == http.StatusCreated, &serverResponse
+		return serverResponse.ResourceManifest, resp.StatusCode == http.StatusCreated, serverResponse.AsError()
 	}
 
 	return serverResponse.ResourceManifest, resp.StatusCode == http.StatusCreated, nil
 }
 
-func (c *RestApiClient) ApplyObjectDefinition(ctx context.Context, spec manifest.ResourceManifest) (result manifest.ResourceManifest, created bool, err error) {
-	targetApi, err := apiUrlForResource(c.baseUrl, spec.TypeMeta, spec.Metadata.Name, nil)
+func (c *RestAPIClient) ApplyObjectDefinition(ctx context.Context, spec manifest.ResourceManifest) (result manifest.ResourceManifest, created bool, err error) {
+	targetAPI, err := apiURLForResource(c.baseURL, spec.TypeMeta, spec.Metadata.Name, nil)
 	if err != nil {
 		return result, created, err
 	}
@@ -142,11 +146,11 @@ func (c *RestApiClient) ApplyObjectDefinition(ctx context.Context, spec manifest
 		return result, created, fmt.Errorf("RestApiClient manifest serialization error: %w", err)
 	}
 
-	return c.resourceAPICall(ctx, http.MethodPut, targetApi, data)
+	return c.resourceAPICall(ctx, http.MethodPut, targetAPI, data)
 }
 
-func (c *RestApiClient) CreateFromManifest(ctx context.Context, manifest manifest.ResourceManifest) (result manifest.ResourceManifest, err error) {
-	targetApi, err := apiUrlForResource(c.baseUrl, manifest.TypeMeta, "", nil)
+func (c *RestAPIClient) CreateFromManifest(ctx context.Context, manifest manifest.ResourceManifest) (result manifest.ResourceManifest, err error) {
+	targetAPI, err := apiURLForResource(c.baseURL, manifest.TypeMeta, "", nil)
 	if err != nil {
 		return result, err
 	}
@@ -156,7 +160,7 @@ func (c *RestApiClient) CreateFromManifest(ctx context.Context, manifest manifes
 		return result, fmt.Errorf("RestApiClient manifest serialization error: %w", err)
 	}
 
-	result, _, err = c.resourceAPICall(ctx, http.MethodPost, targetApi, data)
+	result, _, err = c.resourceAPICall(ctx, http.MethodPost, targetAPI, data)
 
 	return
 }
@@ -165,24 +169,24 @@ func (c *RestApiClient) CreateFromManifest(ctx context.Context, manifest manifes
 // 	return ManualRunRequestResponse{}, false, nil
 // }
 
-func (c *RestApiClient) get(ctx context.Context, apiUrl *url.URL) (*http.Response, error) {
-	return c.getWithAuth(ctx, apiUrl, "", nil)
+func (c *RestAPIClient) get(ctx context.Context, apiURL *url.URL) (*http.Response, error) {
+	return c.getWithAuth(ctx, apiURL, "", nil)
 }
 
-func (c *RestApiClient) post(ctx context.Context, apiUrl *url.URL, extraHeaders http.Header, body io.Reader) (*http.Response, error) {
-	return c.postWithAuth(ctx, apiUrl, "", extraHeaders, body)
+func (c *RestAPIClient) post(ctx context.Context, apiURL *url.URL, extraHeaders http.Header, body io.Reader) (*http.Response, error) {
+	return c.postWithAuth(ctx, apiURL, "", extraHeaders, body)
 }
 
-func (c *RestApiClient) put(ctx context.Context, apiUrl *url.URL, extraHeaders http.Header, body io.Reader) (*http.Response, error) {
-	return c.putWithAuth(ctx, apiUrl, "", extraHeaders, body)
+func (c *RestAPIClient) put(ctx context.Context, apiURL *url.URL, extraHeaders http.Header, body io.Reader) (*http.Response, error) {
+	return c.putWithAuth(ctx, apiURL, "", extraHeaders, body)
 }
 
-func (c *RestApiClient) delete(ctx context.Context, apiUrl *url.URL, extraHeaders http.Header, version string) (*http.Response, error) {
-	return c.deleteWithAuth(ctx, apiUrl, "", extraHeaders, version)
+func (c *RestAPIClient) delete(ctx context.Context, apiURL *url.URL, extraHeaders http.Header, version string) (*http.Response, error) {
+	return c.deleteWithAuth(ctx, apiURL, "", extraHeaders, version)
 }
 
-func (c *RestApiClient) requestWithAuth(ctx context.Context, method string, apiUrl *url.URL, token string, extraHeaders http.Header, body io.Reader) (*http.Request, error) {
-	request, err := http.NewRequestWithContext(ctx, method, apiUrl.String(), body)
+func (c *RestAPIClient) requestWithAuth(ctx context.Context, method string, apiURL *url.URL, token string, extraHeaders http.Header, body io.Reader) (*http.Request, error) {
+	request, err := http.NewRequestWithContext(ctx, method, apiURL.String(), body)
 	if err != nil {
 		return nil, err
 	}
@@ -201,44 +205,44 @@ func (c *RestApiClient) requestWithAuth(ctx context.Context, method string, apiU
 	return request, nil
 }
 
-func (c *RestApiClient) getWithAuth(ctx context.Context, apiUrl *url.URL, token string, extraHeaders http.Header) (*http.Response, error) {
-	request, err := c.requestWithAuth(ctx, http.MethodGet, apiUrl, token, extraHeaders, nil)
+func (c *RestAPIClient) getWithAuth(ctx context.Context, apiURL *url.URL, token string, extraHeaders http.Header) (*http.Response, error) {
+	request, err := c.requestWithAuth(ctx, http.MethodGet, apiURL, token, extraHeaders, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	return c.config.HttpClient.Do(request)
+	return c.config.HTTPClient.Do(request)
 }
 
-func (c *RestApiClient) postWithAuth(ctx context.Context, apiUrl *url.URL, token string, extraHeaders http.Header, body io.Reader) (*http.Response, error) {
-	request, err := c.requestWithAuth(ctx, http.MethodPost, apiUrl, token, extraHeaders, body)
+func (c *RestAPIClient) postWithAuth(ctx context.Context, apiURL *url.URL, token string, extraHeaders http.Header, body io.Reader) (*http.Response, error) {
+	request, err := c.requestWithAuth(ctx, http.MethodPost, apiURL, token, extraHeaders, body)
 	if err != nil {
 		return nil, err
 	}
 
-	return c.config.HttpClient.Do(request)
+	return c.config.HTTPClient.Do(request)
 }
 
-func (c *RestApiClient) putWithAuth(ctx context.Context, apiUrl *url.URL, token string, extraHeaders http.Header, body io.Reader) (*http.Response, error) {
-	request, err := c.requestWithAuth(ctx, http.MethodPut, apiUrl, token, extraHeaders, body)
+func (c *RestAPIClient) putWithAuth(ctx context.Context, apiURL *url.URL, token string, extraHeaders http.Header, body io.Reader) (*http.Response, error) {
+	request, err := c.requestWithAuth(ctx, http.MethodPut, apiURL, token, extraHeaders, body)
 	if err != nil {
 		return nil, err
 	}
 
-	return c.config.HttpClient.Do(request)
+	return c.config.HTTPClient.Do(request)
 }
 
-func (c *RestApiClient) deleteWithAuth(ctx context.Context, apiUrl *url.URL, token string, extraHeaders http.Header, version string) (*http.Response, error) {
-	request, err := c.requestWithAuth(ctx, http.MethodDelete, apiUrl, token, extraHeaders, nil)
+func (c *RestAPIClient) deleteWithAuth(ctx context.Context, apiURL *url.URL, token string, extraHeaders http.Header, version string) (*http.Response, error) {
+	request, err := c.requestWithAuth(ctx, http.MethodDelete, apiURL, token, extraHeaders, nil)
 	if err != nil {
 		return nil, err
 	}
 	request.Header.Add("If-Match", version)
 
-	return c.config.HttpClient.Do(request)
+	return c.config.HTTPClient.Do(request)
 }
 
-func readApiError(resp *http.Response) error {
+func readAPIError(resp *http.Response) error {
 	if resp.StatusCode >= 400 && resp.StatusCode < 500 {
 		errorResponse := &bark.ErrorResponse{
 			Code:    resp.StatusCode,
@@ -256,13 +260,13 @@ func readApiError(resp *http.Response) error {
 	return fmt.Errorf("non-specific api response: %s", resp.Status)
 }
 
-func (c *RestApiClient) deleteResource(ctx context.Context, uri string, version manifest.Version) (bool, error) {
+func (c *RestAPIClient) deleteResource(ctx context.Context, uri string, version manifest.Version) (bool, error) {
 	strVersion := version.String()
 	queryParams := url.Values{}
 	queryParams.Set("version", strVersion)
 
-	targetApi := urlForPath(c.baseUrl, uri, queryParams)
-	resp, err := c.delete(ctx, targetApi, nil, strVersion)
+	targetAPI := urlForPath(c.baseURL, uri, queryParams)
+	resp, err := c.delete(ctx, targetAPI, nil, strVersion)
 	if err != nil {
 		return false, err
 	}
@@ -281,104 +285,104 @@ func readPaginatedResource[T any](reader io.Reader) (results []T, total int64, e
 	return responseObject.Data, responseObject.Total, err
 }
 
-func listResources[T any](ctx context.Context, c *RestApiClient, targetApi *url.URL) (results []T, total int64, err error) {
-	resp, err := c.get(ctx, targetApi)
+func listResources[T any](ctx context.Context, c *RestAPIClient, targetAPI *url.URL) (results []T, total int64, err error) {
+	resp, err := c.get(ctx, targetAPI)
 	if err != nil {
 		return nil, 0, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, 0, readApiError(resp)
+		return nil, 0, readAPIError(resp)
 	}
 
 	return readPaginatedResource[T](resp.Body)
 }
 
-func (c *RestApiClient) listResources(ctx context.Context, targetApi *url.URL) (results []manifest.ResourceManifest, total int64, err error) {
-	resp, err := c.get(ctx, targetApi)
+func (c *RestAPIClient) listResources(ctx context.Context, targetAPI *url.URL) (results []manifest.ResourceManifest, total int64, err error) {
+	resp, err := c.get(ctx, targetAPI)
 	if err != nil {
 		return nil, 0, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, 0, readApiError(resp)
+		return nil, 0, readAPIError(resp)
 	}
 
 	return readPaginatedResource[manifest.ResourceManifest](resp.Body)
 }
 
-func (c *RestApiClient) getResource(ctx context.Context, uri string, dest *manifest.ResourceManifest) (bool, error) {
-	targetApi := urlForPath(c.baseUrl, uri, nil)
-	resp, err := c.get(ctx, targetApi)
+func (c *RestAPIClient) getResource(ctx context.Context, uri string, dest *manifest.ResourceManifest) (bool, error) {
+	targetAPI := urlForPath(c.baseURL, uri, nil)
+	resp, err := c.get(ctx, targetAPI)
 	if err != nil {
 		return false, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return false, readApiError(resp)
+		return false, readAPIError(resp)
 	}
 
 	return true, json.NewDecoder(resp.Body).Decode(dest)
 }
 
-func (c *RestApiClient) getRawResource(ctx context.Context, uri string) (io.ReadCloser, bool, error) {
-	targetApi := urlForPath(c.baseUrl, uri, nil)
-	resp, err := c.get(ctx, targetApi)
+func (c *RestAPIClient) getRawResource(ctx context.Context, uri string) (io.ReadCloser, bool, error) {
+	targetAPI := urlForPath(c.baseURL, uri, nil)
+	resp, err := c.get(ctx, targetAPI)
 	if err != nil {
 		return nil, false, err
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, false, readApiError(resp)
+		return nil, false, readAPIError(resp)
 	}
 
 	return resp.Body, true, nil
 }
 
-func (c *RestApiClient) createResource(ctx context.Context, uri string, token string, entry any) (result manifest.ResourceManifest, err error) {
+func (c *RestAPIClient) createResource(ctx context.Context, uri string, token string, entry any) (result manifest.ResourceManifest, err error) {
 	data, err := json.Marshal(entry)
 	if err != nil {
 		return
 	}
 
-	targetApi := urlForPath(c.baseUrl, uri, nil)
-	resp, err := c.postWithAuth(ctx, targetApi, token, nil, bytes.NewReader(data))
+	targetAPI := urlForPath(c.baseURL, uri, nil)
+	resp, err := c.postWithAuth(ctx, targetAPI, token, nil, bytes.NewReader(data))
 	if err != nil {
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusCreated {
-		return result, readApiError(resp)
+		return result, readAPIError(resp)
 	}
 
 	err = json.NewDecoder(resp.Body).Decode(&result)
 	return
 }
 
-func apiUrlForResource(baseUrl *url.URL, typeInfo manifest.TypeMeta, resourceName manifest.ResourceName, query url.Values) (*url.URL, error) {
+func apiURLForResource(baseURL *url.URL, typeInfo manifest.TypeMeta, resourceName manifest.ResourceName, query url.Values) (*url.URL, error) {
 	if typeInfo.APIVersion == "" {
-		return nil, ErrUnspecifiedApiVersion
+		return nil, ErrUnspecifiedAPIVersion
 	}
 
 	collection := strings.ToLower(string(typeInfo.Kind)) // TODO: Ensure that type name is plural?
 	if collection == "" {
-		return nil, ErrUnspecifiedApiKind
+		return nil, ErrUnspecifiedAPIKind
 	}
 
-	return urlForPath(baseUrl, path.Join(typeInfo.APIVersion, collection, string(resourceName)), query), nil
+	return urlForPath(baseURL, path.Join(typeInfo.APIVersion, collection, string(resourceName)), query), nil
 }
 
-func urlForPath(baseUrl *url.URL, apiPath string, query url.Values) *url.URL {
+func urlForPath(baseURL *url.URL, apiPath string, query url.Values) *url.URL {
 	rawQuery := ""
 	if len(query) > 0 {
 		rawQuery = query.Encode()
 	}
 
-	targetPath := baseUrl.JoinPath(apiPath)
+	targetPath := baseURL.JoinPath(apiPath)
 	targetPath.RawQuery = rawQuery
 
 	return targetPath
@@ -403,37 +407,37 @@ func searchToQuery(searchQuery manifest.SearchQuery) url.Values {
 // Runners API
 // --------
 
-type runnersApiClient struct {
-	RestApiClient
+type runnersAPIClient struct {
+	RestAPIClient
 }
 
 // List all resources matching given search query
-func (c *runnersApiClient) List(ctx context.Context, searchQuery manifest.SearchQuery) ([]manifest.ResourceManifest, int64, error) {
-	targetApi := urlForPath(c.baseUrl, "v1/runners", searchToQuery(searchQuery))
-	return c.listResources(ctx, targetApi)
+func (c *runnersAPIClient) List(ctx context.Context, searchQuery manifest.SearchQuery) ([]manifest.ResourceManifest, int64, error) {
+	targetAPI := urlForPath(c.baseURL, "v1/runners", searchToQuery(searchQuery))
+	return c.listResources(ctx, targetAPI)
 }
 
 // Get a single resource given its unique ID,
 // Returns a resource if it exists, false, if resource doesn't exists
 // error if there was communication error with the storage
-func (c *runnersApiClient) Get(ctx context.Context, id manifest.ResourceName) (result manifest.ResourceManifest, exists bool, err error) {
+func (c *runnersAPIClient) Get(ctx context.Context, id manifest.ResourceName) (result manifest.ResourceManifest, exists bool, err error) {
 	exists, err = c.getResource(ctx, fmt.Sprintf("v1/runners/%v", id), &result)
 	return
 }
 
-func (c *runnersApiClient) CreateOrUpdate(ctx context.Context, newEntry manifest.ResourceManifest) (manifest.ResourceManifest, bool, error) {
+func (c *runnersAPIClient) CreateOrUpdate(ctx context.Context, newEntry manifest.ResourceManifest) (manifest.ResourceManifest, bool, error) {
 	return c.ApplyObjectDefinition(ctx, newEntry)
 }
 
-func (c *runnersApiClient) Create(ctx context.Context, newEntry manifest.ResourceManifest) (manifest.ResourceManifest, error) {
+func (c *runnersAPIClient) Create(ctx context.Context, newEntry manifest.ResourceManifest) (manifest.ResourceManifest, error) {
 	return c.createResource(ctx, "v1/runners", "", &newEntry)
 }
 
-func (c *runnersApiClient) Delete(ctx context.Context, id manifest.VersionedResourceID) (bool, error) {
+func (c *runnersAPIClient) Delete(ctx context.Context, id manifest.VersionedResourceID) (bool, error) {
 	return c.deleteResource(ctx, fmt.Sprintf("v1/runners/%v", id.ID), id.Version)
 }
 
-func (c *runnersApiClient) Update(ctx context.Context, id manifest.VersionedResourceID, entry manifest.ResourceManifest) (result manifest.ResourceManifest, err error) {
+func (c *runnersAPIClient) Update(ctx context.Context, id manifest.VersionedResourceID, entry manifest.ResourceManifest) (result manifest.ResourceManifest, err error) {
 	data, err := json.Marshal(entry)
 	if err != nil {
 		return
@@ -442,9 +446,9 @@ func (c *runnersApiClient) Update(ctx context.Context, id manifest.VersionedReso
 	queryParams := url.Values{}
 	queryParams.Set("version", id.Version.String())
 
-	targetApi := urlForPath(c.baseUrl, fmt.Sprintf("v1/runners/%v", id), queryParams)
+	targetAPI := urlForPath(c.baseURL, fmt.Sprintf("v1/runners/%v", id), queryParams)
 	resp, err := c.put(ctx,
-		targetApi,
+		targetAPI,
 		http.Header{
 			// "Authorization": []string{fmt.Sprintf("Bearer %s", token)},
 			"If-Match": []string{id.String()},
@@ -461,37 +465,37 @@ func (c *runnersApiClient) Update(ctx context.Context, id manifest.VersionedReso
 		err = json.NewDecoder(resp.Body).Decode(&result)
 		return
 	default:
-		return result, readApiError(resp)
+		return result, readAPIError(resp)
 	}
 }
 
-func (m *runnersApiClient) GetToken(ctx context.Context, runnerName manifest.ResourceName) (ApiToken, bool, error) {
-	targetApi := urlForPath(m.baseUrl, fmt.Sprintf("v1/auth/runners/%v", runnerName), nil)
-	resp, err := m.getWithAuth(ctx, targetApi, "", nil)
+func (c *runnersAPIClient) GetToken(ctx context.Context, runnerName manifest.ResourceName) (APIToken, bool, error) {
+	targetAPI := urlForPath(c.baseURL, fmt.Sprintf("v1/auth/runners/%v", runnerName), nil)
+	resp, err := c.getWithAuth(ctx, targetAPI, "", nil)
 	if err != nil {
-		return ApiToken(""), false, err
+		return APIToken(""), false, err
 	}
 	defer resp.Body.Close()
 
 	switch resp.StatusCode {
 	case http.StatusOK, http.StatusAccepted, http.StatusCreated:
 		token, err := io.ReadAll(resp.Body)
-		return ApiToken(token), true, err
+		return APIToken(token), true, err
 	case http.StatusNotFound:
-		return ApiToken(""), false, nil
+		return APIToken(""), false, nil
 	default:
-		return ApiToken(""), false, readApiError(resp)
+		return APIToken(""), false, readAPIError(resp)
 	}
 }
 
-func (m *runnersApiClient) Auth(ctx context.Context, token ApiToken, newEntry manifest.ResourceManifest) (result manifest.ResourceManifest, err error) {
+func (c *runnersAPIClient) Auth(ctx context.Context, token APIToken, newEntry manifest.ResourceManifest) (result manifest.ResourceManifest, err error) {
 	data, err := json.Marshal(newEntry)
 	if err != nil {
 		return result, err
 	}
 
-	targetApi := urlForPath(m.baseUrl, "v1/auth/runners", nil)
-	resp, err := m.postWithAuth(ctx, targetApi, string(token), nil, bytes.NewReader(data))
+	targetAPI := urlForPath(c.baseURL, "v1/auth/runners", nil)
+	resp, err := c.postWithAuth(ctx, targetAPI, string(token), nil, bytes.NewReader(data))
 	if err != nil {
 		return result, err
 	}
@@ -502,7 +506,7 @@ func (m *runnersApiClient) Auth(ctx context.Context, token ApiToken, newEntry ma
 		err = json.NewDecoder(resp.Body).Decode(&result)
 		return
 	default:
-		return result, readApiError(resp)
+		return result, readAPIError(resp)
 	}
 }
 
@@ -510,24 +514,24 @@ func (m *runnersApiClient) Auth(ctx context.Context, token ApiToken, newEntry ma
 // Run Results API
 // --------
 
-type resultsApiRestClient struct {
-	RestApiClient
+type resultsAPIRestClient struct {
+	RestAPIClient
 
-	ScenarioId manifest.ResourceName
+	ScenarioID manifest.ResourceName
 }
 
 // List all resources matching given search query
-func (c *resultsApiRestClient) List(ctx context.Context, searchQuery manifest.SearchQuery) ([]Result, int64, error) {
-	targetApi := urlForPath(c.baseUrl, fmt.Sprintf("v1/scenarios/%v/results", c.ScenarioId), searchToQuery(searchQuery))
-	return listResources[Result](ctx, &c.RestApiClient, targetApi)
+func (c *resultsAPIRestClient) List(ctx context.Context, searchQuery manifest.SearchQuery) ([]Result, int64, error) {
+	targetAPI := urlForPath(c.baseURL, fmt.Sprintf("v1/scenarios/%v/results", c.ScenarioID), searchToQuery(searchQuery))
+	return listResources[Result](ctx, &c.RestAPIClient, targetAPI)
 }
 
 // Get a single resource given its unique ID,
 // Returns a resource if it exists, false, if resource doesn't exists
 // error if there was communication error with the storage
-func (c *resultsApiRestClient) Get(ctx context.Context, id manifest.ResourceName) (result Result, exists bool, err error) {
+func (c *resultsAPIRestClient) Get(ctx context.Context, id manifest.ResourceName) (result Result, exists bool, err error) {
 	var resource manifest.ResourceManifest
-	exists, err = c.getResource(ctx, fmt.Sprintf("v1/scenarios/%v/results/%v", c.ScenarioId, id), &resource)
+	exists, err = c.getResource(ctx, fmt.Sprintf("v1/scenarios/%v/results/%v", c.ScenarioID, id), &resource)
 	if !exists || err != nil {
 		return
 	}
@@ -535,8 +539,8 @@ func (c *resultsApiRestClient) Get(ctx context.Context, id manifest.ResourceName
 	return
 }
 
-func (c *resultsApiRestClient) Create(ctx context.Context, newEntry manifest.ResourceManifest) (Result, error) {
-	resource, err := c.createResource(ctx, fmt.Sprintf("v1/scenarios/%v/results", c.ScenarioId), "", &newEntry)
+func (c *resultsAPIRestClient) Create(ctx context.Context, newEntry manifest.ResourceManifest) (Result, error) {
+	resource, err := c.createResource(ctx, fmt.Sprintf("v1/scenarios/%v/results", c.ScenarioID), "", &newEntry)
 	if err != nil {
 		return Result{}, err
 	}
@@ -544,15 +548,15 @@ func (c *resultsApiRestClient) Create(ctx context.Context, newEntry manifest.Res
 	return NewResult(resource)
 }
 
-func (c *resultsApiRestClient) Auth(ctx context.Context, resultName manifest.ResourceName, authRequest AuthJobRequest) (result AuthJobResponse, err error) {
+func (c *resultsAPIRestClient) Auth(ctx context.Context, resultName manifest.ResourceName, authRequest AuthJobRequest) (result AuthJobResponse, err error) {
 	data, err := json.Marshal(authRequest)
 	if err != nil {
 		return result, err
 	}
 
-	targetApi := urlForPath(c.baseUrl, fmt.Sprintf("v1/auth/scenarios/%v/%v", c.ScenarioId, resultName), nil)
+	targetAPI := urlForPath(c.baseURL, fmt.Sprintf("v1/auth/scenarios/%v/%v", c.ScenarioID, resultName), nil)
 	// TODO:require JWT to prevent replay attacks
-	resp, err := c.postWithAuth(ctx, targetApi, "", nil, bytes.NewReader(data))
+	resp, err := c.postWithAuth(ctx, targetAPI, "", nil, bytes.NewReader(data))
 	if err != nil {
 		return result, err
 	}
@@ -563,11 +567,11 @@ func (c *resultsApiRestClient) Auth(ctx context.Context, resultName manifest.Res
 		err = json.NewDecoder(resp.Body).Decode(&result)
 		return
 	default:
-		return result, readApiError(resp)
+		return result, readAPIError(resp)
 	}
 }
 
-func (c *resultsApiRestClient) UpdateStatus(ctx context.Context, id manifest.VersionedResourceID, token ApiToken, runResults ResultStatus) (result bark.CreatedResponse, err error) {
+func (c *resultsAPIRestClient) UpdateStatus(ctx context.Context, id manifest.VersionedResourceID, token APIToken, runResults ResultStatus) (result bark.CreatedResponse, err error) {
 	data, err := json.Marshal(runResults)
 	if err != nil {
 		return result, err
@@ -576,9 +580,9 @@ func (c *resultsApiRestClient) UpdateStatus(ctx context.Context, id manifest.Ver
 	queryParams := url.Values{}
 	queryParams.Set("version", id.Version.String())
 
-	targetApi := urlForPath(c.baseUrl, fmt.Sprintf("v1/scenarios/%v/results/%v/status", c.ScenarioId, id.ID), queryParams)
+	targetAPI := urlForPath(c.baseURL, fmt.Sprintf("v1/scenarios/%v/results/%v/status", c.ScenarioID, id.ID), queryParams)
 	resp, err := c.putWithAuth(ctx,
-		targetApi,
+		targetAPI,
 		string(token),
 		http.Header{
 			"If-Match": []string{id.String()},
@@ -595,7 +599,7 @@ func (c *resultsApiRestClient) UpdateStatus(ctx context.Context, id manifest.Ver
 		err = json.NewDecoder(resp.Body).Decode(&result)
 		return
 	default:
-		return result, readApiError(resp)
+		return result, readAPIError(resp)
 	}
 }
 
@@ -603,19 +607,19 @@ func (c *resultsApiRestClient) UpdateStatus(ctx context.Context, id manifest.Ver
 // Labels API
 // --------
 
-type labelsApiRestClient struct {
-	RestApiClient
+type labelsAPIRestClient struct {
+	RestAPIClient
 
 	kind manifest.Kind
 }
 
-func (m *labelsApiRestClient) ListNames(ctx context.Context, searchQuery manifest.SearchQuery) (manifest.StringSet, int64, error) {
+func (m *labelsAPIRestClient) ListNames(ctx context.Context, searchQuery manifest.SearchQuery) (manifest.StringSet, int64, error) {
 	// "/search/:kind/names"
 	kind := strings.ToLower(string(m.kind))
-	targetApi := urlForPath(m.baseUrl, path.Join("v1", "search", kind, "names"), searchToQuery(searchQuery))
+	targetAPI := urlForPath(m.baseURL, path.Join("v1", "search", kind, "names"), searchToQuery(searchQuery))
 	// targetApi := apiUrlForPath(m.baseUrl, manifest.TypeMeta{APIVersion: "v1/search", Kind: m.kind}, "names", searchToQuery(searchQuery))
 
-	l, total, err := listResources[string](ctx, &m.RestApiClient, targetApi)
+	l, total, err := listResources[string](ctx, &m.RestAPIClient, targetAPI)
 	var result manifest.StringSet
 	if err == nil {
 		result = manifest.NewStringSet(l...)
@@ -624,13 +628,13 @@ func (m *labelsApiRestClient) ListNames(ctx context.Context, searchQuery manifes
 	return result, total, err
 }
 
-func (m *labelsApiRestClient) ListLabels(ctx context.Context, searchQuery manifest.SearchQuery) (manifest.StringSet, int64, error) {
+func (m *labelsAPIRestClient) ListLabels(ctx context.Context, searchQuery manifest.SearchQuery) (manifest.StringSet, int64, error) {
 	// "/search/:kind/labels"
 	kind := strings.ToLower(string(m.kind))
-	targetApi := urlForPath(m.baseUrl, path.Join("v1", "search", kind, "labels"), searchToQuery(searchQuery))
+	targetAPI := urlForPath(m.baseURL, path.Join("v1", "search", kind, "labels"), searchToQuery(searchQuery))
 	// targetApi := apiUrlForPath(m.baseUrl, manifest.TypeMeta{APIVersion: "v1/search", Kind: m.kind}, "names", searchToQuery(searchQuery))
 
-	l, total, err := listResources[string](ctx, &m.RestApiClient, targetApi)
+	l, total, err := listResources[string](ctx, &m.RestAPIClient, targetAPI)
 	var result manifest.StringSet
 	if err == nil {
 		result = manifest.NewStringSet(l...)
@@ -639,12 +643,12 @@ func (m *labelsApiRestClient) ListLabels(ctx context.Context, searchQuery manife
 	return result, total, err
 }
 
-func (m *labelsApiRestClient) ListLabelValues(ctx context.Context, label string, searchQuery manifest.SearchQuery) (manifest.StringSet, int64, error) {
+func (m *labelsAPIRestClient) ListLabelValues(ctx context.Context, label string, searchQuery manifest.SearchQuery) (manifest.StringSet, int64, error) {
 	// "/search/:kind/labels/:id"
 	kind := strings.ToLower(string(m.kind))
-	targetApi := urlForPath(m.baseUrl, path.Join("v1", "search", kind, "labels", label), searchToQuery(searchQuery))
+	targetAPI := urlForPath(m.baseURL, path.Join("v1", "search", kind, "labels", label), searchToQuery(searchQuery))
 
-	l, total, err := listResources[string](ctx, &m.RestApiClient, targetApi)
+	l, total, err := listResources[string](ctx, &m.RestAPIClient, targetAPI)
 	var result manifest.StringSet
 	if err == nil {
 		result = manifest.NewStringSet(l...)
@@ -657,26 +661,26 @@ func (m *labelsApiRestClient) ListLabelValues(ctx context.Context, label string,
 // Artifacts API
 // --------
 
-type artifactApiClient struct {
-	RestApiClient
+type artifactAPIClient struct {
+	RestAPIClient
 }
 
-func (c *artifactApiClient) List(ctx context.Context, searchQuery manifest.SearchQuery) ([]manifest.ResourceManifest, int64, error) {
-	targetApi := urlForPath(c.baseUrl, "v1/artifacts", searchToQuery(searchQuery))
+func (c *artifactAPIClient) List(ctx context.Context, searchQuery manifest.SearchQuery) ([]manifest.ResourceManifest, int64, error) {
+	targetAPI := urlForPath(c.baseURL, "v1/artifacts", searchToQuery(searchQuery))
 
-	return c.listResources(ctx, targetApi)
+	return c.listResources(ctx, targetAPI)
 }
 
-func (c *artifactApiClient) Create(ctx context.Context, token ApiToken, entry manifest.ResourceManifest) (manifest.ResourceManifest, error) {
+func (c *artifactAPIClient) Create(ctx context.Context, token APIToken, entry manifest.ResourceManifest) (manifest.ResourceManifest, error) {
 	return c.createResource(ctx, "v1/artifacts", string(token), &entry)
 }
 
-func (c *artifactApiClient) Get(ctx context.Context, id manifest.ResourceName) (result manifest.ResourceManifest, exists bool, err error) {
+func (c *artifactAPIClient) Get(ctx context.Context, id manifest.ResourceName) (result manifest.ResourceManifest, exists bool, err error) {
 	exists, err = c.getResource(ctx, fmt.Sprintf("v1/artifacts/%v", id), &result)
 	return
 }
 
-func (c *artifactApiClient) GetContent(ctx context.Context, id manifest.ResourceName) (resource ArtifactSpec, exists bool, err error) {
+func (c *artifactAPIClient) GetContent(ctx context.Context, id manifest.ResourceName) (resource ArtifactSpec, exists bool, err error) {
 	body, exists, err := c.getRawResource(ctx, fmt.Sprintf("v1/artifacts/%v/content", id))
 	if !exists || err != nil {
 		return
@@ -687,7 +691,7 @@ func (c *artifactApiClient) GetContent(ctx context.Context, id manifest.Resource
 	return
 }
 
-func (c *artifactApiClient) Delete(ctx context.Context, id manifest.VersionedResourceID) (bool, error) {
+func (c *artifactAPIClient) Delete(ctx context.Context, id manifest.VersionedResourceID) (bool, error) {
 	return c.deleteResource(ctx, fmt.Sprintf("v1/artifacts/%v", id.ID), id.Version)
 }
 
@@ -695,36 +699,36 @@ func (c *artifactApiClient) Delete(ctx context.Context, id manifest.VersionedRes
 // Scenarios API
 // --------
 
-type scenariosApiClient struct {
-	RestApiClient
+type scenariosAPIClient struct {
+	RestAPIClient
 }
 
-func (c *scenariosApiClient) List(ctx context.Context, searchQuery manifest.SearchQuery) ([]manifest.ResourceManifest, int64, error) {
-	targetApi := urlForPath(c.baseUrl, "v1/scenarios", searchToQuery(searchQuery))
+func (c *scenariosAPIClient) List(ctx context.Context, searchQuery manifest.SearchQuery) ([]manifest.ResourceManifest, int64, error) {
+	targetAPI := urlForPath(c.baseURL, "v1/scenarios", searchToQuery(searchQuery))
 
-	return c.listResources(ctx, targetApi)
+	return c.listResources(ctx, targetAPI)
 }
 
-func (c *scenariosApiClient) Get(ctx context.Context, id manifest.ResourceName) (result manifest.ResourceManifest, exists bool, err error) {
+func (c *scenariosAPIClient) Get(ctx context.Context, id manifest.ResourceName) (result manifest.ResourceManifest, exists bool, err error) {
 	exists, err = c.getResource(ctx, fmt.Sprintf("v1/scenarios/%v", id), &result)
 	return
 }
 
-func (m *scenariosApiClient) CreateOrUpdate(ctx context.Context, newEntry manifest.ResourceManifest) (manifest.ResourceManifest, bool, error) {
-	return m.ApplyObjectDefinition(ctx, newEntry)
+func (c *scenariosAPIClient) CreateOrUpdate(ctx context.Context, newEntry manifest.ResourceManifest) (manifest.ResourceManifest, bool, error) {
+	return c.ApplyObjectDefinition(ctx, newEntry)
 }
 
-func (c *scenariosApiClient) Create(ctx context.Context, scenario manifest.ResourceManifest) (manifest.ResourceManifest, error) {
+func (c *scenariosAPIClient) Create(ctx context.Context, scenario manifest.ResourceManifest) (manifest.ResourceManifest, error) {
 	return c.createResource(ctx, "v1/scenarios", "", &scenario)
 }
 
 // Delete a single resource identified by a unique ID
-func (c *scenariosApiClient) Delete(ctx context.Context, id manifest.VersionedResourceID) (bool, error) {
+func (c *scenariosAPIClient) Delete(ctx context.Context, id manifest.VersionedResourceID) (bool, error) {
 	return c.deleteResource(ctx, fmt.Sprintf("v1/scenarios/%v", id.ID), id.Version)
 }
 
 // Update a single resource identified by a unique ID
-func (c *scenariosApiClient) Update(ctx context.Context, id manifest.VersionedResourceID, entry manifest.ResourceManifest) (result manifest.ResourceManifest, err error) {
+func (c *scenariosAPIClient) Update(ctx context.Context, id manifest.VersionedResourceID, entry manifest.ResourceManifest) (result manifest.ResourceManifest, err error) {
 	data, err := json.Marshal(entry)
 	if err != nil {
 		return
@@ -733,9 +737,9 @@ func (c *scenariosApiClient) Update(ctx context.Context, id manifest.VersionedRe
 	queryParams := url.Values{}
 	queryParams.Set("version", id.Version.String())
 
-	targetApi := urlForPath(c.baseUrl, fmt.Sprintf("v1/scenarios/%v", id), queryParams)
+	targetAPI := urlForPath(c.baseURL, fmt.Sprintf("v1/scenarios/%v", id), queryParams)
 	resp, err := c.put(ctx,
-		targetApi,
+		targetAPI,
 		http.Header{
 			// "Authorization": []string{fmt.Sprintf("Bearer %s", token)},
 			"If-Match": []string{id.String()},
@@ -752,16 +756,16 @@ func (c *scenariosApiClient) Update(ctx context.Context, id manifest.VersionedRe
 		err = json.NewDecoder(resp.Body).Decode(&result)
 		return
 	default:
-		return result, readApiError(resp)
+		return result, readAPIError(resp)
 	}
 }
 
 // ClientAPI?
-func (c *scenariosApiClient) ListRunnable(ctx context.Context, query manifest.SearchQuery) ([]Scenario, error) {
+func (c *scenariosAPIClient) ListRunnable(ctx context.Context, query manifest.SearchQuery) ([]Scenario, error) {
 	return nil, nil
 }
 
-func (c *scenariosApiClient) UpdateScript(ctx context.Context, id manifest.VersionedResourceID, prob prob.Manifest) (bark.CreatedResponse, bool, error) {
+func (c *scenariosAPIClient) UpdateScript(ctx context.Context, id manifest.VersionedResourceID, prob prob.Manifest) (bark.CreatedResponse, bool, error) {
 	return bark.CreatedResponse{}, false, nil
 }
 

@@ -9,7 +9,7 @@ type PuppeteerOptions struct {
 	TempDirPrefix    string
 }
 
-type HttpOptions struct {
+type HTTPOptions struct {
 	CaptureResponseBody bool
 	CaptureRequestBody  bool
 	IgnoreRedirects     bool
@@ -21,6 +21,6 @@ type HarOptions struct {
 
 type RunOptions struct {
 	Puppeteer PuppeteerOptions
-	Http      HttpOptions
+	HTTP      HTTPOptions
 	Har       HarOptions
 }
