@@ -70,15 +70,21 @@ verify:
 	go mod verify
 	go vet ./...
 
+# Tool versions are pinned rather than tracked at @latest, so that a CI run
+# cannot start failing on a check that no commit in this repository introduced.
+# Bump these deliberately.
+staticcheck-version = 2026.1
+govulncheck-version = v1.6.0
+
 ## staticcheck: Run go static-check tool on the code-base
 .PHONY: staticcheck
 staticcheck:
-	go run honnef.co/go/tools/cmd/staticcheck@latest -checks=all,-ST1000,-U1000 ./...
+	go run honnef.co/go/tools/cmd/staticcheck@$(staticcheck-version) -checks=all,-ST1000,-U1000 ./...
 
 ## scan-vuln: Scan for known GO-vulnarabilities
 .PHONY: scan-vuln
 scan-vuln:
-	go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+	go run golang.org/x/vuln/cmd/govulncheck@$(govulncheck-version) ./...
 
 ## audit: run quality control checks
 .PHONY: audit

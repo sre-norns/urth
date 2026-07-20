@@ -1,0 +1,40 @@
+name: Lint workflows
+
+# Static checks for the workflow files themselves. actionlint validates workflow
+# syntax and `${{ }}` expressions, and runs ShellCheck over every embedded `run:`
+# block -- which is where most workflow bugs actually live, since an unquoted
+# variable in a `run:` step is invisible until it misbehaves at runtime.
+
+on:
+  push:
+    branches: [ "main" ]
+    paths: [ ".github/workflows/**" ]
+  pull_request:
+    branches: [ "main" ]
+    paths: [ ".github/workflows/**" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: actionlint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  actionlint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      # actionlint locates the project root by looking for `.git`, so the
+      # checkout has to be in place before the linter runs.
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      # Upstream's own image, pinned by digest (v1.7.12); it bundles the
+      # shellcheck binary that actionlint shells out to.
+      - name: Run actionlint
+        uses: docker://rhysd/actionlint@sha256:9d36088643581e728c969f35141f88139fec77280b2be23c1f66f8e40e1025e7 # v1.7.12
+        with:
+          args: -color

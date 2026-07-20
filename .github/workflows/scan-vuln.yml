@@ -1,0 +1,44 @@
+name: Vulnerability scan
+
+# Checks the module graph against the Go vulnerability database. The weekly run
+# is the point of this workflow: govulncheck reports advisories published against
+# dependencies that have not changed, which a push-triggered scan would never
+# see.
+#
+# govulncheck reports only vulnerabilities that are actually reachable from this
+# code, so a finding here is worth acting on rather than triaging away.
+
+on:
+  push:
+    branches: [ "main" ]
+    paths: [ "go.mod", "go.sum", ".github/workflows/scan-vuln.yml" ]
+  pull_request:
+    branches: [ "main" ]
+    paths: [ "go.mod", "go.sum", ".github/workflows/scan-vuln.yml" ]
+  schedule:
+    # Monday 04:00 UTC.
+    - cron: '0 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scan-vuln-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  govulncheck:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Scan for known vulnerabilities
+        run: make scan-vuln

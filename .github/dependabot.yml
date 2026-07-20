@@ -1,0 +1,35 @@
+version: 2
+updates:
+  # The workflows pin every action by commit SHA, so these updates are the only
+  # thing that moves them.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      # Backend dependencies move together often enough that separate PRs are
+      # mostly noise; security updates are still raised on their own.
+      go-dependencies:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  # The Web UI is a separate npm project with its own lockfile.
+  - package-ecosystem: npm
+    directory: /website
+    schedule:
+      interval: weekly
+    groups:
+      npm-dependencies:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch

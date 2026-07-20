@@ -1,23 +1,84 @@
-# This workflow will build a golang project
-# For more information, see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-go
-
 name: Build And Verify
+
+# Primary gate for the Go backend. `make audit` runs `go mod verify`, `go vet`,
+# staticcheck and the test suite with the race detector; the formatting check is
+# kept separate so a formatting failure is obvious from the job name rather than
+# buried in audit output.
 
 on:
   push:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  format:
+    name: Check formatting
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
-    - uses: actions/checkout@v3
-    - uses: actions/setup-go@v5
-      with:
-        go-version-file: 'go.mod'
-    
-    - name: Vet and Test
-      run: make audit
-  
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      # `gofmt -l` exits 0 even when it finds unformatted files, so the output
+      # has to be inspected rather than the exit code.
+      - name: Check gofmt
+        run: |
+          unformatted="$(gofmt -l ./cmd ./pkg)"
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt-formatted:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Check go.mod is tidy
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+
+  audit:
+    name: Vet, staticcheck and test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Run quality control checks
+        run: make audit
+
+  build:
+    name: Build binaries
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      # `make build` also builds the Web UI, which needs npm; the binaries are
+      # what this job is gating, so they are built directly.
+      - name: Build all commands
+        run: go build -v ./...
