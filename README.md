@@ -84,6 +84,55 @@ of `kubectl`. `urthctl` is the CLI front end.
 - **`har`** replays a [HAR](https://en.wikipedia.org/wiki/HAR_(file_format)) capture from your browser.
 - **`puppeteer`** / **`pypuppeteer`** drive a real headless browser (Node and Python).
 
+### Artifact data classification
+
+Probing an authenticated service means handling credentials, and different
+artifacts need different treatment. Run logs are read casually and gain nothing
+from recording a token, so credentials are stripped from them. A HAR recording is
+the opposite: it exists to be replayed and diffed against earlier runs, which
+requires a faithful copy of the exchange — redacting it destroys the only reason
+to keep it.
+
+Run logs take the conservative side of that split: header values are written
+only for an allowlist of headers known to be safe (`Content-Type`, `Server`,
+and similar), and everything else is logged by name with its value redacted.
+Urth probes services it knows nothing about, so "which headers carry
+credentials" is not a knowable set, while "which headers are safe to print" is.
+
+Rather than pretend one policy fits both, every artifact declares what it may
+expose, and the API surfaces that as labels:
+
+| Class | Meaning | Produced by |
+|---|---|---|
+| `clean` | Cannot carry credentials by construction | metrics |
+| `redacted` | Derived from a live exchange, credentials removed | run logs |
+| `secret-bearing` | Faithful capture; may contain credentials | HAR recordings |
+| `unknown` | The prober made no declaration | browser artifacts, anything unclassified |
+
+An artifact that declares nothing is `unknown`, not `clean` — the absence of a
+claim is not a claim of safety. Both `unknown` and `secret-bearing` are reported
+as `urth/artifact.may-contain-secrets: "true"`.
+
+This makes retention and audit questions ordinary label queries:
+
+```bash
+# Everything still stored that may carry credentials
+curl -sG 'http://localhost:8080/api/v1/artifacts' \
+  --data-urlencode 'labels=urth/artifact.may-contain-secrets=true'
+
+# Narrower: faithful recordings and unclassified output
+curl -sG 'http://localhost:8080/api/v1/artifacts' \
+  --data-urlencode 'labels=urth/artifact.data-class in (secret-bearing,unknown)'
+```
+
+The classification is assigned server-side from the artifact's own declaration,
+so a worker cannot relabel its upload as clean.
+
+> Treat `secret-bearing` artifacts as credential material: restrict who can
+> download them and keep retention short. Injecting secrets at replay time from a
+> secret store — so recordings hold placeholders rather than live credentials —
+> is [planned](./TODO.md), not yet implemented.
+
 ---
 
 ## Architecture

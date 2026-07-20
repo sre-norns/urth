@@ -73,11 +73,11 @@ func GetRuntimeLabels() manifest.Labels {
 		log.Print("[ERROR] failed to get Build info")
 	}
 
-	bi.Main.Version = strings.Trim(bi.Main.Version, "() ")
 	return manifest.Labels{
-		urth.LabelWorkerArch:         runtime.GOARCH,
-		urth.LabelWorkerOS:           runtime.GOOS,
-		urth.LabelWorkerBuildVersion: bi.Main.Version,
+		urth.LabelWorkerArch: runtime.GOARCH,
+		urth.LabelWorkerOS:   runtime.GOOS,
+		// See ProberAsLabels: the build version is not label-safe as it stands.
+		urth.LabelWorkerBuildVersion: urth.LabelSafeValue(strings.Trim(bi.Main.Version, "() ")),
 	}
 }
 
@@ -109,7 +109,11 @@ func ProberAsLabels() manifest.Labels {
 	probs := prob.ListProbs()
 	result := make(manifest.Labels, len(probs))
 	for kind, prob := range probs {
-		result[kindAsLabel(kind)] = prob.Version
+		// A prober's version comes from the build's VCS state, which is not
+		// constrained to the label grammar: a binary built from a dirty tree
+		// reports "...+dirty", and the '+' makes the whole worker registration
+		// fail validation.
+		result[kindAsLabel(kind)] = urth.LabelSafeValue(prob.Version)
 	}
 
 	return result

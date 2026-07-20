@@ -131,32 +131,75 @@ func (t *httpRequestTracer) TraceRequest(req *http.Request) *http.Request {
 	return req.WithContext(httptrace.WithClientTrace(req.Context(), t.tracer))
 }
 
-func isSensitiveHeader(header string) bool {
-	h := textproto.CanonicalMIMEHeaderKey(header)
+const redactedPlaceholder = "[REDACTED]"
 
-	switch h {
-	case "Authorization", "Proxy-Authorization", "Cookie", "Set-Cookie", "X-Api-Key":
-		return true
+// loggableHeaderValues are the headers whose value may be written to the run
+// log. Everything else is logged by name with its value redacted.
+//
+// This is an allowlist rather than a list of headers to hide, and the direction
+// matters. Urth probes services it knows nothing about, and there is no way to
+// enumerate every scheme a vendor might invent to carry a credential: a
+// denylist covers "Authorization" and misses "X-Acme-Session-Blob". Naming the
+// small set of headers that are safe to print is a claim that can actually be
+// upheld.
+//
+// Header names are still logged in full. Knowing which headers were present is
+// most of the debugging value, and a name is not a credential.
+//
+// The cost is that an unusual-but-harmless header shows as redacted. That is
+// the right trade here, because fidelity is not this artifact's job: the HAR
+// recording preserves the exchange exactly and declares itself secret-bearing.
+// See RunHTTPRequests.
+var loggableHeaderValues = map[string]bool{
+	"Accept":            true,
+	"Accept-Encoding":   true,
+	"Accept-Language":   true,
+	"Accept-Ranges":     true,
+	"Age":               true,
+	"Allow":             true,
+	"Cache-Control":     true,
+	"Connection":        true,
+	"Content-Encoding":  true,
+	"Content-Language":  true,
+	"Content-Length":    true,
+	"Content-Type":      true,
+	"Date":              true,
+	"Etag":              true,
+	"Expires":           true,
+	"Host":              true,
+	"Last-Modified":     true,
+	"Location":          true,
+	"Retry-After":       true,
+	"Server":            true,
+	"Transfer-Encoding": true,
+	"User-Agent":        true,
+	"Vary":              true,
+}
+
+// isLoggableHeaderValue reports whether a header's value may appear in the run
+// log. Anything not explicitly listed is treated as potentially a credential.
+func isLoggableHeaderValue(header string) bool {
+	return loggableHeaderValues[textproto.CanonicalMIMEHeaderKey(header)]
+}
+
+func formatHeaders(result *strings.Builder, headers http.Header) {
+	for header, value := range headers {
+		if !isLoggableHeaderValue(header) {
+			fmt.Fprintf(result, "%v: %v\n", header, redactedPlaceholder)
+			continue
+		}
+		fmt.Fprintf(result, "%v: %v\n", header, strings.Join(value, "; "))
 	}
-
-	hl := strings.ToLower(h)
-	return strings.Contains(hl, "token") ||
-		strings.Contains(hl, "secret") ||
-		strings.Contains(hl, "password") ||
-		strings.Contains(hl, "key")
 }
 
 func formatRequest(req *http.Request) string {
 	result := strings.Builder{}
 
+	// Note: the path is logged without the query string on purpose. Credentials
+	// are routinely passed as query parameters (`?api_key=...`), and there is no
+	// reliable way to tell which parameter is which.
 	fmt.Fprintf(&result, "%v %v %v\n", req.Method, req.URL.Path, req.Proto)
-	for header, value := range req.Header {
-		if isSensitiveHeader(header) {
-			fmt.Fprintf(&result, "%v: [REDACTED]\n", header)
-			continue
-		}
-		fmt.Fprintf(&result, "%v: %v\n", header, strings.Join(value, "; "))
-	}
+	formatHeaders(&result, req.Header)
 
 	return result.String()
 }
@@ -165,9 +208,7 @@ func formatResponse(resp *http.Response) string {
 	result := strings.Builder{}
 
 	fmt.Fprintf(&result, "%v %v\n", resp.Proto, resp.Status)
-	for header, value := range resp.Header {
-		fmt.Fprintf(&result, "%v: %v\n", header, strings.Join(value, "; "))
-	}
+	formatHeaders(&result, resp.Header)
 
 	return result.String()
 }
@@ -229,7 +270,14 @@ func RunHTTPRequests(ctx context.Context, requests []httpparser.TestRequest, opt
 			{
 				Rel:      "har",
 				MimeType: "application/json",
-				Content:  harData,
+				// A HAR recording exists to be replayed and diffed against
+				// earlier runs, which requires it to be a faithful copy of the
+				// exchange -- including any Authorization header, cookie or
+				// credential passed in the query string. Redacting it would
+				// destroy the artifact's only purpose, so it is labelled for
+				// what it is and left intact.
+				DataClass: prob.DataClassSecretBearing,
+				Content:   harData,
 			},
 		}, nil
 }

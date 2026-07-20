@@ -22,8 +22,24 @@ const LogRelType = "log"
 // stdout and stderr in addition to logging from their own goroutines, so access
 // to the buffer is guarded.
 type runLogSink struct {
-	mu      sync.Mutex
+	mu sync.Mutex
+
 	content bytes.Buffer
+
+	// rawWrites records whether anything reached this log other than through a
+	// slog record. Probers redact credentials as they build the records they
+	// log, but a prober that attaches a subprocess' stdout -- puppeteer pipes
+	// node's output straight through -- contributes bytes nobody inspected.
+	rawWrites bool
+}
+
+// writeRaw records output that passed through no redaction on its way here.
+func (s *runLogSink) writeRaw(p []byte) (n int, err error) {
+	s.mu.Lock()
+	s.rawWrites = true
+	s.mu.Unlock()
+
+	return s.Write(p)
 }
 
 func (s *runLogSink) Write(p []byte) (n int, err error) {
@@ -34,6 +50,21 @@ func (s *runLogSink) Write(p []byte) (n int, err error) {
 	log.Writer().Write(p)
 
 	return
+}
+
+// dataClass reports what the accumulated log may expose. Records logged by a
+// prober have had credentials removed as they were assembled, so a log built
+// only from those is redacted; any raw passthrough leaves the content
+// unaudited, and unknown is the honest answer rather than a guess.
+func (s *runLogSink) dataClass() prob.DataClass {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.rawWrites {
+		return prob.DataClassUnknown
+	}
+
+	return prob.DataClassRedacted
 }
 
 func (s *runLogSink) snapshot() []byte {
@@ -89,17 +120,22 @@ func (rl *RunLogger) WithGroup(name string) slog.Handler {
 }
 
 // Write implements io.Writer, appending raw output to the run log.
+//
+// Output arriving this way -- typically a probed subprocess' stdout or stderr --
+// has passed through no redaction, so it downgrades the log's data class. Prefer
+// logging a record when the content is the prober's own.
 func (rl *RunLogger) Write(p []byte) (n int, err error) {
-	return rl.sink.Write(p)
+	return rl.sink.writeRaw(p)
 }
 
 // ToArtifact captures the run log accumulated so far as a run artifact.
 func (rl *RunLogger) ToArtifact() urth.ArtifactSpec {
 	return urth.ArtifactSpec{
 		Artifact: prob.Artifact{
-			Rel:      LogRelType,
-			MimeType: "text/plain",
-			Content:  rl.sink.snapshot(),
+			Rel:       LogRelType,
+			MimeType:  "text/plain",
+			DataClass: rl.sink.dataClass(),
+			Content:   rl.sink.snapshot(),
 		},
 	}
 }
