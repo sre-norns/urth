@@ -7,6 +7,12 @@ name: Vulnerability scan
 #
 # govulncheck reports only vulnerabilities that are actually reachable from this
 # code, so a finding here is worth acting on rather than triaging away.
+#
+# The scan blocks changes but does not break main: on a push or pull request a
+# finding fails the job, while the scheduled run reports without failing. A newly
+# published advisory is not a regression in the commit it lands on, and reddening
+# main on a Monday morning trains people to ignore the signal. The scheduled run
+# still surfaces the finding in the job summary.
 
 on:
   push:
@@ -41,4 +47,30 @@ jobs:
           go-version-file: go.mod
 
       - name: Scan for known vulnerabilities
-        run: make scan-vuln
+        id: scan
+        # Report-only on the scheduled run; blocking everywhere else.
+        continue-on-error: ${{ github.event_name == 'schedule' }}
+        # `shell: bash` sets pipefail, without which the pipe into tee would
+        # mask govulncheck's exit status and the job would always pass.
+        shell: bash
+        run: make scan-vuln | tee "${RUNNER_TEMP}/govulncheck.txt"
+
+      - name: Summarise findings
+        if: always()
+        shell: bash
+        env:
+          # Passed through the environment rather than interpolated into the
+          # script body, so the step cannot be influenced by expression content.
+          SCAN_OUTCOME: ${{ steps.scan.outcome }}
+        run: |
+          {
+            echo '## govulncheck'
+            if [ "${SCAN_OUTCOME}" = "success" ]; then
+              echo 'No reachable vulnerabilities found.'
+            else
+              echo 'Reachable vulnerabilities found:'
+              echo '```'
+              cat "${RUNNER_TEMP}/govulncheck.txt"
+              echo '```'
+            fi
+          } >> "${GITHUB_STEP_SUMMARY}"
