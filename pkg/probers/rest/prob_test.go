@@ -18,46 +18,59 @@ func discardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-func TestIsSensitiveHeader(t *testing.T) {
-	sensitive := []string{
-		"Authorization",
-		"authorization",
-		"Proxy-Authorization",
-		"Cookie",
-		"Set-Cookie",
-		"Www-Authenticate",
-		"X-Api-Key",
-		"X-Auth-Token",
-		"X-Session-Id",
-		"X-Client-Secret",
-		"X-Request-Signature",
-	}
-
-	for _, header := range sensitive {
-		t.Run("sensitive/"+header, func(t *testing.T) {
-			require.True(t, isSensitiveHeader(header))
-		})
-	}
-
-	// Matching on whole '-' separated segments rather than substrings: a
-	// substring match reports "X-Monkey-Id" as sensitive because it contains
-	// "key", and redacting ordinary headers makes a failed run harder to read.
-	notSensitive := []string{
+// Values are allowlisted rather than denylisted: Urth probes services it knows
+// nothing about, so "which headers carry credentials" is not a knowable set,
+// while "which headers are safe to print" is.
+func TestIsLoggableHeaderValue(t *testing.T) {
+	loggable := []string{
 		"Content-Type",
+		"content-type",
 		"Content-Length",
 		"Accept",
 		"User-Agent",
-		"X-Request-Id",
-		"X-Monkey-Id",
-		"X-Donkey-Name",
-		"Keep-Alive",
+		"Cache-Control",
+		"Location",
+		"Server",
 	}
 
-	for _, header := range notSensitive {
-		t.Run("not-sensitive/"+header, func(t *testing.T) {
-			require.False(t, isSensitiveHeader(header))
+	for _, header := range loggable {
+		t.Run("loggable/"+header, func(t *testing.T) {
+			require.True(t, isLoggableHeaderValue(header))
 		})
 	}
+
+	notLoggable := []string{
+		"Authorization",
+		"Proxy-Authorization",
+		"Cookie",
+		"Set-Cookie",
+		"X-Api-Key",
+		"X-Auth-Token",
+		"X-Client-Secret",
+		// The case a denylist cannot cover: a scheme invented by the service
+		// under test, carrying a credential under a name nobody enumerated.
+		"X-Acme-Session-Blob",
+		"X-Whatever-Vendor-Auth",
+	}
+
+	for _, header := range notLoggable {
+		t.Run("not-loggable/"+header, func(t *testing.T) {
+			require.False(t, isLoggableHeaderValue(header))
+		})
+	}
+}
+
+// A redacted value still leaves the header name in place: knowing which headers
+// were present is most of the debugging value, and a name is not a credential.
+func TestFormatHeadersKeepsNamesOfRedactedHeaders(t *testing.T) {
+	headers := http.Header{}
+	headers.Set("X-Acme-Session-Blob", "opaque-vendor-credential")
+
+	var out strings.Builder
+	formatHeaders(&out, headers)
+
+	require.NotContains(t, out.String(), "opaque-vendor-credential")
+	require.Contains(t, out.String(), "X-Acme-Session-Blob: "+redactedPlaceholder)
 }
 
 func TestFormatRequestRedactsCredentials(t *testing.T) {

@@ -93,6 +93,12 @@ the opposite: it exists to be replayed and diffed against earlier runs, which
 requires a faithful copy of the exchange — redacting it destroys the only reason
 to keep it.
 
+Run logs take the conservative side of that split: header values are written
+only for an allowlist of headers known to be safe (`Content-Type`, `Server`,
+and similar), and everything else is logged by name with its value redacted.
+Urth probes services it knows nothing about, so "which headers carry
+credentials" is not a knowable set, while "which headers are safe to print" is.
+
 Rather than pretend one policy fits both, every artifact declares what it may
 expose, and the API surfaces that as labels:
 

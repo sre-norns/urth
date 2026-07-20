@@ -133,59 +133,58 @@ func (t *httpRequestTracer) TraceRequest(req *http.Request) *http.Request {
 
 const redactedPlaceholder = "[REDACTED]"
 
-// Headers whose value is a credential by definition, regardless of naming.
-var sensitiveHeaders = map[string]bool{
-	"Authorization":       true,
-	"Proxy-Authorization": true,
-	"Cookie":              true,
-	"Set-Cookie":          true,
-	"Www-Authenticate":    true,
-	"Proxy-Authenticate":  true,
-}
-
-// Header name segments that suggest the value is a credential. Matching is on
-// whole '-' separated segments rather than substrings: a substring match treats
-// "X-Monkey-Id" as sensitive because it contains "key".
-var sensitiveHeaderWords = map[string]bool{
-	"auth":          true,
-	"authorization": true,
-	"credential":    true,
-	"credentials":   true,
-	"key":           true,
-	"password":      true,
-	"passwd":        true,
-	"secret":        true,
-	"session":       true,
-	"signature":     true,
-	"token":         true,
-}
-
-// isSensitiveHeader reports whether a header's value should be kept out of the
-// run log.
+// loggableHeaderValues are the headers whose value may be written to the run
+// log. Everything else is logged by name with its value redacted.
 //
-// The bias here is deliberately towards over-redacting: the run log exists to
-// explain what a probe did, and no part of that explanation depends on the
-// literal value of a credential. Artifacts that must preserve the exchange
-// faithfully -- the HAR recording -- are handled separately, and declare
-// themselves as secret-bearing rather than being redacted. See RunHTTPRequests.
-func isSensitiveHeader(header string) bool {
-	h := textproto.CanonicalMIMEHeaderKey(header)
-	if sensitiveHeaders[h] {
-		return true
-	}
+// This is an allowlist rather than a list of headers to hide, and the direction
+// matters. Urth probes services it knows nothing about, and there is no way to
+// enumerate every scheme a vendor might invent to carry a credential: a
+// denylist covers "Authorization" and misses "X-Acme-Session-Blob". Naming the
+// small set of headers that are safe to print is a claim that can actually be
+// upheld.
+//
+// Header names are still logged in full. Knowing which headers were present is
+// most of the debugging value, and a name is not a credential.
+//
+// The cost is that an unusual-but-harmless header shows as redacted. That is
+// the right trade here, because fidelity is not this artifact's job: the HAR
+// recording preserves the exchange exactly and declares itself secret-bearing.
+// See RunHTTPRequests.
+var loggableHeaderValues = map[string]bool{
+	"Accept":            true,
+	"Accept-Encoding":   true,
+	"Accept-Language":   true,
+	"Accept-Ranges":     true,
+	"Age":               true,
+	"Allow":             true,
+	"Cache-Control":     true,
+	"Connection":        true,
+	"Content-Encoding":  true,
+	"Content-Language":  true,
+	"Content-Length":    true,
+	"Content-Type":      true,
+	"Date":              true,
+	"Etag":              true,
+	"Expires":           true,
+	"Host":              true,
+	"Last-Modified":     true,
+	"Location":          true,
+	"Retry-After":       true,
+	"Server":            true,
+	"Transfer-Encoding": true,
+	"User-Agent":        true,
+	"Vary":              true,
+}
 
-	for _, segment := range strings.Split(strings.ToLower(h), "-") {
-		if sensitiveHeaderWords[segment] {
-			return true
-		}
-	}
-
-	return false
+// isLoggableHeaderValue reports whether a header's value may appear in the run
+// log. Anything not explicitly listed is treated as potentially a credential.
+func isLoggableHeaderValue(header string) bool {
+	return loggableHeaderValues[textproto.CanonicalMIMEHeaderKey(header)]
 }
 
 func formatHeaders(result *strings.Builder, headers http.Header) {
 	for header, value := range headers {
-		if isSensitiveHeader(header) {
+		if !isLoggableHeaderValue(header) {
 			fmt.Fprintf(result, "%v: %v\n", header, redactedPlaceholder)
 			continue
 		}
