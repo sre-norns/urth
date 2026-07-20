@@ -131,11 +131,30 @@ func (t *httpRequestTracer) TraceRequest(req *http.Request) *http.Request {
 	return req.WithContext(httptrace.WithClientTrace(req.Context(), t.tracer))
 }
 
+func isSensitiveHeader(header string) bool {
+	h := textproto.CanonicalMIMEHeaderKey(header)
+
+	switch h {
+	case "Authorization", "Proxy-Authorization", "Cookie", "Set-Cookie", "X-Api-Key":
+		return true
+	}
+
+	hl := strings.ToLower(h)
+	return strings.Contains(hl, "token") ||
+		strings.Contains(hl, "secret") ||
+		strings.Contains(hl, "password") ||
+		strings.Contains(hl, "key")
+}
+
 func formatRequest(req *http.Request) string {
 	result := strings.Builder{}
 
 	fmt.Fprintf(&result, "%v %v %v\n", req.Method, req.URL.Path, req.Proto)
 	for header, value := range req.Header {
+		if isSensitiveHeader(header) {
+			fmt.Fprintf(&result, "%v: [REDACTED]\n", header)
+			continue
+		}
 		fmt.Fprintf(&result, "%v: %v\n", header, strings.Join(value, "; "))
 	}
 
