@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
@@ -916,6 +917,40 @@ func (m *artifactAPIImp) GetContent(ctx context.Context, name manifest.ResourceN
 	return result.Spec, exist && result.Name == name, err
 }
 
+// artifactLabels derives the system labels for an uploaded artifact, given the
+// labels the worker supplied with it.
+//
+// System labels are merged last, and therefore win. That ordering is the point:
+// the data-class labels are what retention and audits act on, so a worker must
+// not be able to relabel its own upload as clean. The class is taken from the
+// artifact spec, which the server has already parsed, rather than from any label
+// the worker attached.
+func artifactLabels(workerLabels manifest.Labels, spec ArtifactSpec, result Result) manifest.Labels {
+	dataClass := spec.Artifact.DataClass
+
+	systemLabels := manifest.Labels{
+		LabelArtifactDataClass:         dataClass.String(),
+		LabelArtifactMayContainSecrets: strconv.FormatBool(dataClass.MayContainSecrets()),
+	}
+
+	// Groups all artifacts produced by the content type: logs / HAR / etc.
+	// These are derived from values that do not follow the label grammar -- a
+	// MIME type contains '/', a puppeteer artifact's kind is a file extension --
+	// so they are mapped into it rather than written through unchanged.
+	putLabel(systemLabels, LabelArtifactKind, spec.Artifact.Rel)
+	putLabel(systemLabels, LabelArtifactMime, spec.Artifact.MimeType)
+
+	putLabel(systemLabels, LabelResultName, string(result.Name))
+	putLabel(systemLabels, LabelResultUID, string(result.UID))
+	putLabel(systemLabels, LabelResultVersion, result.Version.String())
+
+	// Updated concurrently and will not be up-to-date
+	// LabelResultJobState: string(result.Status.Status),
+	// LabelResultStatus:   string(result.Status.Result),
+
+	return manifest.MergeLabels(workerLabels, systemLabels)
+}
+
 func (m *artifactAPIImp) Create(ctx context.Context, apiToken APIToken, newEntry manifest.ResourceManifest) (manifest.ResourceManifest, error) {
 	token, err := jwt.Parse(string(apiToken), func(token *jwt.Token) (interface{}, error) {
 		// Don't forget to validate the alg is what you expect:
@@ -956,22 +991,7 @@ func (m *artifactAPIImp) Create(ctx context.Context, apiToken APIToken, newEntry
 		return manifest.ResourceManifest{}, bark.ErrNotAcceptableMediaType
 	}
 
-	// Update entry labels:
-	entry.Labels = manifest.MergeLabels(
-		entry.Labels,
-		manifest.Labels{
-			LabelArtifactKind: entry.Spec.Artifact.Rel,      // Groups all artifacts produced by the content type: logs / HAR / etc
-			LabelArtifactMime: entry.Spec.Artifact.MimeType, // Groups all artifacts produced by the content type: logs / HAR / etc
-
-			LabelResultName:    string(result.Name),
-			LabelResultUID:     string(result.UID),
-			LabelResultVersion: result.Version.String(),
-
-			// Updated concurrently and will not be up-to-date
-			// LabelResultJobState: string(result.Status.Status),
-			// LabelResultStatus:   string(result.Status.Result),
-		},
-	)
+	entry.Labels = artifactLabels(entry.Labels, entry.Spec, result)
 
 	log.Printf("Result has %d artifacts with Name matches", len(result.Status.Artifacts))
 	if len(result.Status.Artifacts) > 0 && result.Status.Artifacts[0].Name == entry.Name {

@@ -182,7 +182,12 @@ func RunScript(ctx context.Context, probSpec any, config prob.RunOptions, regist
 			artifacts = append(artifacts, prob.Artifact{
 				Rel:      filepath.Ext(entry.Name()),
 				MimeType: http.DetectContentType(data),
-				Content:  data,
+				// Whatever the script chose to leave in its working directory:
+				// screenshots of authenticated pages, HAR recordings, dumps of
+				// application state. The prober cannot know, so it does not
+				// claim to.
+				DataClass: prob.DataClassUnknown,
+				Content:   data,
 			})
 		}
 	}

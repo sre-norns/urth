@@ -117,7 +117,10 @@ func ToArtifact(registry *prometheus.Registry, opts RegistryOptions) (urth.Artif
 		Artifact: prob.Artifact{
 			Rel:      MetricsRelType,
 			MimeType: string(contentType),
-			Content:  buf.Bytes(),
+			// Prometheus samples are counters and timings produced by the
+			// runner; no part of the probed exchange reaches them.
+			DataClass: prob.DataClassClean,
+			Content:   buf.Bytes(),
 		},
 	}, nil
 }

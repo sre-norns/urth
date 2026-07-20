@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/sre-norns/urth/pkg/prob"
 )
 
 // Run logs are also echoed to the worker's own log, so that an operator
@@ -72,4 +74,43 @@ func TestRunLoggerConcurrentWrites(t *testing.T) {
 	wg.Wait()
 
 	require.NotEmpty(t, logger.ToArtifact().Content)
+}
+
+// A log built only from records logged by a prober carries the redaction those
+// probers applied as they assembled them.
+func TestRunLoggerClassifiesRecordsAsRedacted(t *testing.T) {
+	logger := NewRunLogger()
+	slog.New(logger).Info("probe finished", "kind", "rest")
+
+	require.Equal(t, prob.DataClassRedacted, logger.ToArtifact().DataClass)
+	require.False(t, logger.ToArtifact().DataClass.MayContainSecrets())
+}
+
+// Raw output attached by a prober -- puppeteer pipes node's stdout straight
+// through -- passed through no redaction, so the log can no longer claim to be
+// redacted.
+func TestRunLoggerRawWritesDowngradeDataClass(t *testing.T) {
+	logger := NewRunLogger()
+	slog.New(logger).Info("probe started")
+
+	require.Equal(t, prob.DataClassRedacted, logger.ToArtifact().DataClass)
+
+	_, err := logger.Write([]byte("token=leaked-by-a-subprocess\n"))
+	require.NoError(t, err)
+
+	require.Equal(t, prob.DataClassUnknown, logger.ToArtifact().DataClass)
+	require.True(t, logger.ToArtifact().DataClass.MayContainSecrets(),
+		"unaudited output must not be reported as safe")
+}
+
+// The downgrade must survive derived loggers, which share the same run log.
+func TestRunLoggerDerivedRawWriteDowngradesSharedLog(t *testing.T) {
+	logger := NewRunLogger()
+	derived, ok := logger.WithAttrs([]slog.Attr{slog.String("scenario", "checkout")}).(*RunLogger)
+	require.True(t, ok)
+
+	_, err := derived.Write([]byte("raw output\n"))
+	require.NoError(t, err)
+
+	require.Equal(t, prob.DataClassUnknown, logger.ToArtifact().DataClass)
 }

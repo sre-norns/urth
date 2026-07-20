@@ -83,6 +83,16 @@
 - Consider using Postgres as PubSub for API server - to - worker job distribution and scheduling.
 
 ## TODOs:
+[] Secrets injection at replay time: a HAR recording currently stores live credentials
+   because fidelity is what makes it replayable. Capture placeholders instead
+   (`Authorization: {{urth.secret.auth}}`) and have the runner inject from a secret
+   store at run/replay time. Would also fix scenarios storing credentials in their
+   spec. Depends on the encrypted-variables work below. Until then HAR artifacts are
+   labelled `urth/artifact.data-class: secret-bearing`.
+[] Retention and access control should act on `urth/artifact.data-class`: secret-bearing
+   artifacts want a shorter default expiry and restricted download.
+[] `examples/README.md` references `run.scenario.json` and `worker.yml`, neither of which
+   exist.
 [] SQLite backend is broken: AutoMigrate fails with `index idx_name already exists`.
    `wyrd`'s `manifest.ResourceMeta.Name` carries a hardcoded `gorm:"index:idx_name"`, and
    every model embeds it; index names are schema-global in SQLite so the second

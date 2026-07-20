@@ -35,12 +35,60 @@ type Manifest struct {
 	Spec any `json:"-" yaml:"-"`
 }
 
+// DataClass describes what an artifact's content may expose, so that retention,
+// access control and audits have something to act on without inspecting bytes.
+//
+// It is declared by the prober that produced the artifact, because only the
+// producer knows what it captured. An artifact that makes no declaration is
+// DataClassUnknown: the absence of a claim is not a claim of safety.
+type DataClass string
+
+const (
+	// DataClassUnknown is the zero value: the producing prober made no
+	// declaration, so the content must be treated as potentially sensitive.
+	DataClassUnknown DataClass = ""
+
+	// DataClassClean means the content cannot carry credentials by
+	// construction -- metrics samples, timings, and similar derived data.
+	DataClassClean DataClass = "clean"
+
+	// DataClassRedacted means the content is derived from a live exchange, but
+	// values identified as credentials were removed before it was written.
+	DataClassRedacted DataClass = "redacted"
+
+	// DataClassSecretBearing means the content is a faithful capture of a live
+	// exchange and may contain credentials. This is not a defect: for a
+	// recording whose purpose is replay, fidelity and redaction are the same
+	// bytes, and the honest option is to say so and protect it accordingly.
+	DataClassSecretBearing DataClass = "secret-bearing"
+)
+
+// MayContainSecrets reports whether the artifact must be handled as though it
+// carries credentials. Unknown counts as unsafe, so a prober that forgets to
+// classify its output fails towards caution.
+func (c DataClass) MayContainSecrets() bool {
+	return c != DataClassClean && c != DataClassRedacted
+}
+
+// String renders the class for display and labelling. The unknown class is
+// spelled out rather than left empty, so that it is selectable in a query.
+func (c DataClass) String() string {
+	if c == DataClassUnknown {
+		return "unknown"
+	}
+
+	return string(c)
+}
+
 type Artifact struct {
 	// Relation type: log / HAR / etc? Determines how content is consumed by clients
 	Rel string `form:"rel,omitempty" json:"rel,omitempty" yaml:"rel,omitempty" xml:"rel,omitempty"`
 
 	// MimeType of the content
 	MimeType string `form:"mimeType,omitempty" json:"mimeType,omitempty" yaml:"mimeType,omitempty" xml:"mimeType,omitempty"`
+
+	// DataClass declares what this content may expose. See DataClass.
+	DataClass DataClass `form:"dataClass,omitempty" json:"dataClass,omitempty" yaml:"dataClass,omitempty" xml:"dataClass,omitempty"`
 
 	// Blob content of the artifact
 	Content []byte `form:"content,omitempty" json:"content,omitempty" yaml:"content,omitempty" xml:"content,omitempty"`

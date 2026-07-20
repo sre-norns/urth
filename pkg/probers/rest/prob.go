@@ -131,32 +131,76 @@ func (t *httpRequestTracer) TraceRequest(req *http.Request) *http.Request {
 	return req.WithContext(httptrace.WithClientTrace(req.Context(), t.tracer))
 }
 
+const redactedPlaceholder = "[REDACTED]"
+
+// Headers whose value is a credential by definition, regardless of naming.
+var sensitiveHeaders = map[string]bool{
+	"Authorization":       true,
+	"Proxy-Authorization": true,
+	"Cookie":              true,
+	"Set-Cookie":          true,
+	"Www-Authenticate":    true,
+	"Proxy-Authenticate":  true,
+}
+
+// Header name segments that suggest the value is a credential. Matching is on
+// whole '-' separated segments rather than substrings: a substring match treats
+// "X-Monkey-Id" as sensitive because it contains "key".
+var sensitiveHeaderWords = map[string]bool{
+	"auth":          true,
+	"authorization": true,
+	"credential":    true,
+	"credentials":   true,
+	"key":           true,
+	"password":      true,
+	"passwd":        true,
+	"secret":        true,
+	"session":       true,
+	"signature":     true,
+	"token":         true,
+}
+
+// isSensitiveHeader reports whether a header's value should be kept out of the
+// run log.
+//
+// The bias here is deliberately towards over-redacting: the run log exists to
+// explain what a probe did, and no part of that explanation depends on the
+// literal value of a credential. Artifacts that must preserve the exchange
+// faithfully -- the HAR recording -- are handled separately, and declare
+// themselves as secret-bearing rather than being redacted. See RunHTTPRequests.
 func isSensitiveHeader(header string) bool {
 	h := textproto.CanonicalMIMEHeaderKey(header)
-
-	switch h {
-	case "Authorization", "Proxy-Authorization", "Cookie", "Set-Cookie", "X-Api-Key":
+	if sensitiveHeaders[h] {
 		return true
 	}
 
-	hl := strings.ToLower(h)
-	return strings.Contains(hl, "token") ||
-		strings.Contains(hl, "secret") ||
-		strings.Contains(hl, "password") ||
-		strings.Contains(hl, "key")
+	for _, segment := range strings.Split(strings.ToLower(h), "-") {
+		if sensitiveHeaderWords[segment] {
+			return true
+		}
+	}
+
+	return false
+}
+
+func formatHeaders(result *strings.Builder, headers http.Header) {
+	for header, value := range headers {
+		if isSensitiveHeader(header) {
+			fmt.Fprintf(result, "%v: %v\n", header, redactedPlaceholder)
+			continue
+		}
+		fmt.Fprintf(result, "%v: %v\n", header, strings.Join(value, "; "))
+	}
 }
 
 func formatRequest(req *http.Request) string {
 	result := strings.Builder{}
 
+	// Note: the path is logged without the query string on purpose. Credentials
+	// are routinely passed as query parameters (`?api_key=...`), and there is no
+	// reliable way to tell which parameter is which.
 	fmt.Fprintf(&result, "%v %v %v\n", req.Method, req.URL.Path, req.Proto)
-	for header, value := range req.Header {
-		if isSensitiveHeader(header) {
-			fmt.Fprintf(&result, "%v: [REDACTED]\n", header)
-			continue
-		}
-		fmt.Fprintf(&result, "%v: %v\n", header, strings.Join(value, "; "))
-	}
+	formatHeaders(&result, req.Header)
 
 	return result.String()
 }
@@ -165,9 +209,7 @@ func formatResponse(resp *http.Response) string {
 	result := strings.Builder{}
 
 	fmt.Fprintf(&result, "%v %v\n", resp.Proto, resp.Status)
-	for header, value := range resp.Header {
-		fmt.Fprintf(&result, "%v: %v\n", header, strings.Join(value, "; "))
-	}
+	formatHeaders(&result, resp.Header)
 
 	return result.String()
 }
@@ -229,7 +271,14 @@ func RunHTTPRequests(ctx context.Context, requests []httpparser.TestRequest, opt
 			{
 				Rel:      "har",
 				MimeType: "application/json",
-				Content:  harData,
+				// A HAR recording exists to be replayed and diffed against
+				// earlier runs, which requires it to be a faithful copy of the
+				// exchange -- including any Authorization header, cookie or
+				// credential passed in the query string. Redacting it would
+				// destroy the artifact's only purpose, so it is labelled for
+				// what it is and left intact.
+				DataClass: prob.DataClassSecretBearing,
+				Content:   harData,
 			},
 		}, nil
 }
