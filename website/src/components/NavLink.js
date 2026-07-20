@@ -1,6 +1,6 @@
 import React from 'react'
 import styled from '@emotion/styled'
-import {routed, routeActivated} from '../utils/routing.js'
+import {routed, routeActivated} from '../utils/routing.jsx'
 
 const color = (props) => props.theme.color[props.color || 'neutral']
 

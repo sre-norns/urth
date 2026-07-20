@@ -4,15 +4,15 @@ import styled from '@emotion/styled'
 import { Tooltip } from 'react-tooltip'
 import { useDispatch, useSelector } from 'react-redux'
 import OddContainer from '../components/OddContainer.js'
-import Capsule from '../components/Capsule.js'
+import Capsule from '../components/Capsule.jsx'
 import RagIndicator from '../components/RagIndicator.js'
 import TextSpan, { TextDiv } from '../components/TextSpan.js'
 import { cyrb53 } from '../utils/hash.js'
 import Button from '../components/Button.js'
 import Link from '../components/Link.js'
 import runScenario from '../actions/runScenario.js'
-import ObjectCapsules from '../components/ObjectCapsules.js'
-import Runners from '../pages/Runners.js'
+import ObjectCapsules from '../components/ObjectCapsules.jsx'
+import Runners from '../pages/Runners.jsx'
 
 const TopContainer = styled.div`
   display: flex;

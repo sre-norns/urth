@@ -7,7 +7,7 @@ import 'the-new-css-reset/css/reset.css'
 import '@fontsource-variable/roboto-flex'
 import '@icon/foundation-icons/foundation-icons.css'
 import './index.scss'
-import App from './App.js'
+import App from './App.jsx'
 
 const container = document.getElementById('app')
 const root = createRoot(container)

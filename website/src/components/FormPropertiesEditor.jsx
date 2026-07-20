@@ -3,9 +3,9 @@ import PropTypes from 'prop-types'
 import styled from '@emotion/styled'
 import Input from './Input.js'
 import Button from './Button.js'
-import FormGroupError from './FormGroupError.js'
-import FormGroup from './FormGroup.js'
-import FormControl from './FormControl.js'
+import FormGroupError from './FormGroupError.jsx'
+import FormGroup from './FormGroup.jsx'
+import FormControl from './FormControl.jsx'
 
 const PropertyContainer = styled.div`
   display: flex;

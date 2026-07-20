@@ -1,6 +1,6 @@
 import React from 'react'
 import styled from '@emotion/styled'
-import Empty from './Empty.js'
+import Empty from './Empty.jsx'
 
 const Container = styled.div`
   display: flex;

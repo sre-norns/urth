@@ -3,10 +3,10 @@ import { useDispatch, useSelector } from 'react-redux'
 import styled from '@emotion/styled'
 import { useSearchParams } from 'wouter-search';
 import fetchScenarios from '../actions/fetchScenarios.js'
-import SpinnerInlay from '../components/SpinnerInlay.js'
-import Scenario from '../containers/Scenario.js'
-import EmptyInlay from '../components/EmptyInlay.js'
-import ErrorInlay from '../components/ErrorInlay.js'
+import SpinnerInlay from '../components/SpinnerInlay.jsx'
+import Scenario from '../containers/Scenario.jsx'
+import EmptyInlay from '../components/EmptyInlay.jsx'
+import ErrorInlay from '../components/ErrorInlay.jsx'
 import { SearchQuery } from '../utils/searchQuery.js';
 import { Operator, Rule } from '../utils/k8s-labels.js'
 
