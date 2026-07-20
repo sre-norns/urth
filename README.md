@@ -1,214 +1,295 @@
 # Urth
-Probing as a Service
+
+[![Build](https://github.com/sre-norns/urth/actions/workflows/go.yml/badge.svg)](https://github.com/sre-norns/urth/actions/workflows/go.yml)
+[![Go Report Card](https://goreportcard.com/badge/sre-norns/urth)](https://goreportcard.com/report/github.com/sre-norns/urth)
+
+**Synthetic monitoring for networks you can't reach from the public internet.**
+
+Urth runs scheduled probes against your services — HTTP, TCP, DNS, ICMP, gRPC, and full
+browser scenarios — and turns the results into pass/fail history plus Prometheus-style
+metrics.
 
 ---
-![Build status](https://github.com/sre-norns/urth/actions/workflows/go.yml/badge.svg)
 
-# What?
-This project provides a platform to run scripts that monitor infrastructure, devices, and services.
+## Why Urth?
 
-# How
-The project consist of 3 main component:
-- [api-server](./cmd/api-server/README.md) Rest API server responsible for all resource objects, such as scripts, runners, results etc.
-- [runner](./cmd/red-runner) An implementation of async job runner responsible for execution of a script and retuning results back to the API server.
-- [scheduler](./cmd/red-scheduler) An implementation of a cron-scheduler that gets a list of all scripts that can be run at a given scheduling interval and creates jobs for runners to execute those scripts.
-- [urthctl](./cmd/urthctl/README.md) Command line tool and alternative interface to interact with API service. Inspired by `kubectl`, it similarly allows user to create and inspect resources such as scripts and runners.
-- [web UI](./website/README.md) React based Web UI (TBD)
+Hosted uptime monitoring works well right up to the point where the thing you need to
+monitor lives inside a VPC, behind a VPN, or on a segmented factory network. At that
+point you are asked to punch a hole through your perimeter so someone else's prober can
+reach in.
 
-Third party components required to run the service:
-- DB:
-  - SQLight can be used for local development.
-  - Postgres compatible DB is required for Production deployment.
-- Job queue:
-  - Prefer Redis as job queue, but GCS Pub/sub can be configured.
+Urth inverts that. **Probes execute on runners you host, inside the network segment being
+tested.** The runner reaches out to the API server; nothing reaches in. This is the same
+model as self-hosted CI runners.
 
-# Running locally
-### Pre-requisites:
-- Run Redis locally / in a container. For example using [Podman](https://podman.io/) / [Docker](https://www.docker.com) command:
-```bash
-> podman run -p 6379:6379 redis
+That design carries a second benefit. A large organisation is not one network — it's
+dozens, each owned by a different team. Urth models this explicitly:
+
+- **Runners advertise labels** describing where they sit and what they can do
+  (`os: linux`, `region: eu-west-1`, `urth/capability.prob.puppeteer`).
+- **Scenarios declare requirements** as label selectors.
+- The scheduler only dispatches a scenario to a runner that satisfies its requirements.
+
+If you have written a Kubernetes `nodeSelector`, this will feel familiar. Team A's probes
+run on Team A's runners, which are the only ones with a route to Team A's infrastructure —
+enforced by the scheduler rather than by convention.
+
+```yaml
+# A scenario that must run on a Linux runner, and never in dev or test environments
+spec:
+  requirements:
+    matchLabels:
+      os: "linux"
+    matchSelector:
+      - { key: "env", operator: "NotIn", values: ["dev", "testing"] }
 ```
 
-## (Dev) using `Procfile`
-You can use tools like [foreman](https://github.com/ddollar/foreman) or its clones ([goreman](https://github.com/mattn/goreman), [honcho](https://github.com/nickstenning/honcho), [etc](https://github.com/ddollar/foreman#ports)) to run all application component in one go:
-```bash
-> goreman -b 8080 start 
+### How it compares
+
+| | Urth | Uptime Kuma | Cronitor | Blackbox Exporter |
+|---|---|---|---|---|
+| Probes run on your own infrastructure | ✅ | ✅ | ❌ hosted | ✅ |
+| Many runner pools, routed by label selector | ✅ | ❌ | ❌ | ❌ |
+| Scenario & result history as API resources | ✅ | partial | ✅ | ❌ |
+| Browser (Puppeteer) scenarios | ✅ | ❌ | ✅ | ❌ |
+| Prometheus metrics per run | ✅ | partial | ✅ | ✅ |
+
+Urth reuses the probe implementations from
+[blackbox_exporter](https://github.com/prometheus/blackbox_exporter), so its HTTP, TCP,
+DNS and ICMP semantics should be familiar if you already run it.
+
+---
+
+## Concepts
+
+| Resource | What it is |
+|---|---|
+| **Scenario** | A probe definition: what to test, on what schedule, and which runners may execute it. |
+| **Prob** | The executable body of a scenario, typed by `kind` (see below). |
+| **Runner** | A registration slot describing a class of worker, its labels, and its auth token. |
+| **Worker** | A running process that claims the slot and executes jobs. |
+| **Result** | The record of one execution: status, timing, and who ran it. |
+| **Artifact** | Data produced by a run — logs, metrics, HAR files, screenshots. |
+
+Resources are versioned and manipulated through a REST API using manifests, in the style
+of `kubectl`. `urthctl` is the CLI front end.
+
+### Available prob kinds
+
+`http` · `tcp` · `dns` · `icmp` · `grpc` · `rest` · `har` · `puppeteer` · `pypuppeteer`
+
+- **`rest`** executes `.http`/`.rest` files — the format used by the
+  [VS Code REST Client](https://marketplace.visualstudio.com/items?itemName=humao.rest-client)
+  and [IntelliJ HTTP Client](https://www.jetbrains.com/help/idea/http-client-in-product-code-editor.html).
+- **`har`** replays a [HAR](https://en.wikipedia.org/wiki/HAR_(file_format)) capture from your browser.
+- **`puppeteer`** / **`pypuppeteer`** drive a real headless browser (Node and Python).
+
+---
+
+## Architecture
+
+```
+                    ┌──────────────┐
+                    │    Web UI    │
+                    └──────┬───────┘
+                           │  REST
+   ┌───────────┐    ┌──────┴───────┐    ┌──────────────┐
+   │  urthctl  ├────┤  API server  ├────┤   Database   │
+   └───────────┘    └──────┬───────┘    │ SQLite / PG  │
+                           │            └──────────────┘
+                           │ enqueue job matching
+                           │ scenario requirements
+                    ┌──────┴───────┐
+                    │  Job queue   │  (Redis)
+                    └──────┬───────┘
+                           │  workers poll outbound
+        ┌──────────────────┼──────────────────┐
+        │                  │                  │
+  ┌─────┴─────┐      ┌─────┴─────┐      ┌─────┴─────┐
+  │  Worker   │      │  Worker   │      │  Worker   │
+  │ team-a    │      │ team-b    │      │ dmz       │
+  │ VPC A     │      │ VPC B     │      │           │
+  └───────────┘      └───────────┘      └───────────┘
 ```
 
-## Running individual components
-### Running API server locally
-This is a Go-lang project and as such can be run directly using GO
+Workers only ever make **outbound** connections, so a network segment can be probed
+without granting inbound access to it.
+
+### Components
+
+| Component | Path | Role |
+|---|---|---|
+| **api-server** | [`cmd/api-server`](./cmd/api-server/README.md) | REST API for all resources; hands out jobs. Run several replicas in production. |
+| **asynq-runner** | [`cmd/asynq-runner`](./cmd/asynq-runner/README.md) | Worker. Claims jobs from Redis, executes probes, uploads results and artifacts. |
+| **urthctl** | [`cmd/urthctl`](./cmd/urthctl/README.md) | CLI. Apply manifests, inspect resources, run scenarios locally. |
+| **Web UI** | [`website`](./website) | React front end. |
+
+**Dependencies**
+
+- **Database** — a Postgres-compatible database, for development as well as production.
+- **Job queue** — Redis (via [asynq](https://github.com/hibiken/asynq)).
+
+> **Project status.** Urth is under active development and not yet at a stable release.
+> Two things are worth knowing before you start:
+>
+> - **Postgres is required.** `--store.url` still defaults to `sqlite:test.sqlite`, but
+>   schema migration currently fails on SQLite with `index idx_name already exists`, so
+>   you must pass a Postgres URL explicitly. See [TODO.md](./TODO.md).
+> - **There is no standalone scheduler process yet.** Scenario `schedule` fields are
+>   stored and validated, but runs must be triggered manually via the API, UI, or
+>   `urthctl`.
+>
+> See [TODO.md](./TODO.md) for the full backlog.
+
+### Worker lifecycle
+
+1. An operator creates a **Runner** resource, which mints a registration token.
+2. A worker process starts with that token and authenticates to the API server.
+3. The worker joins the job queue and waits.
+4. When it claims a job, the API server verifies the worker actually satisfies the
+   scenario's requirements, then issues a **short-lived token** scoped to that one run.
+5. The worker executes the probe and posts results and artifacts using that token.
+
+The token's lifetime is roughly the scenario's maximum run duration plus a margin. This
+prevents a restarted or replayed worker from posting results for runs it no longer owns.
+
+---
+
+## Quick start
+
+**Prerequisites:** Go (version per [`go.mod`](./go.mod)), Redis, Postgres, and Node.js
+for the Web UI. Each service below wants its own terminal.
+
 ```bash
-> go run ./cmd/api-server
-```
-After starting a new SQLight3 DB will be created in the current working directory. Thus, if a server is restarted data will no be lost.
-By default server runs on `http://localhost:8080`
+# 1. Start Redis and Postgres
+make run-redis-podman
+make run-postgres-podman
 
+# 2. Start the API server on http://localhost:8080
+make run-api-server        # override the database with: make run-api-server store-url=...
 
-### Running CLI tool 
-By default CLI tool will work with locally running server using default port `:8080`
-```bash
-> go run ./cmd/urthctl --help
-```
-
-In case you need to use `urthctl` to interact with non-local instance of API server, specify address explicitly:
-```bash
-> go run ./cmd/urthctl --api-server-address="https://urth.sre-norns.com" ... 
-```
-
-## Using Makefile
-Most repeatable operations to run local deployment are automated using simple [Makefile](./Makefile).
-
-```bash
-# Start redis using podman container
-> make run-redis-podman
-
-# Start API server
-> make run-api-server
-
-# Start scheduler server
-> make run-scheduler
-
-# Start Redis based worker
-> make run-asynq-worker
-
-# Start Web UI
-> make serve-site
-```
-
-
-# Architecture (How is supposed to work)
-Entire system consist of the following main components:
-* API server - responsible for management of all resources and giving jobs to workers. Production deployment is expected to run multiple replicas for reliability.
-* Worker - a process located at a vantage point, from which a test should be performed. 
-* Job queue - a mechanism for API server to post jobs for workers.
-* Web UI - React web application to interact with the system: see existing resources and create new ones.
-
-## API Server
-API server manges all entities modeled by the system:
- * scenarios - object that users create and schedule to run
- * Workers - registration details and permissions to perform jobs.
- * Results - a record of jobs performed.
- * Artifacts - data produced by a worked in the course of performing a job.
-
-## Worker
-Worker's responsibility is to perform a job assigned by the API server. It waits for a job in the job queue and when one becomes available it picks it up at attempts to perform it. Details of the job depend on the job that were picked.
-Not all tasks can be picked up by any runner. Runner have _capabilities_ expressed as `labels` and each job has a  set of requirements that a worker must satisfy in order to perform it.
-When requirements match workers's _capabilities_ than it can take and perform a job.
-
-### Lifecycle
-A new worker must first be registered with the `API server` by creating a _slot_. Creation of such _slot_ generates token that a `worker` instance must present to the `API server` issuer as part of initial configuration process. Presentation of a valid token notifies `API server` that a worker is ready to pick up jobs. After successful authorization, a worker joins a job queue and awaits.
-When a job is available, worker picks it up notifies `API server` that it picked the job. This constitutes authorization of a particular instance of a worker to the API server for a specific job. At this point (WIP) API server will check that worker is indeed authorized to perform the job in question and if successful will issue a short-living token that must be used by the worker to post results back to the API server. Token life-time is chosen by the server to be approximately the maximum allowed run-duration of the task + some buffer time to account communication delays. This mechanism is designed to prevent workers from replaying jobs or posting already existing job results after restart and restore. 
-
-# Running demo
-
-```shell
-##------------------------------
-# Spin-up test infrastructure:
-##------------------------------
-# Start a PostgresDB. For example using docker/podman, in a separate terminal
-podman run -p 5432:5432 -e POSTGRES_PASSWORD=<db_password> -e POSTGRES_USER=dbusername postgres:15
-# Start a redis instance for job queuing. For example using docker/podman, in a separate terminal
-podman run -p 6379:6379 redis
-
-##------------------------------
-# Spin-up services:
-##------------------------------
-
-# Start API server in a separate terminal and point it to the Postgres instance. check
-go run ./cmd/api-server --store.url="postgres://dbusername:<db_password>@localhost:5432"
-
-# Start WebUI using dev server, in a separate terminal
-cd website && npm start
-
-##------------------------------
-# Create some resources
-##------------------------------
-
-# Create an job runner. See ./examples dir for different resources manifests 
-go run ./cmd/urthctl apply ./examples/runner.json
-
-# List all currently registered runners to insure your new example runner has been created.
-go run ./cmd/urthctl get runners -o wide  
-
-# Create your first test scenario
-go run ./cmd/urthctl apply ./examples/scenario.yml 
-
-# List all currently registered scenarios to ensure your newly created one is correct
+# 3. Register a runner and create a scenario
+go run ./cmd/urthctl apply ./examples/runner.yaml
+go run ./cmd/urthctl apply ./examples/scenario.yml
 go run ./cmd/urthctl get scenarios -o wide
 
-
-##------------------------------
-## Start some workers and connect them to the job queue
-##------------------------------
-# Generate an Auth token for a worker. Run command using the same resource file used to create a runner
-go run ./cmd/urthctl auth-worker -f ./examples/runner.json
-
-# Start an instance of a runner. Note user the token generated on a previous step
+# 4. Mint a worker token, then start a worker with it
+export RUNNER_TOKEN=$(go run ./cmd/urthctl auth-worker -f ./examples/runner.yaml)
 go run ./cmd/asynq-runner --client.token="$RUNNER_TOKEN"
 
-##------------------------------
-## Trigger a scenario run manually
-##------------------------------
-# Open your favorite browser and navigate to 'http://localhost:3000/'
-# Find `basic-rest-self-prober-http` in the list and press Play [>] button on the right hand side.
-# Note: UI refresh is still not implemented so you'll have to refresh the page.
-
-# Inspect scenarios:
-go run ./cmd/urthctl get scenarios -o wide
-
-
-# Inspect run results:
-> http ':8080/api/v1/scenarios/basic-rest-self-prober-http/results'
+# 5. Start the Web UI at http://localhost:3000
+make serve-site
 ```
 
+After step 3, `get scenarios` should list `basic-rest-self-prober-http` with its schedule
+and requirements — that confirms the API server and database are wired up correctly.
 
-## Test scenario development
-To develop a new scenario, fist start by creating a scenario manifest file.
-Once the manifest is ready, you can run the scenario locally. Note that local run does not upload any of the run results and thus does not alter scenario run-history.
+Trigger the `basic-rest-self-prober-http` scenario from the UI, then inspect the results:
 
-```shell
-# Run a scenario locally
-go run ./cmd/urthctl run -f ./my-new-scenario.yaml
+```bash
+go run ./cmd/urthctl get results basic-rest-self-prober-http
+curl 'http://localhost:8080/api/v1/scenarios/basic-rest-self-prober-http/results'
 ```
 
-In case you'd like to inspect run artifact to troubleshoot the script, use `runner.keep-temp` flag:
-```sh
-# Run a scenario locally and preserve 
-go run ./cmd/urthctl run -f ./my-new-scenario.yaml --runner.keep-temp
+### Running everything at once
+
+A [`Procfile`](./Procfile) is provided for [foreman](https://github.com/ddollar/foreman)
+and its clones ([goreman](https://github.com/mattn/goreman),
+[honcho](https://github.com/nickstenning/honcho)):
+
+```bash
+goreman -b 8080 start
 ```
 
-## Troubleshooting scenarios
-Its `urthctl run` can also be used to run a scenario as it is on the server.
-```sh
-# Will run server version of basic-rest-self-prober-http scenario
-go run ./cmd/urthctl run basic-rest-self-prober-http --runner.keep-temp
+---
+
+## Writing scenarios
+
+Start from a manifest — see [`examples/`](./examples/) for one per prob kind — then run it
+locally. A local run never uploads results, so it won't pollute a scenario's history:
+
+```bash
+go run ./cmd/urthctl run -f ./my-scenario.yaml
 ```
 
-More advanced scenarios might include WebUI, such as Puppeteer probers and might required extra flag.
-See [scenario.puppeteer](./examples/scenario.puppeteer.yaml) for example of advanced scenarios:
+Keep the working directory around to inspect artifacts while troubleshooting:
 
-```sh
+```bash
+go run ./cmd/urthctl run -f ./my-scenario.yaml --runner.keep-temp
+```
+
+Browser scenarios may need extra flags:
+
+```bash
 go run ./cmd/urthctl run -f ./examples/scenario.puppeteer.yaml --puppeteer.headless --runner.keep-temp
 ```
 
-# WIP
-Note that this project is still Work And Progress and some planned pieces are still missing. 
-For example there is __no__ `scheduler` as a stand-alone process to schedule scenarios (Coming with next update)
+You can also re-run the server's copy of a scenario by name, which is useful when a
+scheduled run fails and you want to reproduce it:
 
-## Shedules
-`Urth` is using a simple crontab expression to define scenario run shedules.
-In particular it uses [gronx](https://github.com/adhocore/gronx) go-module to parse cron-expression.
-It means that extra syntax is available and they are converted to real cron expressions before parsing:
+```bash
+go run ./cmd/urthctl run basic-rest-self-prober-http --runner.keep-temp
+```
 
-- @yearly or @annually - every year
-- @monthly - every month
-- @daily - every day
-- @weekly - every week
-- @hourly - every hour
-- @5minutes - every 5 minutes
-- @10minutes - every 10 minutes
-- @15minutes - every 15 minutes
-- @30minutes - every 30 minutes
-- @always - every minute
-- @everysecond - every second
+`urthctl` can also convert a browser HAR capture into a `.http` file:
+
+```bash
+go run ./cmd/urthctl convert ./website.har
+```
+
+### Schedules
+
+Schedules are crontab expressions, parsed by
+[gronx](https://github.com/adhocore/gronx), which also accepts these shorthands:
+
+| Expression | Meaning |
+|---|---|
+| `@yearly` / `@annually` | every year |
+| `@monthly` | every month |
+| `@weekly` | every week |
+| `@daily` | every day |
+| `@hourly` | every hour |
+| `@30minutes` / `@15minutes` / `@10minutes` / `@5minutes` | every N minutes |
+| `@always` | every minute |
+| `@everysecond` | every second |
+
+---
+
+## Development
+
+```bash
+make help          # list all targets
+make test          # run tests with the race detector
+make test/cover    # run tests and open a coverage report
+make audit         # go vet + staticcheck + tests (what CI runs)
+make tidy          # format code and tidy go.mod
+make build         # build all binaries and the Web UI
+```
+
+### Repository layout
+
+```
+cmd/           api-server, asynq-runner, urthctl
+pkg/urth/      domain model: Scenario, Runner, Result, Artifact
+pkg/prob/      prob registry and the interface probers implement
+pkg/probers/   one package per prob kind
+pkg/runner/    job dispatch, run logging, metrics collection
+pkg/http-parser/  .http / .rest file parser
+pkg/redqueue/  Redis-backed job queue
+website/       React Web UI
+examples/      example resource manifests
+```
+
+Shared, non-domain-specific packages live in separate modules:
+[wyrd](https://github.com/sre-norns/wyrd) (labels and selectors) and `grace` (service
+lifecycle). See [`pkg/README.md`](./pkg/README.md).
+
+## Contributing
+
+Contributions are welcome. Please make sure `make audit` passes before opening a pull
+request. [TODO.md](./TODO.md) tracks the current backlog and is a reasonable place to look
+for something to pick up.
+
+## License
+
+See [LICENSE](./LICENSE).

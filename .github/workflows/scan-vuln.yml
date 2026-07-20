@@ -1,0 +1,81 @@
+name: Vulnerability scan
+
+# Checks the module graph against the Go vulnerability database. The weekly run
+# is the point of this workflow: govulncheck reports advisories published against
+# dependencies that have not changed, which a push-triggered scan would never
+# see.
+#
+# govulncheck reports only vulnerabilities that are actually reachable from this
+# code, so a finding here is worth acting on rather than triaging away.
+#
+# The scan blocks changes but does not break main: on a push or pull request a
+# finding fails the job, while the scheduled run reports without failing. A newly
+# published advisory is not a regression in the commit it lands on, and reddening
+# main on a Monday morning trains people to ignore the signal. The scheduled run
+# still surfaces the finding in the job summary.
+
+on:
+  push:
+    branches: [ "main" ]
+    paths: [ "go.mod", "go.sum", ".github/workflows/scan-vuln.yml" ]
+  pull_request:
+    branches: [ "main" ]
+    paths: [ "go.mod", "go.sum", ".github/workflows/scan-vuln.yml" ]
+  schedule:
+    # Monday 04:00 UTC.
+    - cron: '0 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scan-vuln-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # See the note in go.yml: go.mod pins an exact patch, so building from it
+  # would keep CI on an unpatched toolchain and report stdlib advisories here.
+  GO_VERSION: stable
+
+jobs:
+  govulncheck:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Scan for known vulnerabilities
+        id: scan
+        # Report-only on the scheduled run; blocking everywhere else.
+        continue-on-error: ${{ github.event_name == 'schedule' }}
+        # `shell: bash` sets pipefail, without which the pipe into tee would
+        # mask govulncheck's exit status and the job would always pass.
+        shell: bash
+        run: make scan-vuln | tee "${RUNNER_TEMP}/govulncheck.txt"
+
+      - name: Summarise findings
+        if: always()
+        shell: bash
+        env:
+          # Passed through the environment rather than interpolated into the
+          # script body, so the step cannot be influenced by expression content.
+          SCAN_OUTCOME: ${{ steps.scan.outcome }}
+        run: |
+          {
+            echo '## govulncheck'
+            if [ "${SCAN_OUTCOME}" = "success" ]; then
+              echo 'No reachable vulnerabilities found.'
+            else
+              echo 'Reachable vulnerabilities found:'
+              echo '```'
+              cat "${RUNNER_TEMP}/govulncheck.txt"
+              echo '```'
+            fi
+          } >> "${GITHUB_STEP_SUMMARY}"

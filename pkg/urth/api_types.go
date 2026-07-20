@@ -12,7 +12,7 @@ import (
 type (
 	ScenarioRunResultsRequest struct {
 		bark.ResourceRequest
-		RunId manifest.ResourceName `uri:"runId" form:"runId" binding:"required"`
+		RunID manifest.ResourceName `uri:"runId" form:"runId" binding:"required"`
 	}
 
 	ScenarioRunResultArtifactRequest struct {
@@ -20,8 +20,8 @@ type (
 		ArtifactID                manifest.ResourceName `uri:"artifactId" form:"artifactId" binding:"required"`
 	}
 
-	// Job authorization request
-	// Worker sends this authZ request to take a job, if allowed
+	// AuthJobRequest is a job authorization request: a worker sends it to take
+	// a job, if allowed.
 	AuthJobRequest struct {
 		WorkerID manifest.VersionedResourceID `form:"workerId" json:"workerId" yaml:"workerId" xml:"workerId"`
 		RunnerID manifest.VersionedResourceID `form:"runnerId" json:"runnerId" yaml:"runnerId" xml:"runnerId"`
@@ -31,6 +31,6 @@ type (
 
 	AuthJobResponse struct {
 		bark.CreatedResponse `uri:",inline" form:",inline"`
-		Token                ApiToken `form:"token" json:"token" yaml:"token" xml:"token"`
+		Token                APIToken `form:"token" json:"token" yaml:"token" xml:"token"`
 	}
 )

@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"reflect"
 	"runtime/debug"
 	"strings"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sre-norns/urth/pkg/prob"
 	"github.com/sre-norns/urth/pkg/probers/rest"
@@ -42,24 +42,24 @@ func init() {
 		})
 }
 
-func RunScript(ctx context.Context, probSpec any, config prob.RunOptions, registry *prometheus.Registry, logger log.Logger) (prob.RunStatus, []prob.Artifact, error) {
+func RunScript(ctx context.Context, probSpec any, config prob.RunOptions, registry *prometheus.Registry, logger *slog.Logger) (prob.RunStatus, []prob.Artifact, error) {
 	spec, ok := probSpec.(*Spec)
 	if !ok {
 		return prob.RunFinishedError, nil, fmt.Errorf("%w: got %q, expected %q", manifest.ErrUnexpectedSpecType, reflect.TypeOf(probSpec), reflect.TypeOf(&Spec{}))
 	}
 
-	logger.Log("replaying HAR file")
+	logger.Info("replaying HAR file")
 	harLog, err := UnmarshalHAR(bytes.NewReader([]byte(spec.Script)))
 	if err != nil {
-		logger.Log("...failed to deserialize HAR file: ", err)
+		logger.Error("...failed to deserialize HAR file", "err", err)
 		return prob.RunFinishedError, nil, nil
 	}
 
-	requests, err := ConvertHarToHttpTester(harLog.Log.Entries)
+	requests, err := ConvertHarToHTTPTester(harLog.Log.Entries)
 	if err != nil {
-		logger.Log("...failed to convert HAR file requests: ", err)
+		logger.Error("...failed to convert HAR file requests", "err", err)
 		return prob.RunFinishedError, nil, err
 	}
 
-	return rest.RunHttpRequests(ctx, requests, config, logger)
+	return rest.RunHTTPRequests(ctx, requests, config, logger)
 }

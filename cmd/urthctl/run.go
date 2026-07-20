@@ -26,7 +26,7 @@ import (
 type RunCmd struct {
 	runner.RunnerConfig `embed:"" prefix:"runner."`
 
-	ScenarioId manifest.ResourceName `help:"Id of the scenario" name:"scenario" arg:"" optional:"" group:"scenario" xor:"file"`
+	ScenarioID manifest.ResourceName `help:"Id of the scenario" name:"scenario" arg:"" optional:"" group:"scenario" xor:"file"`
 
 	Files []string `name:"file" help:"A resource manifest file with the scenario" short:"f" type:"existingfile" group:"file" xor:"scenario"`
 	Kind  string   `help:"The type of the scenario to run. Will try to guess if not specified" group:"file" `
@@ -49,7 +49,7 @@ func (c *RunCmd) runScenario(cmdCtx context.Context, sourceName string, probSpec
 			TempDirPrefix:    fmt.Sprintf("%v-", sourceName), // Working dir name for the run
 			KeepTempDir:      c.KeepTemp,
 		},
-		Http: prob.HttpOptions{
+		HTTP: prob.HTTPOptions{
 			CaptureResponseBody: false,
 			CaptureRequestBody:  false,
 			IgnoreRedirects:     false,
@@ -173,15 +173,15 @@ func (c *RunCmd) Run(cfg *commandContext) error {
 	}
 
 	// Check that either scenarioID or files is specified but not both
-	if len(c.Files) == 0 && c.ScenarioId == "" {
+	if len(c.Files) == 0 && c.ScenarioID == "" {
 		return fmt.Errorf("file or scenario Name must be provided")
 	}
-	if len(c.Files) != 0 && c.ScenarioId != "" {
+	if len(c.Files) != 0 && c.ScenarioID != "" {
 		return fmt.Errorf("only file or scenario Name must be provided, but not both")
 	}
 
-	if c.ScenarioId != "" {
-		resource, err := fetchScenario(cfg.Context, apiClient, c.ScenarioId)
+	if c.ScenarioID != "" {
+		resource, err := fetchScenario(cfg.Context, apiClient, c.ScenarioID)
 		if err != nil {
 			return err
 		}

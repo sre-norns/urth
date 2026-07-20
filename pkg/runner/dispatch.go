@@ -3,9 +3,9 @@ package runner
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/sre-norns/urth/pkg/prob"
@@ -23,7 +23,8 @@ import (
 	_ "github.com/sre-norns/urth/pkg/probers/tcp"
 )
 
-// Execute a single scenario
+// Play executes a single scenario, returning its result along with the
+// artifacts it produced.
 func Play(ctx context.Context, probSpec prob.Manifest, options prob.RunOptions) (urth.ResultStatus, []urth.ArtifactSpec, error) {
 	if probSpec.Spec == nil {
 		return urth.NewRunResults(prob.RunFinishedError, urth.WithStatus(urth.JobErrored)), nil, fmt.Errorf("no prob spec")
@@ -43,24 +44,24 @@ func Play(ctx context.Context, probSpec prob.Manifest, options prob.RunOptions) 
 		Help: "Returns how long the probe took to complete in seconds",
 	})
 
-	var logger RunLog
-	slLogger := log.NewLogfmtLogger(&logger) // .Default() // TODO: Add a wrapper .New(logger)
+	logger := NewRunLogger()
+	slLogger := slog.New(logger) // .Default() // TODO: Add a wrapper .New(logger)
 
 	start := time.Now()
 	registry := prometheus.NewRegistry()
 	registry.MustRegister(probeSuccessGauge)
 	registry.MustRegister(probeDurationGauge)
 
-	slLogger.Log("Beginning probe", "kind", probSpec.Kind) //, "timeout_seconds", options.)
+	slLogger.Info("Beginning probe", "kind", probSpec.Kind) //, "timeout_seconds", options.)
 	result, sideEffects, err := probFunc(ctx, probSpec.Spec, options, registry, slLogger)
 
 	duration := time.Since(start).Seconds()
 	probeDurationGauge.Set(duration)
 	if result == prob.RunFinishedSuccess {
 		probeSuccessGauge.Set(1)
-		slLogger.Log("Probe succeeded", "duration_seconds", duration)
+		slLogger.Info("Probe succeeded", "duration_seconds", duration)
 	} else {
-		slLogger.Log("Probe failed", "duration_seconds", duration)
+		slLogger.Info("Probe failed", "duration_seconds", duration)
 	}
 
 	artifacts := make([]urth.ArtifactSpec, 0, len(sideEffects)+1)
@@ -70,9 +71,11 @@ func Play(ctx context.Context, probSpec prob.Manifest, options prob.RunOptions) 
 		})
 	}
 
-	metricsArtifact, err := ToArtifact(registry, RegistryOptions{DisableCompression: true})
-	if err != nil {
-		slLogger.Log("NOTICE: Failed to collect metrics registry", "err", err)
+	// Note: a failure to collect metrics must not mask the error reported by the
+	// probe itself, which is what `err` carries and what the caller is told about.
+	metricsArtifact, metricsErr := ToArtifact(registry, RegistryOptions{DisableCompression: true})
+	if metricsErr != nil {
+		slLogger.Error("NOTICE: Failed to collect metrics registry", "err", metricsErr)
 	} else {
 		artifacts = append(artifacts, metricsArtifact)
 	}

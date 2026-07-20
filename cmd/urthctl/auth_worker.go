@@ -8,7 +8,7 @@ import (
 )
 
 type AuthWorkerCmd struct {
-	RunnerId manifest.ResourceName `help:"Id of the Runner" name:"runner" arg:"" optional:"" group:"RunnerId" xor:"file"`
+	RunnerID manifest.ResourceName `help:"Id of the Runner" name:"runner" arg:"" optional:"" group:"RunnerId" xor:"file"`
 	File     string                `name:"file" help:"A resource manifest file with the runner" short:"f" type:"existingfile" group:"file" xor:"RunnerId"`
 }
 
@@ -18,7 +18,7 @@ func (c *AuthWorkerCmd) Run(cfg *commandContext) error {
 		return fmt.Errorf("failed to initialize API Client: %w", err)
 	}
 
-	if c.RunnerId != "" {
+	if c.RunnerID != "" {
 
 	} else {
 		manifest, ok, err := manifestFromFile(c.File)
@@ -32,17 +32,17 @@ func (c *AuthWorkerCmd) Run(cfg *commandContext) error {
 			return fmt.Errorf("file %q defines %q kind, while %q manifest is required", c.File, manifest.Kind, urth.KindRunner)
 		}
 
-		c.RunnerId = manifest.Metadata.Name
+		c.RunnerID = manifest.Metadata.Name
 	}
 
 	ctx, cancel := cfg.ClientCallContext()
 	defer cancel()
 
-	token, exist, err := apiClient.Runners().GetToken(ctx, c.RunnerId)
+	token, exist, err := apiClient.Runners().GetToken(ctx, c.RunnerID)
 	if err != nil {
 		return err
 	} else if !exist {
-		fmt.Printf("Runner %q does not exists on the server\n", c.RunnerId)
+		fmt.Printf("Runner %q does not exists on the server\n", c.RunnerID)
 		return nil
 	}
 

@@ -3,8 +3,8 @@ package prob
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -13,7 +13,7 @@ var (
 	ErrNoTarget  = fmt.Errorf("empty prob.target value")
 )
 
-type ScriptRunFn func(ctx context.Context, spec any, config RunOptions, registry *prometheus.Registry, logger log.Logger) (RunStatus, []Artifact, error)
+type ScriptRunFn func(ctx context.Context, spec any, config RunOptions, registry *prometheus.Registry, logger *slog.Logger) (RunStatus, []Artifact, error)
 
 type ProbRegistration struct {
 	// Function to execute a script
@@ -34,7 +34,7 @@ var (
 	kindRunnerMap = map[Kind]ProbRegistration{}
 )
 
-// Register new kind of prob
+// RegisterProbKind registers a new kind of prob.
 func RegisterProbKind(kind Kind, proto any, probInfo ProbRegistration) error {
 	if probInfo.RunFunc == nil {
 		return ErrNilRunner
@@ -49,7 +49,7 @@ func RegisterProbKind(kind Kind, proto any, probInfo ProbRegistration) error {
 	return nil
 }
 
-// Unregister given prober kind
+// UnregisterProbKind removes the given prober kind from the registry.
 func UnregisterProbKind(kind Kind) error {
 	UnregisterKind(kind)
 	delete(kindRunnerMap, kind)
@@ -57,8 +57,9 @@ func UnregisterProbKind(kind Kind) error {
 	return nil
 }
 
-// List all registered probers
-// Note: function makes a copy of the module list to avoid accidental modification of registration info
+// ListProbs lists all registered probers.
+// Note: the function makes a copy of the module list to avoid accidental
+// modification of registration info.
 func ListProbs() map[Kind]ProbRegistration {
 	result := make(map[Kind]ProbRegistration, len(kindRunnerMap))
 	for kind, info := range kindRunnerMap {

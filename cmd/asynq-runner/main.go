@@ -23,11 +23,11 @@ import (
 )
 
 type WorkerConfig struct {
-	urth.ApiClientConfig `embed:"" prefix:"client."`
+	urth.APIClientConfig `embed:"" prefix:"client."`
 	runner.RunnerConfig  `embed:"" `
 
 	RedisAddress           string                `help:"Redis server address:port to connect to" default:"localhost:6379"`
-	ApiRegistrationTimeout time.Duration         `help:"Maximum time alloted for this worker to register with API server" default:"1m"`
+	APIRegistrationTimeout time.Duration         `help:"Maximum time alloted for this worker to register with API server" default:"1m"`
 	Name                   manifest.ResourceName `help:"Custom name for this worker" env:"WORKER_NAME"`
 
 	apiClient urth.Service
@@ -38,8 +38,8 @@ type WorkerConfig struct {
 
 // HandleWelcomeEmailTask handler for welcome email task.
 func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task) error {
-	messageId := t.ResultWriter().TaskID()
-	log.Print("New job execution request: ", messageId)
+	messageID := t.ResultWriter().TaskID()
+	log.Print("New job execution request: ", messageID)
 
 	job, err := redqueue.UnmarshalJob(t)
 	if err != nil {
@@ -57,12 +57,12 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 
 	// TODO: Should a worker check requirements?
 
-	resultsApiClient := w.apiClient.Results(job.ScenarioName)
+	resultsAPIClient := w.apiClient.Results(job.ScenarioName)
 	// Notify API-server that a job has been accepted by this worker
 	// FIXME: Worker must use its credentials jwt
 	// Authorize this worker to pick up this job:
 	log.Print("requesting authorization to execute jobID: ", job.ResultName)
-	runAuth, err := resultsApiClient.Auth(ctx,
+	runAuth, err := resultsAPIClient.Auth(ctx,
 		job.ResultName,
 		urth.AuthJobRequest{
 			WorkerID: w.identityT.GetVersionedID(),
@@ -72,7 +72,7 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 			Labels: manifest.MergeLabels(
 				w.LabelJob(w.runner.ObjectMeta, w.identityT.ObjectMeta, job),
 				manifest.Labels{
-					urth.LabelResultMessageId: messageId,
+					urth.LabelResultMessageID: messageID,
 				},
 			),
 		})
@@ -89,7 +89,7 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 	runResult, artifacts, err := runner.Play(workCtx,
 		job.Prob,
 		prob.RunOptions{
-			Http: prob.HttpOptions{
+			HTTP: prob.HTTPOptions{
 				CaptureResponseBody: false,
 				CaptureRequestBody:  false,
 				IgnoreRedirects:     false,
@@ -109,12 +109,12 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 	// Push artifacts if any:
 	wg := grace.NewWorkgroup(4)
 
-	artifactsApiClient := w.apiClient.Artifacts()
+	artifactsAPIClient := w.apiClient.Artifacts()
 	for _, a := range artifacts {
 		artifact := a
 		wg.Go(func() error {
 			// TODO: Must include run Auth Token
-			_, err := artifactsApiClient.Create(ctx,
+			_, err := artifactsAPIClient.Create(ctx,
 				runAuth.Token,
 				manifest.ResourceManifest{
 					TypeMeta: manifest.TypeMeta{
@@ -126,7 +126,7 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 						Labels: manifest.MergeLabels(
 							w.LabelJob(w.runner.ObjectMeta, w.identityT.ObjectMeta, job),
 							manifest.Labels{
-								urth.LabelResultMessageId: messageId,
+								urth.LabelResultMessageID: messageID,
 							},
 						),
 					},
@@ -145,7 +145,7 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 
 	// Notify API-server that the job has been complete
 	wg.Go(func() error {
-		created, err := resultsApiClient.UpdateStatus(ctx, runAuth.VersionedResourceID, runAuth.Token, runResult)
+		created, err := resultsAPIClient.UpdateStatus(ctx, runAuth.VersionedResourceID, runAuth.Token, runResult)
 		if err != nil {
 			log.Printf("failed to post run results for %q: %v", job.ResultName, err)
 			return err // TODO: retry or not? Add results into the retry queue to post later?
@@ -207,7 +207,7 @@ func main() {
 
 	appConfig.apiClient = apiClient
 
-	regoCtx, cancel := context.WithTimeout(context.Background(), appConfig.ApiRegistrationTimeout)
+	regoCtx, cancel := context.WithTimeout(context.Background(), appConfig.APIRegistrationTimeout)
 	defer cancel()
 
 	// Request Auth to join the workers queue

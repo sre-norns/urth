@@ -336,10 +336,10 @@ func NewRunResults(runResult prob.RunStatus, options ...RunResultOption) ResultS
 	return result
 }
 
-func (u *Scenario) AfterFind(tx *gorm.DB) (err error) {
-	u.Status.NextRun = u.Spec.ComputeNextRun(time.Now())
-	if u.Status.Results == nil {
-		err = tx.Model(u).Limit(1).Order("updated_at DESC").Association("Results").Find(&u.Status.Results)
+func (r *Scenario) AfterFind(tx *gorm.DB) (err error) {
+	r.Status.NextRun = r.Spec.ComputeNextRun(time.Now())
+	if r.Status.Results == nil {
+		err = tx.Model(r).Limit(1).Order("updated_at DESC").Association("Results").Find(&r.Status.Results)
 		if err != nil {
 			return
 		}
@@ -348,14 +348,14 @@ func (u *Scenario) AfterFind(tx *gorm.DB) (err error) {
 	return
 }
 
-func (u *Runner) AfterFind(tx *gorm.DB) (err error) {
-	u.Status.NumberInstances = uint64(tx.Model(u).Association("Instances").Count())
+func (r *Runner) AfterFind(tx *gorm.DB) (err error) {
+	r.Status.NumberInstances = uint64(tx.Model(r).Association("Instances").Count())
 
 	return
 }
 
-func (u *Result) AfterFind(tx *gorm.DB) (err error) {
-	u.Status.NumberArtifacts = uint64(tx.Model(u).Association("Artifacts").Count())
+func (r *Result) AfterFind(tx *gorm.DB) (err error) {
+	r.Status.NumberArtifacts = uint64(tx.Model(r).Association("Artifacts").Count())
 
 	return
 }

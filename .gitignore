@@ -29,6 +29,7 @@ test.sqlite
 
 website/dist/*
 
-# Temp worker directory
+# Temp worker directory, and local scratch copies of it
 worker
+worker.*
 

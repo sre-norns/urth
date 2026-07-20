@@ -103,7 +103,8 @@ func kindAsLabel(kind prob.Kind) string {
 	return fmt.Sprintf("%v%v", urth.LabelWorkerCapProbPrefix, kind)
 }
 
-// Expose loaded probers as Labels
+// ProberAsLabels exposes the loaded probers as labels, so that a worker can
+// advertise which prob kinds it is capable of running.
 func ProberAsLabels() manifest.Labels {
 	probs := prob.ListProbs()
 	result := make(manifest.Labels, len(probs))

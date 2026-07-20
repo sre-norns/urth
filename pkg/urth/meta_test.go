@@ -77,7 +77,7 @@ spec:
   active: true
   schedule: "* * * * *"
   prob:
-    kind: http
+    kind: rest
     timeout: 120s
     spec:
       script: "http://localhost:8080/api/v1/version"
@@ -245,7 +245,7 @@ func TestResourceManifest_UnmarshalingJson(t *testing.T) {
   "active": true,
   "schedule": "* * * * *",
   "prob": {
-    "kind": "http",
+    "kind": "rest",
 	"spec": {
 		"script": "http://localhost:8080/api/v1/version"
 	}	  

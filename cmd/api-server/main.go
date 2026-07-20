@@ -99,7 +99,7 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 			ctx.Header(bark.HTTPHeaderCacheControl, "no-store")
 
 			token := bark.RequireBearerToken(ctx)
-			bark.Manifest(ctx).Created(srv.Runners().Auth(ctx.Request.Context(), urth.ApiToken(token), bark.RequireManifest(ctx)))
+			bark.Manifest(ctx).Created(srv.Runners().Auth(ctx.Request.Context(), urth.APIToken(token), bark.RequireManifest(ctx)))
 		})
 		// Request a JWT token to be used by workers to Auth as a Runner instance
 		v1.GET("/auth/runners/:id" /*bark.AuthBearerAPI(),*/, bark.ResourceAPI(), func(ctx *gin.Context) {
@@ -136,7 +136,7 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 				return
 			}
 
-			resource, err := srv.Results(manifest.ResourceName(resourceRequest.ID)).Auth(ctx.Request.Context(), resourceRequest.RunId, authRequest)
+			resource, err := srv.Results(manifest.ResourceName(resourceRequest.ID)).Auth(ctx.Request.Context(), resourceRequest.RunID, authRequest)
 			if err != nil {
 				log.Print("error while calling auth", "err", err)
 				bark.AbortWithError(ctx, http.StatusBadRequest, err)
@@ -272,7 +272,7 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 				return
 			}
 
-			bark.WithContext[urth.Result](ctx).Found(srv.Results(manifest.ResourceName(resourceRequest.ID)).Get(ctx.Request.Context(), manifest.ResourceName(resourceRequest.RunId)))
+			bark.WithContext[urth.Result](ctx).Found(srv.Results(manifest.ResourceName(resourceRequest.ID)).Get(ctx.Request.Context(), manifest.ResourceName(resourceRequest.RunID)))
 		})
 		v1.PUT("/scenarios/:id/results/:runId/status", bark.AuthBearerAPI(), bark.VersionedResourceAPI(), func(ctx *gin.Context) {
 			var resourceRequest urth.ScenarioRunResultsRequest
@@ -290,7 +290,7 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 				return
 			}
 
-			resource, err := srv.Results(manifest.ResourceName(resourceRequest.ID)).UpdateStatus(ctx.Request.Context(), manifest.NewVersionedID(manifest.ResourceID(resourceRequest.RunId), versionInfo.Version), urth.ApiToken(token), newEntry)
+			resource, err := srv.Results(manifest.ResourceName(resourceRequest.ID)).UpdateStatus(ctx.Request.Context(), manifest.NewVersionedID(manifest.ResourceID(resourceRequest.RunID), versionInfo.Version), urth.APIToken(token), newEntry)
 			if err != nil {
 				bark.AbortWithError(ctx, http.StatusBadRequest, err)
 				return
@@ -310,7 +310,7 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 		// TODO: Considers streaming data to a blob storage
 		v1.POST("/artifacts", bark.AuthBearerAPI(), bark.ManifestAPI(urth.KindArtifact), func(ctx *gin.Context) {
 			token := bark.RequireBearerToken(ctx)
-			bark.Manifest(ctx).Created(srv.Artifacts().Create(ctx.Request.Context(), urth.ApiToken(token), bark.RequireManifest(ctx)))
+			bark.Manifest(ctx).Created(srv.Artifacts().Create(ctx.Request.Context(), urth.APIToken(token), bark.RequireManifest(ctx)))
 		})
 		v1.GET("/artifacts/:id", bark.ResourceAPI(), func(ctx *gin.Context) {
 			bark.Manifest(ctx).Found(srv.Artifacts().Get(ctx.Request.Context(), bark.RequireResourceName(ctx)))
@@ -341,9 +341,9 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 }
 
 var appCli struct {
-	dbstore.StoreConfig `help:"Persistent storage URL" embed:"" prefix:"store."`
+	dbstore.Config `help:"Persistent storage URL" embed:"" prefix:"store."`
 
-	MessageBrokerUrl string `help:"Message broker address:port to connect to" default:"localhost:6379"`
+	MessageBrokerURL string `help:"Message broker address:port to connect to" default:"localhost:6379"`
 }
 
 func main() {
@@ -374,11 +374,11 @@ func main() {
 	), "DB schema migration failed")
 
 	// Init service
-	store, err := dbstore.NewDBStore(db, dbstore.Config{})
+	store, err := dbstore.NewDBStore(db, dbstore.ManifestModel)
 	grace.SuccessRequired(err, "db store")
 
 	// scheduler, err := gqueue.NewScheduler(ctx, "test-local-321", "prob-request")
-	scheduler, err := redqueue.NewScheduler(context.TODO(), appCli.MessageBrokerUrl)
+	scheduler, err := redqueue.NewScheduler(context.TODO(), appCli.MessageBrokerURL)
 	grace.SuccessRequired(err, "failed to create a scheduler")
 	defer scheduler.Close()
 

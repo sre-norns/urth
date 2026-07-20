@@ -18,7 +18,7 @@ import (
 
 type (
 	Scenario struct {
-		ScenarioId manifest.ResourceName `help:"Name of the scenario resource" arg:"" name:"name" `
+		ScenarioID manifest.ResourceName `help:"Name of the scenario resource" arg:"" name:"name" `
 	}
 
 	Scenarios struct {
@@ -27,18 +27,18 @@ type (
 	}
 
 	Script struct {
-		ScenarioId manifest.ResourceID `help:"Name of the scenario" arg:"" name:"name" `
+		ScenarioID manifest.ResourceID `help:"Name of the scenario" arg:"" name:"name" `
 	}
 
 	Results struct {
 		Selector string `help:"Selector (label query) to filter on" optional:"" name:"selector" short:"l"`
 		Output   string `help:"Output format" enum:"wide,short" default:"short" name:"output" short:"o"`
 
-		ScenarioId manifest.ResourceName `help:"Id of the scenario" arg:"" name:"scenario" `
+		ScenarioID manifest.ResourceName `help:"Id of the scenario" arg:"" name:"scenario" `
 	}
 
 	Runner struct {
-		Id manifest.ResourceName `help:"Name of the Runner resource" arg:"" name:"name"`
+		ID manifest.ResourceName `help:"Name of the Runner resource" arg:"" name:"name"`
 	}
 
 	Runners struct {
@@ -47,7 +47,7 @@ type (
 	}
 
 	Artifact struct {
-		Id       manifest.ResourceName `help:"Id of the artifact to get" arg:"" name:"artifact" `
+		ID       manifest.ResourceName `help:"Id of the artifact to get" arg:"" name:"artifact" `
 		ShowMeta bool                  `help:"Show artifact meta information instead of content" name:"meta"`
 	}
 
@@ -131,7 +131,7 @@ func (c *Scenario) Run(cfg *commandContext) error {
 	ctx, cancel := cfg.ClientCallContext()
 	defer cancel()
 
-	resource, err := fetchScenario(ctx, apiClient, c.ScenarioId)
+	resource, err := fetchScenario(ctx, apiClient, c.ScenarioID)
 	if err != nil {
 		return err
 	}
@@ -277,7 +277,7 @@ func (c *Runner) Run(cfg *commandContext) error {
 	ctx, cancel := cfg.ClientCallContext()
 	defer cancel()
 
-	resource, err := fetchRunner(ctx, apiClient, c.Id)
+	resource, err := fetchRunner(ctx, apiClient, c.ID)
 	if err != nil {
 		return err
 	}
@@ -302,7 +302,7 @@ func (c *Results) Run(cfg *commandContext) error {
 		Selector: selector,
 	}
 	// TODO: Pagination
-	resources, _, err := fetchResults(ctx, apiClient, c.ScenarioId, q)
+	resources, _, err := fetchResults(ctx, apiClient, c.ScenarioID, q)
 	if err != nil {
 		return err
 	}
@@ -389,7 +389,7 @@ func (c *Artifact) Run(cfg *commandContext) error {
 	ctx, cancel := cfg.ClientCallContext()
 	defer cancel()
 
-	resource, err := fetchArtifact(ctx, apiClient, c.Id)
+	resource, err := fetchArtifact(ctx, apiClient, c.ID)
 	if err != nil {
 		return err
 	}

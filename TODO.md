@@ -83,6 +83,14 @@
 - Consider using Postgres as PubSub for API server - to - worker job distribution and scheduling.
 
 ## TODOs:
+[] SQLite backend is broken: AutoMigrate fails with `index idx_name already exists`.
+   `wyrd`'s `manifest.ResourceMeta.Name` carries a hardcoded `gorm:"index:idx_name"`, and
+   every model embeds it; index names are schema-global in SQLite so the second
+   CREATE INDEX collides. Postgres is unaffected. Either fix upstream in `wyrd`
+   (use `index` and let gorm name it per-table) or drop the `sqlite:test.sqlite`
+   default from `dbstore.Config` so the broken path isn't the default.
+[X] Rename identifiers to Go initialism convention (`Api`->`API`, `Id`->`ID`, `Url`->`URL`,
+    `Http`->`HTTP`) so `staticcheck` passes and `make audit` is green.
 [X] Fix API to accept `version` query param
 [X] Add `create` command to urthctl
 [X] Move dbstore => separate module!
