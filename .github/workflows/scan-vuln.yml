@@ -33,6 +33,11 @@ concurrency:
   group: scan-vuln-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # See the note in go.yml: go.mod pins an exact patch, so building from it
+  # would keep CI on an unpatched toolchain and report stdlib advisories here.
+  GO_VERSION: stable
+
 jobs:
   govulncheck:
     runs-on: ubuntu-24.04
@@ -44,7 +49,7 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: go.mod
+          go-version: ${{ env.GO_VERSION }}
 
       - name: Scan for known vulnerabilities
         id: scan

@@ -19,6 +19,14 @@ concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # `stable` rather than `go-version-file`, deliberately. go.mod pins an exact
+  # patch (`go 1.25.0`) and setup-go installs precisely that -- which is how CI
+  # first built against a Go release carrying known crypto/tls and crypto/x509
+  # advisories. `stable` tracks the current patched toolchain, while go.mod stays
+  # the declared minimum for consumers.
+  GO_VERSION: stable
+
 jobs:
   format:
     name: Check formatting
@@ -31,7 +39,7 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: go.mod
+          go-version: ${{ env.GO_VERSION }}
 
       # `gofmt -l` exits 0 even when it finds unformatted files, so the output
       # has to be inspected rather than the exit code.
@@ -60,7 +68,7 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: go.mod
+          go-version: ${{ env.GO_VERSION }}
 
       - name: Run quality control checks
         run: make audit
@@ -76,7 +84,7 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: go.mod
+          go-version: ${{ env.GO_VERSION }}
 
       # `make build` also builds the Web UI, which needs npm; the binaries are
       # what this job is gating, so they are built directly.
