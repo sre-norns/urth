@@ -121,10 +121,10 @@ type ResultSpec struct {
 	ProbKind prob.Kind `form:"probKind" json:"probKind,omitempty" yaml:"probKind,omitempty" xml:"probKind"`
 
 	// Timestamp when a job has been picked-up by a worked
-	TimeStarted *time.Time `form:"start_time" json:"start_time,omitempty" yaml:"start_time,omitempty" xml:"start_time" gorm:"type:TIMESTAMP NULL"`
+	TimeStarted *time.Time `form:"start_time" json:"start_time,omitempty" yaml:"start_time,omitempty" xml:"start_time" gorm:"type:TIMESTAMPTZ NULL"`
 
 	// Timestamp when execution finished, if it finished
-	TimeEnded *time.Time `form:"end_time" json:"end_time,omitempty" yaml:"end_time,omitempty" xml:"end_time" time_format:"unix" gorm:"type:TIMESTAMP NULL"`
+	TimeEnded *time.Time `form:"end_time" json:"end_time,omitempty" yaml:"end_time,omitempty" xml:"end_time" time_format:"unix" gorm:"type:TIMESTAMPTZ NULL"`
 }
 
 type ResultStatus struct {
@@ -146,7 +146,7 @@ type ArtifactSpec struct {
 	Result   Result              `json:"-" yaml:"-" gorm:"foreignKey:ResultID;references:UID"`
 
 	// ExpireTime is a point in time after which the artifact can be removed by the system. If nil - artifact is 'pinned' and will not be purged, unless manually deleted.
-	ExpireTime *time.Time `form:"expire_time,omitempty" json:"expire_time,omitempty" yaml:"expire_time,omitempty" xml:"expire_time,omitempty" time_format:"unix" gorm:"type:TIMESTAMP NULL"`
+	ExpireTime *time.Time `form:"expire_time,omitempty" json:"expire_time,omitempty" yaml:"expire_time,omitempty" xml:"expire_time,omitempty" time_format:"unix" gorm:"type:TIMESTAMPTZ NULL"`
 
 	// // Relation type: log / HAR / etc? Determines how content is consumed by clients
 	// Rel string `form:"rel,omitempty" json:"rel,omitempty" yaml:"rel,omitempty" xml:"rel,omitempty"`
