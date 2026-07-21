@@ -219,7 +219,6 @@ func main() {
 				Labels: appConfig.GetEffectiveLabels(),
 			},
 			Spec: urth.WorkerInstanceSpec{
-				IsActive:     false,
 				RequestedTTL: 0,
 			},
 		}.ToManifest())

@@ -88,6 +88,13 @@ func (c *RestAPIClient) Runners() RunnersAPI {
 	}
 }
 
+// Workers implements the urth.Service interface.
+func (c *RestAPIClient) Workers() WorkersAPI {
+	return &workersAPIClient{
+		RestAPIClient: *c,
+	}
+}
+
 func (c *RestAPIClient) Scenarios() ScenarioAPI {
 	return &scenariosAPIClient{
 		RestAPIClient: *c,
@@ -406,6 +413,40 @@ func searchToQuery(searchQuery manifest.SearchQuery) url.Values {
 // --------
 // Runners API
 // --------
+
+type workersAPIClient struct {
+	RestAPIClient
+}
+
+// List all resources matching given search query
+func (c *workersAPIClient) List(ctx context.Context, searchQuery manifest.SearchQuery) ([]manifest.ResourceManifest, int64, error) {
+	targetAPI := urlForPath(c.baseURL, "v1/workers", searchToQuery(searchQuery))
+	return c.listResources(ctx, targetAPI)
+}
+
+// Get a single resource given its unique ID,
+// Returns a resource if it exists, false, if resource doesn't exists
+// error if there was communication error with the storage
+func (c *workersAPIClient) Get(ctx context.Context, id manifest.ResourceName) (result manifest.ResourceManifest, exists bool, err error) {
+	exists, err = c.getResource(ctx, fmt.Sprintf("v1/workers/%v", id), &result)
+	return
+}
+
+func (c *workersAPIClient) SetPaused(ctx context.Context, id manifest.ResourceName, paused bool) (result manifest.ResourceManifest, exists bool, err error) {
+	data, err := json.Marshal(SetPausedRequest{IsPaused: paused})
+	if err != nil {
+		return
+	}
+
+	targetAPI := urlForPath(c.baseURL, fmt.Sprintf("v1/workers/%v/paused", id), nil)
+	result, _, err = c.resourceAPICall(ctx, http.MethodPut, targetAPI, data)
+
+	return result, err == nil, err
+}
+
+func (c *workersAPIClient) Delete(ctx context.Context, id manifest.VersionedResourceID) (bool, error) {
+	return c.deleteResource(ctx, fmt.Sprintf("v1/workers/%v", id.ID), id.Version)
+}
 
 type runnersAPIClient struct {
 	RestAPIClient

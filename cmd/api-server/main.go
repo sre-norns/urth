@@ -168,6 +168,36 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 			bark.Manifest(ctx).Deleted(srv.Runners().Delete(ctx.Request.Context(), bark.RequireVersionedResource(ctx)))
 		})
 		//------------
+		// Workers API
+		//------------
+		// Worker instances are created by registration, not by an operator, so
+		// there is no POST here. These endpoints exist to see who has registered
+		// against a runner and to take one out of service.
+		v1.GET("/workers", bark.SearchableAPI(paginationLimit), func(ctx *gin.Context) {
+			bark.Manifest(ctx).List(srv.Workers().List(ctx.Request.Context(), bark.RequireSearchQuery(ctx)))
+		})
+		v1.GET("/workers/:id", bark.ResourceAPI(), func(ctx *gin.Context) {
+			bark.Manifest(ctx).Found(srv.Workers().Get(ctx.Request.Context(), bark.RequireResourceName(ctx)))
+		})
+		// Pause or resume a single worker. Separate from a resource update
+		// because a worker rewrites its own record on every registration; an
+		// operator's decision has to land somewhere the worker cannot reach.
+		v1.PUT("/workers/:id/paused", bark.ResourceAPI(), func(ctx *gin.Context) {
+			var request urth.SetPausedRequest
+			if err := ctx.ShouldBindJSON(&request); err != nil {
+				bark.AbortWithError(ctx, http.StatusBadRequest, err)
+				return
+			}
+
+			bark.Manifest(ctx).Found(
+				srv.Workers().SetPaused(ctx.Request.Context(), bark.RequireResourceName(ctx), request.IsPaused),
+			)
+		})
+		// Revoke a worker's registration.
+		v1.DELETE("/workers/:id", bark.ResourceAPI(), bark.VersionedResourceAPI(), func(ctx *gin.Context) {
+			bark.Manifest(ctx).Deleted(srv.Workers().Delete(ctx.Request.Context(), bark.RequireVersionedResource(ctx)))
+		})
+		//------------
 		// Scenarios API
 		//------------
 		v1.GET("/scenarios", bark.SearchableAPI(paginationLimit), func(ctx *gin.Context) {

@@ -20,6 +20,15 @@ type (
 		ArtifactID                manifest.ResourceName `uri:"artifactId" form:"artifactId" binding:"required"`
 	}
 
+	// SetPausedRequest asks the server to stop or resume a worker taking new
+	// jobs. It is a request of its own rather than an update to the worker
+	// resource, because a worker rewrites its own record whenever it registers:
+	// an operator's decision has to be applied to a field the worker cannot
+	// reach.
+	SetPausedRequest struct {
+		IsPaused bool `form:"paused" json:"paused" yaml:"paused" xml:"paused"`
+	}
+
 	// AuthJobRequest is a job authorization request: a worker sends it to take
 	// a job, if allowed.
 	AuthJobRequest struct {
