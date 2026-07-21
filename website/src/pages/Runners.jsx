@@ -1,11 +1,14 @@
 import React from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import styled from '@emotion/styled'
+import { useSearchParams } from 'wouter-search'
 import fetchRunners from '../actions/fetchRunners.js'
 import SpinnerInlay from '../components/SpinnerInlay.jsx'
 import Runner from '../containers/Runner.jsx'
 import EmptyInlay from '../components/EmptyInlay.jsx'
 import ErrorInlay from '../components/ErrorInlay.jsx'
+import { SearchQuery } from '../utils/searchQuery.js'
+import { Operator, Rule } from '../utils/k8s-labels.js'
 
 const ResourceContainer = styled.div`
   width: 100%;
@@ -16,32 +19,52 @@ const ResourceContainer = styled.div`
 `
 
 const Runners = () => {
-    const dispatch = useDispatch()
-    const { fetching, response, error } = useSelector((s) => s.scenarios)
+  const [searchParams, setSearchParams] = useSearchParams()
 
-    React.useEffect(() => {
-        dispatch(fetchRunners())
-    }, [])
+  const dispatch = useDispatch()
+  // Note: this read from the scenarios slice, which fetchRunners also wrote to,
+  // so the two lists replaced one another on navigation.
+  const { fetching, response, error } = useSelector((s) => s.runners)
 
-    if (error) {
-        return <ErrorInlay message={'Error fetching scenarios'} details={error.message || ''} />
-    }
+  React.useEffect(() => {
+    dispatch(fetchRunners(searchParams))
+  }, [searchParams])
 
-    if (!response || fetching) {
-        return <SpinnerInlay />
-    }
+  // Clicking a label narrows the list to it -- the same gesture as the scenario
+  // list, so the two pages behave alike.
+  const onCapsuleClick = (name, value) => {
+    setSearchParams((q) => {
+      try {
+        const query = new SearchQuery(q)
+        query.setRule(new Rule(name, Operator.Equals, [value]))
 
-    if (!Array.isArray(response.data) || !response.data.length) {
-        return <EmptyInlay />
-    }
+        return query.urlSearchParams
+      } catch (error) {
+        console.log('Failed to update search query', error)
+        return q
+      }
+    })
+  }
 
-    return (
-        <ResourceContainer>
-            {response.data.map((s, i) => (
-                <Runner key={s.metadata.uid} data={s} odd={i % 2 !== 0} />
-            ))}
-        </ResourceContainer>
-    )
+  if (error) {
+    return <ErrorInlay message={'Error fetching runners'} details={error.message || ''} />
+  }
+
+  if (!response || fetching) {
+    return <SpinnerInlay />
+  }
+
+  if (!Array.isArray(response.data) || !response.data.length) {
+    return <EmptyInlay />
+  }
+
+  return (
+    <ResourceContainer>
+      {response.data.map((s, i) => (
+        <Runner key={s.metadata.uid} data={s} odd={i % 2 !== 0} onCapsuleClick={onCapsuleClick} />
+      ))}
+    </ResourceContainer>
+  )
 }
 
 export default Runners
