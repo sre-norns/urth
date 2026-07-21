@@ -59,10 +59,17 @@ const SectionHeader = styled.div`
   margin-bottom: 0.75rem;
 `
 
-// Which worker executed a run is not recorded on the run itself; it is carried
-// on the labels of the artifacts that worker uploaded. Reading it from there is
-// a workaround for that gap in the API rather than a deliberate design.
-const executorFrom = (artifacts) => {
+// The run records who executed it, set when a worker claims the job.
+//
+// The fallback reads the same identity from artifact labels, which is where this
+// came from before the run carried it. It is kept for runs written by an older
+// server, and drops away once no such runs remain in retention.
+const executorFrom = (run, artifacts) => {
+  const executor = run?.status?.executor
+  if (executor?.runnerName || executor?.workerName) {
+    return { runner: executor.runnerName || null, worker: executor.workerName || null }
+  }
+
   const labelled = (artifacts || []).find((a) => a.metadata?.labels?.[LabelRunner.Name])
   const labels = labelled?.metadata?.labels || {}
 
@@ -85,7 +92,7 @@ const RunDetail = ({ scenarioId, runId }) => {
   }, [scenarioId, runId])
 
   const artifactList = useMemo(() => artifacts.response?.data || [], [artifacts.response])
-  const executor = useMemo(() => executorFrom(artifactList), [artifactList])
+  const executor = useMemo(() => executorFrom(run.response, artifactList), [run.response, artifactList])
 
   if (run.error) {
     return <ErrorInlay message="Error loading run" details={run.error.message || ''} />

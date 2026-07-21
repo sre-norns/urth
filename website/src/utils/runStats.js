@@ -81,6 +81,21 @@ export const isSettled = (run) => Boolean(run?.status?.result)
 
 export const periodById = (id) => PERIODS.find((p) => p.id === id) || PERIODS[PERIODS.length - 1]
 
+// periodQuery renders a period as the search parameters the API understands.
+// The server filters on the run's creation time, so asking it for the window
+// avoids fetching a scenario's entire history in order to show the last day of
+// it.
+export const periodQuery = (periodId, now = new Date()) => {
+  const period = periodById(periodId)
+  const params = new URLSearchParams()
+
+  if (period.ms) {
+    params.set('from', new Date(now.getTime() - period.ms).toISOString())
+  }
+
+  return params
+}
+
 export const filterByPeriod = (runs, periodId, now = new Date()) => {
   const period = periodById(periodId)
   if (!period.ms) {

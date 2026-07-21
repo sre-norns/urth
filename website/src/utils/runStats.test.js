@@ -5,6 +5,7 @@ import {
   isSettled,
   isSuccess,
   runDurationMs,
+  periodQuery,
   runStartedAt,
   summariseRuns,
 } from './runStats.js'
@@ -128,5 +129,22 @@ describe('summariseRuns', () => {
     ])
 
     expect(runStartedAt(summary.lastRun).toISOString()).toBe('2026-07-21T12:00:00.000Z')
+  })
+})
+
+describe('periodQuery', () => {
+  const now = new Date('2026-07-21T12:00:00Z')
+
+  it('asks the server for the window rather than fetching everything', () => {
+    expect(periodQuery(Period.Day, now).get('from')).toBe('2026-07-20T12:00:00.000Z')
+    expect(periodQuery(Period.Week, now).get('from')).toBe('2026-07-14T12:00:00.000Z')
+  })
+
+  it('sends no bound for all time', () => {
+    expect(periodQuery(Period.All, now).has('from')).toBe(false)
+  })
+
+  it('falls back to all time for an unknown period', () => {
+    expect(periodQuery('nonsense', now).has('from')).toBe(false)
   })
 })

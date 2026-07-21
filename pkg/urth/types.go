@@ -127,9 +127,45 @@ type ResultSpec struct {
 	TimeEnded *time.Time `form:"end_time" json:"end_time,omitempty" yaml:"end_time,omitempty" xml:"end_time" time_format:"unix" gorm:"type:TIMESTAMPTZ NULL"`
 }
 
+// ExecutorRef identifies who executed a run: the runner slot the job was
+// dispatched to, and the worker instance that actually claimed it.
+//
+// Both are recorded, because they answer different questions. The runner is the
+// long-lived registration an operator manages and schedules against; the worker
+// is the process that happened to pick this job up, and there may be many of
+// them behind one runner. Diagnosing "why did this run fail here" usually needs
+// the worker; asking "what is this pool doing" needs the runner.
+//
+// Names are stored alongside IDs deliberately. A name is what an operator reads
+// and searches by, and keeping it on the run means a run's history stays
+// readable after the runner is deleted -- which is exactly when someone is
+// likely to be looking at it.
+type ExecutorRef struct {
+	// RunnerID is the UID of the runner this job was dispatched to.
+	RunnerID manifest.ResourceID `form:"runnerId,omitempty" json:"runnerId,omitempty" yaml:"runnerId,omitempty" xml:"runnerId,omitempty"`
+
+	// RunnerName is the name of the runner at the time the job was claimed.
+	RunnerName manifest.ResourceName `form:"runnerName,omitempty" json:"runnerName,omitempty" yaml:"runnerName,omitempty" xml:"runnerName,omitempty"`
+
+	// WorkerID is the UID of the worker instance that claimed the job.
+	WorkerID manifest.ResourceID `form:"workerId,omitempty" json:"workerId,omitempty" yaml:"workerId,omitempty" xml:"workerId,omitempty"`
+
+	// WorkerName is the name of the worker instance that claimed the job.
+	WorkerName manifest.ResourceName `form:"workerName,omitempty" json:"workerName,omitempty" yaml:"workerName,omitempty" xml:"workerName,omitempty"`
+}
+
+// IsZero reports whether anything has claimed the job yet.
+func (e ExecutorRef) IsZero() bool {
+	return e.RunnerID == "" && e.WorkerID == "" && e.RunnerName == "" && e.WorkerName == ""
+}
+
 type ResultStatus struct {
 	// Status is the status of job in the job-scheduling life-cycle
 	Status JobStatus `form:"status" json:"status,omitempty" yaml:"status,omitempty" xml:"status"`
+
+	// Executor records which runner and worker executed this run. It is set when
+	// a worker claims the job and is empty while the run is still pending.
+	Executor ExecutorRef `form:"executor,omitempty" json:"executor,omitempty" yaml:"executor,omitempty" xml:"executor,omitempty" gorm:"embedded;embeddedPrefix:executor_"`
 
 	// Result of the job execution, if job has been scheduled and finished one way or the other.
 	Result prob.RunStatus `form:"result" json:"result,omitempty" yaml:"result,omitempty" xml:"result"`

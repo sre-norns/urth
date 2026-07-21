@@ -17,7 +17,17 @@ const run = {
     start_time: '2026-07-21T10:00:00+10:00',
     end_time: '2026-07-21T10:00:01.500+10:00',
   },
-  status: { status: 'completed', result: 'success', numberArtifacts: 2 },
+  status: {
+    status: 'completed',
+    result: 'success',
+    numberArtifacts: 2,
+    executor: {
+      runnerId: 'runner-uid',
+      runnerName: 'example-runner',
+      workerId: 'worker-uid',
+      workerName: 'worker-01',
+    },
+  },
 }
 
 const artifact = (kind, dataClass, extra = {}) => ({
@@ -28,8 +38,10 @@ const artifact = (kind, dataClass, extra = {}) => ({
     labels: {
       [LabelArtifact.Kind]: kind,
       [LabelArtifact.DataClass]: dataClass,
-      [LabelRunner.Name]: 'example-runner',
-      [LabelWorker.Name]: 'worker-01',
+      // Deliberately different from the run's own executor record, so the
+      // tests below prove which of the two sources was read.
+      [LabelRunner.Name]: 'artifact-runner',
+      [LabelWorker.Name]: 'artifact-worker',
       ...extra,
     },
   },
@@ -60,13 +72,34 @@ describe('RunDetail', () => {
     expect(screen.getByText('tcp')).toBeInTheDocument()
   })
 
-  // Which worker executed a run is only recorded on the labels of the artifacts
-  // it uploaded, so this is read indirectly and worth pinning.
-  it('identifies the runner and worker from artifact labels', () => {
+  it('identifies the runner and worker the run recorded at pickup', () => {
     render(stateWith([artifact('log', 'redacted')]))
 
     expect(screen.getByText('example-runner')).toBeInTheDocument()
     expect(screen.getByText('worker worker-01')).toBeInTheDocument()
+    // The run's own record wins over the labels on its artifacts.
+    expect(screen.queryByText('artifact-runner')).not.toBeInTheDocument()
+  })
+
+  // Runs written before the server recorded an executor still have to render.
+  // Their identity is recoverable from the labels of the artifacts the worker
+  // uploaded, which is where this was read from previously.
+  it('falls back to artifact labels for a run with no executor recorded', () => {
+    const legacy = { ...run, status: { ...run.status, executor: undefined } }
+
+    render(stateWith([artifact('log', 'redacted')], { fetching: false, response: legacy }))
+
+    expect(screen.getByText('artifact-runner')).toBeInTheDocument()
+    expect(screen.getByText('worker artifact-worker')).toBeInTheDocument()
+  })
+
+  // With neither source available the field says so rather than rendering blank.
+  it('shows a dash when nothing recorded who ran it', () => {
+    const legacy = { ...run, status: { ...run.status, executor: undefined } }
+
+    render(stateWith([], { fetching: false, response: legacy }))
+
+    expect(screen.getByText('Runner')).toBeInTheDocument()
   })
 
   it('lists artifacts with their data classification', () => {

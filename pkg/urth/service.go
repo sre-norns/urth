@@ -448,6 +448,45 @@ func (m *resultsAPIImpl) Create(ctx context.Context, newEntry manifest.ResourceM
 	return entry, err
 }
 
+// executorRef builds the record of who is executing a run from the worker that
+// just authenticated.
+//
+// The runner's name costs an extra lookup, which is why it is resolved here --
+// once, when the job is claimed -- rather than on every read of the run.
+// Failing to resolve it is not fatal: the IDs and the worker name still identify
+// the executor, and refusing to hand out the job because a display name could
+// not be read would be a poor trade.
+func (m *resultsAPIImpl) executorRef(ctx context.Context, worker WorkerInstance) ExecutorRef {
+	ref := ExecutorRef{
+		RunnerID:   worker.Spec.RunnerID,
+		WorkerID:   worker.UID,
+		WorkerName: worker.Name,
+	}
+
+	var runner Runner
+	if ok, err := m.store.GetByUID(ctx, &runner, worker.Spec.RunnerID); err != nil {
+		log.Print("failed to resolve runner name for run executor record: ", err)
+	} else if ok {
+		ref.RunnerName = runner.Name
+	}
+
+	return ref
+}
+
+// executorLabels exposes the executor as labels, so that "every run this worker
+// took" is a label query rather than a scan. Artifacts already carry the same
+// keys, which keeps a run and its output selectable the same way.
+func executorLabels(executor ExecutorRef) manifest.Labels {
+	labels := manifest.Labels{}
+
+	putLabel(labels, LabelRunnerName, string(executor.RunnerName))
+	putLabel(labels, LabelRunnerUID, string(executor.RunnerID))
+	putLabel(labels, LabelWorkerName, string(executor.WorkerName))
+	putLabel(labels, LabelWorkerUID, string(executor.WorkerID))
+
+	return labels
+}
+
 func (m *resultsAPIImpl) Auth(ctx context.Context, resultName manifest.ResourceName, authRequest AuthJobRequest) (AuthJobResponse, error) {
 	var worker WorkerInstance
 	if ok, err := m.store.GetByUID(ctx, &worker, authRequest.WorkerID.ID); err != nil {
@@ -490,6 +529,11 @@ func (m *resultsAPIImpl) Auth(ctx context.Context, resultName manifest.ResourceN
 	// TODO: Record expected deadline and JWT's exp claim
 	entry.Status.Status = JobRunning
 
+	// Record who took the job. This is the only moment the association is known
+	// for certain -- the server has just authenticated this worker and checked
+	// it belongs to the runner the job was dispatched to.
+	entry.Status.Executor = m.executorRef(ctx, worker)
+
 	entry.Labels = manifest.MergeLabels(
 		entry.Labels,
 		// authRequest.Labels,
@@ -497,6 +541,7 @@ func (m *resultsAPIImpl) Auth(ctx context.Context, resultName manifest.ResourceN
 		manifest.Labels{
 			LabelResultJobState: string(entry.Status.Status),
 		},
+		executorLabels(entry.Status.Executor),
 	)
 
 	// Generate JWT with valid-until clause, to give worker a time to post
@@ -586,7 +631,7 @@ func (m *resultsAPIImpl) UpdateStatus(ctx context.Context, id manifest.Versioned
 		// Set labels to reflect results pending status
 		manifest.Labels{
 			// TODO: Add duration!
-			// TODO: Add worker details
+			// Note: executor labels are set when the job is claimed, in Auth.
 			LabelResultJobState: string(entry.Status.Status),
 			LabelResultStatus:   string(entry.Status.Result),
 		},
