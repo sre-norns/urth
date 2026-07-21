@@ -90,7 +90,11 @@ export const periodQuery = (periodId, now = new Date()) => {
   const params = new URLSearchParams()
 
   if (period.ms) {
-    params.set('from', new Date(now.getTime() - period.ms).toISOString())
+    // Seconds precision, not toISOString(): the server's date parser rejects
+    // fractional seconds with a 400, so sending "…T05:26:00.000Z" broke the run
+    // history for every period except All time.
+    const from = new Date(now.getTime() - period.ms).toISOString().replace(/\.\d{3}Z$/, 'Z')
+    params.set('from', from)
   }
 
   return params

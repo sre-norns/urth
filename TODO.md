@@ -47,6 +47,17 @@ looks deceptively like passing.
 
 ### Carrying known debt
 
+- **Prober defaults are applied on the YAML path only.** The blackbox_exporter
+  config types (`http`, `tcp`, `dns`, `icmp`, `grpc`) implement `UnmarshalYAML`
+  but not `UnmarshalJSON`, so a manifest applied by `urthctl` gets blackbox's
+  defaults while a scenario posted as JSON by the UI gets zero values. In
+  practice a UI-authored probe resolved ip6 only and failed on `localhost`.
+  Worked around by seeding `IPProtocolFallback` in the UI's spec templates
+  (`website/src/utils/probSpec.js`), which duplicates server knowledge in the
+  client and should not survive. **The fix is for the API server to apply prober
+  defaults when a scenario is created or updated** -- it now links the prober
+  packages, so it can.
+
 - `Active / Disabled / All` in the scenarios header are dead links
   (`href="#"`). They look like filters and are not.
 - No authentication on non-GET requests. Anyone who can reach the API can

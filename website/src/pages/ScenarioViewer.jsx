@@ -25,6 +25,8 @@ import FormSwitch from '../components/FormSwitch.jsx'
 import FormPropertiesEditor from '../components/FormPropertiesEditor.jsx'
 import Label from '../components/Label.js'
 import PanelSplitter from '../components/PanelSplitter.js'
+import ProbEditor from '../components/ProbEditor.jsx'
+import { templateFor } from '../utils/probSpec.js'
 
 const PageContainer = styled.div`
   width: 100%;
@@ -116,6 +118,8 @@ const ScenarioViewer = ({ scenarioId, edit = false }) => {
   const [labels, setLabels] = useTrackedState(tracker, {})
   const [description, setDescription] = useTrackedState(tracker, '')
   const [active, setActive] = useTrackedState(tracker, false)
+  const [schedule, setSchedule] = useTrackedState(tracker, '')
+  const [prob, setProb] = useTrackedState(tracker, { kind: '', spec: {} })
 
   const { id, fetching, creating, updating, deleting, response, error } = useSelector((s) => s.scenario)
   const dispatch = useDispatch()
@@ -127,6 +131,8 @@ const ScenarioViewer = ({ scenarioId, edit = false }) => {
         setLabels(response.metadata.labels || {})
         setDescription(response.spec.description)
         setActive(response.spec.active)
+        setSchedule(response.spec.schedule || '')
+        setProb(response.spec.prob || { kind: '', spec: {} })
         tracker.reset()
       }
     },
@@ -143,6 +149,10 @@ const ScenarioViewer = ({ scenarioId, edit = false }) => {
 
   const handleDescriptionChange = useCallback((e) => {
     setDescription(e.target.value)
+  }, [])
+
+  const handleScheduleChange = useCallback((e) => {
+    setSchedule(e.target.value)
   }, [])
 
   const handleActiveClick = useCallback((e) => {
@@ -174,6 +184,10 @@ const ScenarioViewer = ({ scenarioId, edit = false }) => {
             spec: {
               description,
               active,
+              schedule,
+              // Note: prob was omitted here, so a scenario created in the UI had
+              // no prob body and could never run.
+              prob,
             },
           },
           (id) => {
@@ -197,6 +211,8 @@ const ScenarioViewer = ({ scenarioId, edit = false }) => {
               ...response.spec,
               description,
               active,
+              schedule,
+              prob,
               // requirements: response.spec.requirements,
               // active: response.spec.active,
               // prob: response.spec.prob,
@@ -231,6 +247,8 @@ const ScenarioViewer = ({ scenarioId, edit = false }) => {
       setLabels({})
       setDescription('')
       setActive(false)
+      setSchedule('')
+      setProb({ kind: '', spec: {} })
       tracker.reset()
     } else {
       dispatch(fetchScenario(scenarioId))
@@ -305,6 +323,29 @@ const ScenarioViewer = ({ scenarioId, edit = false }) => {
               <FormPropertiesEditor controlId="scenario-labels" value={labels} onChange={setLabels} />
             </div>
           )}
+          <FormGroup controlId="scenario-schedule">
+            <FormLabel>Schedule</FormLabel>
+            {(edit && (
+              <>
+                <FormControl
+                  type="text"
+                  placeholder="@5minutes, @hourly, or a cron expression"
+                  value={schedule}
+                  onChange={handleScheduleChange}
+                />
+                <StyledLabel>
+                  Runs are triggered manually until the scheduler lands; this is stored and shown as
+                  the next run time.
+                </StyledLabel>
+              </>
+            )) || <div>{schedule || 'unscheduled'}</div>}
+          </FormGroup>
+
+          {/* The prob is what the scenario actually does. Creating a scenario
+              without one produces something that can never run, which is what
+              this form used to do. */}
+          <ProbEditor value={prob} onChange={setProb} readOnly={!edit} />
+
           <HorizontalFormGroup controlId="scenario-active">
             <HorizontalLabel>Active</HorizontalLabel>
             <FormSwitch checked={active} readOnly={!edit} onClick={(edit && handleActiveClick) || null} />

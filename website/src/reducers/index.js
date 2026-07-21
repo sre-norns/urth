@@ -10,6 +10,7 @@ import runners from './runners.js'
 import runner from './runner.js'
 import workers from './workers.js'
 import results from './results.js'
+import probKinds from './probKinds.js'
 
 export default combineReducers({
   scenarios,
@@ -23,4 +24,5 @@ export default combineReducers({
   runner,
   workers,
   results,
+  probKinds,
 })
