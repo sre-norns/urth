@@ -142,10 +142,24 @@ const StatusHistory = forwardRef(({ value, limit, onClick, ...props }, ref) => {
     if (statuses) {
         statuses.sort((b, a) => Date.parse(a.creationTimestamp) - Date.parse(b.creationTimestamp))
     }
-    if (statuses.length < limit) {
-        for (let i = statuses.length; i < limit; i++) {
-            statuses.push({})
-        }
+
+    // A scenario that has never run gets a line of text rather than a row of
+    // empty boxes: sixty dashes say the same thing as one word, less clearly.
+    if (statuses.length === 0) {
+        return (
+            <StatusHistoryContainer {...props} ref={ref}>
+                <TextSpan size="small" level={4}>
+                    No runs yet
+                </TextSpan>
+            </StatusHistoryContainer>
+        )
+    }
+
+    // Where there is history, the empty slots stay: they show how much of the
+    // window is filled, so a scenario that has run twice reads differently from
+    // one that has run sixty times.
+    for (let i = statuses.length; i < limit; i++) {
+        statuses.push({})
     }
 
     return (

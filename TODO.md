@@ -83,6 +83,14 @@
 - Consider using Postgres as PubSub for API server - to - worker job distribution and scheduling.
 
 ## TODOs:
+[] A run does not record which worker executed it. The UI recovers it from the labels
+   of the artifacts that worker uploaded, which fails for a run that produced none.
+   Put runner/worker on the Result itself.
+[] `GET /scenarios/:id/results` has no server-side period filter, so the UI fetches the
+   history and windows it client-side. Fine at current volumes, not at a year of runs.
+[X] Result timestamps were stored in Postgres `TIMESTAMP` (without time zone), so local
+   wall-clock times were read back as UTC and every run time was off by the server's
+   offset. Now `TIMESTAMPTZ`.
 [] Secrets injection at replay time: a HAR recording currently stores live credentials
    because fidelity is what makes it replayable. Capture placeholders instead
    (`Authorization: {{urth.secret.auth}}`) and have the runner inject from a secret
