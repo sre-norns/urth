@@ -7,6 +7,7 @@ import Scenarios from './pages/Scenarios.jsx'
 import ScenarioDetail from './pages/ScenarioDetail.jsx'
 import ScenarioViewer from './pages/ScenarioViewer.jsx'
 import RunDetail from './pages/RunDetail.jsx'
+import Results from './pages/Results.jsx'
 import Runners from './pages/Runners.jsx'
 import RunnerDetail from './pages/RunnerDetail.jsx'
 
@@ -33,6 +34,10 @@ export default () => {
             {(params) => <RunDetail scenarioId={params.scenarioId} runId={params.runId} />}
           </Route>
           <Route path="/scenarios/:scenarioId">{(params) => <ScenarioDetail scenarioId={params.scenarioId} />}</Route>
+          <Route path="/results">{() => <Results />}</Route>
+          {/* A run can be opened without knowing its scenario; the page reads
+              the scenario from the run itself. */}
+          <Route path="/results/:runId">{(params) => <RunDetail runId={params.runId} />}</Route>
           <Route path="/runners">{() => <Runners />}</Route>
           <Route path="/runners/:runnerId">{(params) => <RunnerDetail runnerId={params.runnerId} />}</Route>
           <Route>{() => <p>Not found</p>}</Route>

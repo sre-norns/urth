@@ -1,11 +1,59 @@
 # A list of ideas to implement
 (Temporary here until proper task management system is provisioned)
 
+---
+
+## Where things stand (end of UI/admin session)
+
+See `CLAUDE.md` first -- it holds the traps that cost the most time.
+
+**Open PR:** #12 `feat/results-pages` -> main (Results list + standalone run
+detail). Was stacked on #11; #11 is merged and #12 has been retargeted to main,
+so it should now get real CI. Confirm the checks are green before merging --
+while it was stacked GitHub reported "mergeable" with **zero checks run**, which
+looks deceptively like passing.
+
+**Also open:** dependabot #2 (Go module bumps, 12 updates). Untouched.
+
+### Next, in the order I would take them
+
+1. **Verify #12's CI and merge.** Nothing depends on it, but it is finished work
+   sitting unmerged.
+2. **A scheduler that actually schedules.** Still the largest gap between the
+   README and reality: scenario `schedule` fields are stored and validated, and
+   `nextScheduledRunTime` is computed and displayed, but nothing triggers a run.
+   Every run to date is manual. This is the feature that makes the product what
+   the README says it is.
+3. **Fix SQLite, or stop offering it.** `--store.url` defaults to a backend that
+   cannot start. Either fix `idx_name` upstream in wyrd (`index:idx_name` ->
+   `index`, letting gorm name it per table) or change the default to make the
+   supported path the obvious one. Currently a new contributor's first run fails.
+4. **Retention acting on data classification.** The labels exist and are queried;
+   nothing expires. `secret-bearing` artifacts should have a shorter default
+   expiry and restricted download. This is the other half of the artifact
+   classification work.
+5. **Dashboards.** The nav item is disabled and has never led anywhere -- the
+   same state Results was in before this session.
+
+### Carrying known debt
+
+- `Active / Disabled / All` in the scenarios header are dead links
+  (`href="#"`). They look like filters and are not.
+- No authentication on non-GET requests. Anyone who can reach the API can
+  disable a runner or drop a worker. Fine for local development, not for the
+  "enterprise friendly" claim.
+- `examples/README.md` references `run.scenario.json` and `worker.yml`, neither
+  of which exist.
+- The UI polls; there is no live update. A run triggered from the UI only
+  appears after a refetch.
+
+---
+
 
 ## Code quality
 [X] Switch to make
 [X] Add `go vet ` to go-lang build pipeline
-[] Add static `testtool` to go-lang build pipeline
+[X] Add static `testtool` to go-lang build pipeline (staticcheck + govulncheck in `make audit`, run by CI)
 
 # Feature:
 [] Enable *scheduler* to actually USE scenario schedules field
@@ -23,7 +71,9 @@
 - Regexp to match response body for TCP request
 - Response code for HTTP request
 [x] Validate labels names!
-[] Labels returned by a worker for a job-results / artifacts must be immutable
+[~] Labels returned by a worker for a job-results / artifacts must be immutable
+   (system labels are merged last, so a worker cannot relabel its own upload as clean;
+    worker-supplied labels are still stored as given)
 [X] Add API to find workers give a set of labels and requirements - to enable better UX where user can see how many probers will qualify for a given set of labels. (NOTE: This is a statdards label-besed search API)
 [X] A run results object with an update time-limited JWT token must be created when a job is scheduled. Worker can only update, within a time alloted, an already `pending` run.
 [x] Restore labels API: Extract labels from JSON field
@@ -83,6 +133,10 @@
 - Consider using Postgres as PubSub for API server - to - worker job distribution and scheduling.
 
 ## TODOs:
+[X] Worker instances are manageable: list/get, pause (server-owned, enforced at job
+   claim), and drop. Disabling a runner now also stops its already-connected workers.
+[X] Web UI: cross-scenario Results list, run detail with artifacts, scenario detail with
+   run history and stats, runner detail with worker admin. Search on every list page.
 [X] A run now records which runner and worker executed it, captured when a worker claims
    the job in `Results.Auth`, and exposed as `urth/runner.*` / `urth/worker.*` labels.
 [X] `GET /scenarios/:id/results` does support a server-side time window: `?from=` / `?till=`

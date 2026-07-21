@@ -52,7 +52,7 @@ const stateWith = (artifacts, runState = { fetching: false, response: run }) => 
   scenarios: {},
   scenarioResults: {},
   scenarioActions: {},
-  run: { 'tcp-self-fondle/kbjk96thvzcuiass': runState },
+  run: { kbjk96thvzcuiass: runState },
   runArtifacts: { kbjk96thvzcuiass: { fetching: false, response: { data: artifacts } } },
   artifactContent: {},
 })
@@ -61,6 +61,11 @@ const render = (state) =>
   renderWithProviders(<RunDetail scenarioId="tcp-self-fondle" runId="kbjk96thvzcuiass" />, {
     preloadedState: state,
   })
+
+// Opened from the cross-scenario Results list, where the URL carries only the
+// run name.
+const renderStandalone = (state) =>
+  renderWithProviders(<RunDetail runId="kbjk96thvzcuiass" />, { preloadedState: state })
 
 describe('RunDetail', () => {
   it('shows the outcome, timing and type of the run', () => {
@@ -140,6 +145,28 @@ describe('RunDetail', () => {
 
   // Placeholder for the next iteration's network path and traces, so the layout
   // does not have to be reworked to make room for it.
+  // Reached from /results/:runId the scenario is not in the URL, so the page
+  // reads it from the run's own labels rather than requiring it as a prop.
+  it('finds the scenario from the run when not given one', () => {
+    const withLabels = {
+      ...run,
+      labels: { 'urth/scenario.name': 'tcp-self-fondle' },
+    }
+
+    renderStandalone(stateWith([artifact('log', 'redacted')], { fetching: false, response: withLabels }))
+
+    expect(screen.getByText(/tcp-self-fondle/)).toBeInTheDocument()
+    expect(screen.getByText('success')).toBeInTheDocument()
+  })
+
+  // A run whose scenario has since been deleted still has to render.
+  it('renders without a scenario link when the run does not name one', () => {
+    renderStandalone(stateWith([artifact('log', 'redacted')]))
+
+    expect(screen.getByText('kbjk96thvzcuiass')).toBeInTheDocument()
+    expect(screen.queryByText(/← /)).not.toBeInTheDocument()
+  })
+
   it('reserves a place for network and trace detail', () => {
     render(stateWith([artifact('log', 'redacted')]))
 

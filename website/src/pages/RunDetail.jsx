@@ -16,7 +16,7 @@ import TextSpan, { TextDiv } from '../components/TextSpan.js'
 import { statusToColor } from '../utils/status-color.js'
 import { formatDuration, formatRelative, formatTimestamp } from '../utils/time.js'
 import { runDurationMs, runFinishedAt, runStartedAt } from '../utils/runStats.js'
-import { LabelArtifact, LabelRunner, LabelWorker } from '../utils/labels.js'
+import { LabelArtifact, LabelRunner, LabelScenario, LabelWorker } from '../utils/labels.js'
 
 const PageContainer = styled.div`
   width: 100%;
@@ -81,15 +81,14 @@ const executorFrom = (run, artifacts) => {
 
 const RunDetail = ({ scenarioId, runId }) => {
   const dispatch = useDispatch()
-  const key = `${scenarioId}/${runId}`
 
-  const run = useSelector((s) => s.run[key]) || {}
+  const run = useSelector((s) => s.run[runId]) || {}
   const artifacts = useSelector((s) => s.runArtifacts[runId]) || {}
 
   useEffect(() => {
-    dispatch(fetchRun(scenarioId, runId))
+    dispatch(fetchRun(runId))
     dispatch(fetchRunArtifacts(runId))
-  }, [scenarioId, runId])
+  }, [runId])
 
   const artifactList = useMemo(() => artifacts.response?.data || [], [artifacts.response])
   const executor = useMemo(() => executorFrom(run.response, artifactList), [run.response, artifactList])
@@ -103,6 +102,9 @@ const RunDetail = ({ scenarioId, runId }) => {
   }
 
   const result = run.response
+  // Reached from /results/:runId the scenario is not in the URL, so it is read
+  // from the run itself; reached from a scenario's history it is already known.
+  const scenarioName = scenarioId || result.labels?.[LabelScenario.Name] || null
   const started = runStartedAt(result)
   const finished = runFinishedAt(result)
 
@@ -120,9 +122,11 @@ const RunDetail = ({ scenarioId, runId }) => {
         <HeaderRow>
           <RagIndicator color={statusToColor(result.status)} />
           <h2>{result.name}</h2>
-          <TextSpan size="small" level={3}>
-            <Link href={`/scenarios/${scenarioId}`}>← {scenarioId}</Link>
-          </TextSpan>
+          {scenarioName && (
+            <TextSpan size="small" level={3}>
+              <Link href={`/scenarios/${scenarioName}`}>← {scenarioName}</Link>
+            </TextSpan>
+          )}
         </HeaderRow>
 
         <StatsRow>
@@ -183,7 +187,9 @@ const RunDetail = ({ scenarioId, runId }) => {
 }
 
 RunDetail.propTypes = {
-  scenarioId: PropTypes.string.isRequired,
+  // Optional: absent when the page is opened from the cross-scenario Results
+  // list, where the scenario is read from the run instead.
+  scenarioId: PropTypes.string,
   runId: PropTypes.string.isRequired,
 }
 
