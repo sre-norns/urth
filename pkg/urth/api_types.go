@@ -20,6 +20,29 @@ type (
 		ArtifactID                manifest.ResourceName `uri:"artifactId" form:"artifactId" binding:"required"`
 	}
 
+	// ProbKindInfo describes a kind of prob the server knows about.
+	//
+	// The server owns this registry. A scenario's prob is not an arbitrary
+	// script: it is one of a known set of kinds with a known spec shape, and a
+	// client offering someone a choice should be offering the server's list
+	// rather than one it carries itself and has to keep in step.
+	ProbKindInfo struct {
+		// Kind identifies the prob type, as used in a scenario manifest.
+		Kind string `form:"kind" json:"kind" yaml:"kind" xml:"kind"`
+
+		// Version of the prober module that implements this kind.
+		Version string `form:"version,omitempty" json:"version,omitempty" yaml:"version,omitempty" xml:"version,omitempty"`
+
+		// ContentType of the prob's script, where the kind takes one. Kinds that
+		// are configured rather than scripted leave this empty, which is how a
+		// client can tell a script editor is wanted.
+		ContentType string `form:"contentType,omitempty" json:"contentType,omitempty" yaml:"contentType,omitempty" xml:"contentType,omitempty"`
+
+		// Produce lists the kinds of artifact a run of this prob is expected to
+		// leave behind.
+		Produce []string `form:"produce,omitempty" json:"produce,omitempty" yaml:"produce,omitempty" xml:"produce,omitempty"`
+	}
+
 	// SetPausedRequest asks the server to stop or resume a worker taking new
 	// jobs. It is a request of its own rather than an update to the worker
 	// resource, because a worker rewrites its own record whenever it registers:
