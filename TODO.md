@@ -22,8 +22,18 @@ looks deceptively like passing.
 2. **A scheduler that actually schedules.** Still the largest gap between the
    README and reality: scenario `schedule` fields are stored and validated, and
    `nextScheduledRunTime` is computed and displayed, but nothing triggers a run.
-   Every run to date is manual. This is the feature that makes the product what
-   the README says it is.
+   Every run to date is manual. Required for v1.0.
+
+   **Deliberately deferred, not forgotten.** A distributed scheduler is important
+   and fiddly enough to deserve a design pass of its own rather than being
+   grown incrementally. The intended direction: drive it from **Postgres
+   notifications** (LISTEN/NOTIFY) rather than polling -- there are prototypes in
+   `wyrd` already -- and use the same channel to push **UI updates**, which also
+   answers the "UI does not update live" item below.
+
+   Until that design lands, treat manual triggering as the supported path and
+   build everything else against it. The scheduler removes the need to press the
+   button; it should not change what the button does.
 3. **Fix SQLite, or stop offering it.** `--store.url` defaults to a backend that
    cannot start. Either fix `idx_name` upstream in wyrd (`index:idx_name` ->
    `index`, letting gorm name it per table) or change the default to make the
@@ -37,6 +47,17 @@ looks deceptively like passing.
 
 ### Carrying known debt
 
+- **Prober defaults are applied on the YAML path only.** The blackbox_exporter
+  config types (`http`, `tcp`, `dns`, `icmp`, `grpc`) implement `UnmarshalYAML`
+  but not `UnmarshalJSON`, so a manifest applied by `urthctl` gets blackbox's
+  defaults while a scenario posted as JSON by the UI gets zero values. In
+  practice a UI-authored probe resolved ip6 only and failed on `localhost`.
+  Worked around by seeding `IPProtocolFallback` in the UI's spec templates
+  (`website/src/utils/probSpec.js`), which duplicates server knowledge in the
+  client and should not survive. **The fix is for the API server to apply prober
+  defaults when a scenario is created or updated** -- it now links the prober
+  packages, so it can.
+
 - `Active / Disabled / All` in the scenarios header are dead links
   (`href="#"`). They look like filters and are not.
 - No authentication on non-GET requests. Anyone who can reach the API can
@@ -45,7 +66,9 @@ looks deceptively like passing.
 - `examples/README.md` references `run.scenario.json` and `worker.yml`, neither
   of which exist.
 - The UI polls; there is no live update. A run triggered from the UI only
-  appears after a refetch.
+  appears after a refetch. Expected to be solved by the same Postgres
+  notification channel as the scheduler -- do not build a bespoke polling or
+  websocket layer for it in the meantime.
 
 ---
 

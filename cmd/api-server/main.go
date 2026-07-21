@@ -19,6 +19,21 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	// dlogger "gorm.io/gorm/logger"
+
+	// Prober packages are linked for their registration side effects only. The
+	// server does not execute probs -- workers do -- but it owns the registry of
+	// which kinds exist, and cannot answer that for kinds it has never seen.
+	// Without these imports GET /probs reports an empty list rather than a wrong
+	// one, which is a quieter failure than it looks.
+	_ "github.com/sre-norns/urth/pkg/probers/dns"
+	_ "github.com/sre-norns/urth/pkg/probers/grpc"
+	_ "github.com/sre-norns/urth/pkg/probers/har"
+	_ "github.com/sre-norns/urth/pkg/probers/http"
+	_ "github.com/sre-norns/urth/pkg/probers/icmp"
+	_ "github.com/sre-norns/urth/pkg/probers/puppeteer"
+	_ "github.com/sre-norns/urth/pkg/probers/pypuppeteer"
+	_ "github.com/sre-norns/urth/pkg/probers/rest"
+	_ "github.com/sre-norns/urth/pkg/probers/tcp"
 )
 
 const (
@@ -166,6 +181,12 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 		})
 		v1.DELETE("/runners/:id", bark.ResourceAPI(), bark.VersionedResourceAPI(), func(ctx *gin.Context) {
 			bark.Manifest(ctx).Deleted(srv.Runners().Delete(ctx.Request.Context(), bark.RequireVersionedResource(ctx)))
+		})
+		// The kinds of prob a scenario may declare. Read by clients offering a
+		// choice, so that the list comes from the server rather than being
+		// duplicated and drifting.
+		v1.GET("/probs", func(ctx *gin.Context) {
+			ctx.JSON(http.StatusOK, gin.H{"data": urth.ListProbKinds()})
 		})
 		//------------
 		// Run results, across all scenarios

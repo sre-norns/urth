@@ -6,7 +6,10 @@ const createScenario = (data, successCallback) => async (dispatch) => {
 
   try {
     const response = await apiPost(`/api/v1/scenarios`, data)
-    const id = response.uid
+    // The create response nests under `metadata`, so `response.uid` was always
+    // undefined and the redirect after saving landed on /scenarios/undefined.
+    // Routes address scenarios by name, not uid.
+    const id = response.metadata?.name
 
     dispatch({
       type: ActionType.SCENARIO_CREATED,

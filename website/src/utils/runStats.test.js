@@ -136,8 +136,17 @@ describe('periodQuery', () => {
   const now = new Date('2026-07-21T12:00:00Z')
 
   it('asks the server for the window rather than fetching everything', () => {
-    expect(periodQuery(Period.Day, now).get('from')).toBe('2026-07-20T12:00:00.000Z')
-    expect(periodQuery(Period.Week, now).get('from')).toBe('2026-07-14T12:00:00.000Z')
+    expect(periodQuery(Period.Day, now).get('from')).toBe('2026-07-20T12:00:00Z')
+    expect(periodQuery(Period.Week, now).get('from')).toBe('2026-07-14T12:00:00Z')
+  })
+
+  // The server's date parser rejects fractional seconds with a 400. Sending
+  // toISOString() verbatim broke run history for every period but All time.
+  it('sends whole seconds, which is all the server accepts', () => {
+    for (const period of [Period.Day, Period.Week, Period.Month]) {
+      expect(periodQuery(period, now).get('from')).not.toMatch(/\.\d+Z$/)
+      expect(periodQuery(period, now).get('from')).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/)
+    }
   })
 
   it('sends no bound for all time', () => {
