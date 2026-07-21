@@ -63,6 +63,19 @@ const performFetch = async (url, init) => {
 
 export const apiGet = (url) => performFetch(url, createRequestInit('GET'))
 
+// Artifact content is served as its own media type -- text/plain for a log,
+// application/json for a HAR -- rather than wrapped in a JSON envelope, so it
+// cannot go through performFetch's JSON decoding.
+export const apiGetText = async (url) => {
+  const response = await fetch(url, createRequestInit('GET'))
+
+  if (response.status < 200 || response.status >= 300) {
+    throw new ApiError(`Server returned error status ${response.status}`, response, undefined)
+  }
+
+  return response.text()
+}
+
 export const apiPost = (url, data) => performFetch(url, createRequestInit('POST', data))
 
 export const apiPut = (url, data) => performFetch(url, createRequestInit('PUT', data))

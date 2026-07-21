@@ -22,12 +22,13 @@ class SearchQuery {
         this.labels = this.sourceQuery.get("labels") || ""
     }
 
+    // Replaces any existing rule for the same key, rather than appending.
+    // Clicking a second value for a key otherwise builds a selector that can
+    // never match -- "env = prod,env = dev" -- and the list silently empties.
     setRule(rule) {
-        if (!this._expressions) {
-            this._expressions = [rule]
-        } else {
-            this._expressions.push(rule)
-        }
+        const existing = this._expressions || []
+
+        this._expressions = existing.filter((e) => e.key !== rule.key).concat([rule])
     }
 
     get labels() {
@@ -80,7 +81,7 @@ class SearchQuery {
     }
 
     toString() {
-        return urlSearchParams.toString()
+        return this.urlSearchParams.toString()
     }
 }
 

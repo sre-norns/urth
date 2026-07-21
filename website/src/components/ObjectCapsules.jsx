@@ -1,7 +1,7 @@
 import React, {forwardRef, useMemo} from 'react'
 import PropTypes from 'prop-types'
 import styled from '@emotion/styled'
-import Capsule from './Capsule.js'
+import Capsule from './Capsule.jsx'
 import {cyrb53} from '../utils/hash.js'
 
 const colors = ['primary', 'secondary', 'error', 'success', 'warning', 'neutral']

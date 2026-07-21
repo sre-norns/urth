@@ -2,10 +2,10 @@ import React from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import styled from '@emotion/styled'
 import fetchRunners from '../actions/fetchRunners.js'
-import SpinnerInlay from '../components/SpinnerInlay.js'
-import Runner from '../containers/Runner.js'
-import EmptyInlay from '../components/EmptyInlay.js'
-import ErrorInlay from '../components/ErrorInlay.js'
+import SpinnerInlay from '../components/SpinnerInlay.jsx'
+import Runner from '../containers/Runner.jsx'
+import EmptyInlay from '../components/EmptyInlay.jsx'
+import ErrorInlay from '../components/ErrorInlay.jsx'
 
 const ResourceContainer = styled.div`
   width: 100%;

@@ -1,7 +1,7 @@
 import React from 'react'
 import PropTypes from 'prop-types'
 import styled from '@emotion/styled'
-import Error from './Error.js'
+import Error from './Error.jsx'
 
 const Container = styled.div`
   display: flex;

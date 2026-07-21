@@ -1,7 +1,7 @@
 import React from 'react'
 import PropTypes from 'prop-types'
 import styled from '@emotion/styled'
-import {routed} from '../utils/routing.js'
+import {routed} from '../utils/routing.jsx'
 
 const Link = styled.a`
   text-decoration: none;

@@ -11,7 +11,7 @@ import Nav from '../components/Nav.js'
 import NavRowContainer from '../components/NavRowContainer.js'
 import TextInput from '../components/TextInput.js'
 import Button from '../components/Button.js'
-import { routed } from '../utils/routing.js'
+import { routed } from '../utils/routing.jsx'
 import { SearchQuery } from '../utils/searchQuery.js'
 
 const onNonClick = (e) => {

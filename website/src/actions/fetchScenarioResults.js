@@ -5,9 +5,11 @@ const fetchScenarioResults = (id, searchQuery) => async (dispatch) => {
     dispatch({ type: ActionType.SCENARIO_RESULTS_FETCHING, id })
 
     try {
+        // Note: this test was inverted -- a search query was dropped, and its
+        // absence appended "?undefined" to the URL.
         const response = searchQuery
-            ? await apiGet(`/api/v1/scenarios/${id}/results`)
-            : await apiGet(`/api/v1/scenarios/${id}/results?${searchQuery}`)
+            ? await apiGet(`/api/v1/scenarios/${id}/results?${searchQuery}`)
+            : await apiGet(`/api/v1/scenarios/${id}/results`)
 
         dispatch({
             type: ActionType.SCENARIO_RESULTS_FETCHED,
