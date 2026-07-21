@@ -83,11 +83,11 @@
 - Consider using Postgres as PubSub for API server - to - worker job distribution and scheduling.
 
 ## TODOs:
-[] A run does not record which worker executed it. The UI recovers it from the labels
-   of the artifacts that worker uploaded, which fails for a run that produced none.
-   Put runner/worker on the Result itself.
-[] `GET /scenarios/:id/results` has no server-side period filter, so the UI fetches the
-   history and windows it client-side. Fine at current volumes, not at a year of runs.
+[X] A run now records which runner and worker executed it, captured when a worker claims
+   the job in `Results.Auth`, and exposed as `urth/runner.*` / `urth/worker.*` labels.
+[X] `GET /scenarios/:id/results` does support a server-side time window: `?from=` / `?till=`
+   were already bound by bark and applied by dbstore. The earlier claim that it did not
+   was a bad test, not a missing feature. The UI now sends the window.
 [X] Result timestamps were stored in Postgres `TIMESTAMP` (without time zone), so local
    wall-clock times were read back as UTC and every run time was off by the server's
    offset. Now `TIMESTAMPTZ`.

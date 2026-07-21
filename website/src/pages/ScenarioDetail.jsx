@@ -18,7 +18,7 @@ import TextSpan, { TextDiv } from '../components/TextSpan.js'
 import { routed } from '../utils/routing.jsx'
 import { statusToColor } from '../utils/status-color.js'
 import { formatDuration, formatPercent, formatRelative, formatTimestamp } from '../utils/time.js'
-import { PERIODS, Period, filterByPeriod, summariseRuns } from '../utils/runStats.js'
+import { PERIODS, Period, filterByPeriod, periodQuery, summariseRuns } from '../utils/runStats.js'
 
 const PageContainer = styled.div`
   width: 100%;
@@ -99,16 +99,31 @@ const ScenarioDetail = ({ scenarioId }) => {
 
   useEffect(() => {
     dispatch(fetchScenario(scenarioId))
-    dispatch(fetchScenarioResults(scenarioId))
   }, [scenarioId])
+
+  // The window is applied by the server, so changing the period re-reads the
+  // history rather than filtering a full download in the browser.
+  useEffect(() => {
+    dispatch(fetchScenarioResults(scenarioId, periodQuery(period).toString()))
+  }, [scenarioId, period])
 
   // A manual run is queued asynchronously, so the new run only appears once the
   // worker has picked it up. Re-reading the history after the request settles is
   // what makes the button feel like it did something.
   const handleRun = useCallback(() => {
-    dispatch(runScenario(scenarioId, () => dispatch(fetchScenarioResults(scenarioId))))
-  }, [scenarioId])
+    dispatch(
+      runScenario(scenarioId, () =>
+        dispatch(fetchScenarioResults(scenarioId, periodQuery(period).toString()))
+      )
+    )
+  }, [scenarioId, period])
 
+  // The server has already applied the window; filterByPeriod runs again over
+  // what came back because the server filters on a run's creation time while
+  // these figures are keyed to when the probe started. The two differ by however
+  // long a job waited in the queue, and the second pass keeps a run that was
+  // created just inside the window but started outside it from skewing the
+  // numbers.
   const runs = useMemo(() => results.response?.data || [], [results.response])
   const runsInPeriod = useMemo(() => filterByPeriod(runs, period), [runs, period])
   const summary = useMemo(() => summariseRuns(runsInPeriod), [runsInPeriod])
