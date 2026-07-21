@@ -24,9 +24,11 @@ import ObjectCapsules from '../components/ObjectCapsules.jsx'
 import FormSwitch from '../components/FormSwitch.jsx'
 import FormPropertiesEditor from '../components/FormPropertiesEditor.jsx'
 import Label from '../components/Label.js'
+import TextSpan from '../components/TextSpan.js'
 import PanelSplitter from '../components/PanelSplitter.js'
 import ProbEditor from '../components/ProbEditor.jsx'
 import { templateFor } from '../utils/probSpec.js'
+import { splitLabels } from '../utils/labels.js'
 
 const PageContainer = styled.div`
   width: 100%;
@@ -128,7 +130,7 @@ const ScenarioViewer = ({ scenarioId, edit = false }) => {
     (response) => {
       if (response && response.metadata.name === scenarioId) {
         setName(response.metadata.name)
-        setLabels(response.metadata.labels || {})
+        setLabels(splitLabels(response.metadata.labels).user)
         setDescription(response.spec.description)
         setActive(response.spec.active)
         setSchedule(response.spec.schedule || '')
@@ -273,6 +275,9 @@ const ScenarioViewer = ({ scenarioId, edit = false }) => {
 
   const title = edit ? (isNew ? 'New Scenario' : name) : name
 
+  // Split for display: the user's own labels are editable, the server's are not.
+  const { user: userLabels, system: systemLabels } = splitLabels(response?.metadata?.labels)
+
   return (
     <PageContainer>
       <PagePanel>
@@ -311,10 +316,10 @@ const ScenarioViewer = ({ scenarioId, edit = false }) => {
               </>
             )) || <div>{description}</div>}
           </FormGroup>
-          {!edit && !isEmpty(response?.metadata?.labels) && (
+          {!edit && !isEmpty(userLabels) && (
             <FormGroup controlId="scenario-labels">
               <FormLabel>Labels</FormLabel>
-              <ObjectCapsules value={response.metadata.labels} />
+              <ObjectCapsules value={userLabels} />
             </FormGroup>
           )}
           {edit && (
@@ -323,6 +328,27 @@ const ScenarioViewer = ({ scenarioId, edit = false }) => {
               <FormPropertiesEditor controlId="scenario-labels" value={labels} onChange={setLabels} />
             </div>
           )}
+
+          {/* Server-assigned labels are shown but not offered for editing: they
+              are recomputed on every save, so a change here would not survive. */}
+          {!isEmpty(systemLabels) && (
+            <details>
+              <summary>
+                <TextSpan size="small" level={4}>
+                  {Object.keys(systemLabels).length} system{' '}
+                  {Object.keys(systemLabels).length === 1 ? 'label' : 'labels'}, assigned by the
+                  server
+                </TextSpan>
+              </summary>
+              <ObjectCapsules value={systemLabels} style={{ paddingTop: '0.5rem' }} />
+            </details>
+          )}
+
+          <HorizontalFormGroup controlId="scenario-active">
+            <HorizontalLabel>Active</HorizontalLabel>
+            <FormSwitch checked={active} readOnly={!edit} onClick={(edit && handleActiveClick) || null} />
+          </HorizontalFormGroup>
+
           <FormGroup controlId="scenario-schedule">
             <FormLabel>Schedule</FormLabel>
             {(edit && (
@@ -345,11 +371,6 @@ const ScenarioViewer = ({ scenarioId, edit = false }) => {
               without one produces something that can never run, which is what
               this form used to do. */}
           <ProbEditor value={prob} onChange={setProb} readOnly={!edit} />
-
-          <HorizontalFormGroup controlId="scenario-active">
-            <HorizontalLabel>Active</HorizontalLabel>
-            <FormSwitch checked={active} readOnly={!edit} onClick={(edit && handleActiveClick) || null} />
-          </HorizontalFormGroup>
         </PageForm>
         {edit && !isNew && (
           <>

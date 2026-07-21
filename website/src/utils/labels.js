@@ -68,3 +68,26 @@ export const mayContainSecrets = (artifact) => {
 }
 
 export const labelOf = (resource, key) => resource?.metadata?.labels?.[key] || resource?.labels?.[key] || null
+
+// Labels under the `urth/` prefix are assigned and owned by the server. They are
+// recomputed whenever a resource is saved, so editing one has no lasting effect
+// -- which makes offering it for editing worse than not showing it at all.
+//
+// They are still worth *seeing* on an existing resource, so the UI shows them
+// read-only, in the same capsule form the resource lists use.
+export const isSystemLabel = (key) => String(key || '').startsWith(PREFIX)
+
+export const splitLabels = (labels) => {
+  const user = {}
+  const system = {}
+
+  for (const [key, value] of Object.entries(labels || {})) {
+    if (isSystemLabel(key)) {
+      system[key] = value
+    } else {
+      user[key] = value
+    }
+  }
+
+  return { user, system }
+}
