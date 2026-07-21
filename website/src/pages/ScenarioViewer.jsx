@@ -104,6 +104,47 @@ const DeleteButton = styled(Button)`
   }
 `
 
+// `summary` gives no affordance of its own beyond a small marker, and wrapped in
+// body text it reads as a caption rather than something to click. This styles it
+// the way links behave here -- pointer, underline on hover -- and adds a caret
+// that turns when the section opens, so the state is visible as well as the
+// action.
+const SystemLabels = styled.details`
+  summary {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    cursor: pointer;
+    width: fit-content;
+    list-style: none;
+    // Underlined at rest, not only on hover: without it the row reads as a
+    // caption and gives no sign it can be opened.
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+    color: ${(props) => props.theme.color.secondary[props.theme.dark ? 400 : 600]};
+  }
+
+  summary::-webkit-details-marker {
+    display: none;
+  }
+
+  summary:hover {
+    color: ${(props) => props.theme.color.secondary[props.theme.dark ? 300 : 700]};
+  }
+
+  summary::before {
+    content: '';
+    border: 0.3em solid transparent;
+    border-left-color: currentColor;
+    transform: translateX(0.1em);
+    transition: transform 0.15s ease;
+  }
+
+  &[open] summary::before {
+    transform: rotate(90deg) translateY(0.1em);
+  }
+`
+
 const validateName = (...args) => validateNotEmpty(...args) || validateMaxLength(32)(...args)
 
 const validateDescription = validateMaxLength(128)
@@ -332,16 +373,16 @@ const ScenarioViewer = ({ scenarioId, edit = false }) => {
           {/* Server-assigned labels are shown but not offered for editing: they
               are recomputed on every save, so a change here would not survive. */}
           {!isEmpty(systemLabels) && (
-            <details>
+            <SystemLabels>
               <summary>
-                <TextSpan size="small" level={4}>
+                <TextSpan size="small">
                   {Object.keys(systemLabels).length} system{' '}
                   {Object.keys(systemLabels).length === 1 ? 'label' : 'labels'}, assigned by the
                   server
                 </TextSpan>
               </summary>
               <ObjectCapsules value={systemLabels} style={{ paddingTop: '0.5rem' }} />
-            </details>
+            </SystemLabels>
           )}
 
           <HorizontalFormGroup controlId="scenario-active">
