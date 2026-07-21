@@ -32,7 +32,7 @@ const IconButtonLink = routed(
 )
 
 
-const SearchTextInput = () => {
+const SearchTextInput = ({ placeholder = 'Search' }) => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchInput, setSearchInput] = useState(new SearchQuery(searchParams).labels);
 
@@ -59,12 +59,16 @@ const SearchTextInput = () => {
   }
 
   return (<SearchInput
-    placeholder="Search"
+    placeholder={placeholder}
     value={searchInput}
     onChange={(e) => inputHandler(e.target.value)}
   />)
 }
 
+
+SearchTextInput.propTypes = {
+  placeholder: PropTypes.string,
+}
 
 const Header = () => {
   // const secondLevel = true
@@ -77,7 +81,7 @@ const Header = () => {
             <NavLink href="/scenarios" activePattern="/scenarios/*?">
               Scenarios
             </NavLink>
-            <NavLink href="#" onClick={onNonClick}>
+            <NavLink href="/results" activePattern="/results/*?">
               Results
             </NavLink>
             <NavLink href="/runners" activePattern="/runners/*?">
@@ -88,6 +92,9 @@ const Header = () => {
             </NavLink>
           </NavRow>
         </NavRowContainer>
+        {/* The search row follows the list pages. Each list reads the same
+            `labels` query parameter, so one input serves all of them -- but it
+            only appears where there is a list to narrow. */}
         <Switch>
           <Route path="/scenarios">
             {() => (
@@ -106,6 +113,24 @@ const Header = () => {
                   <IconButtonLink href="/scenarios/new/edit" size="small" color="secondary">
                     <i className="fi fi-plus"></i>
                   </IconButtonLink>
+                </NavRow>
+              </NavRowContainer>
+            )}
+          </Route>
+          <Route path="/runners">
+            {() => (
+              <NavRowContainer size="medium">
+                <NavRow center>
+                  <SearchTextInput placeholder="Search runners by name or label" />
+                </NavRow>
+              </NavRowContainer>
+            )}
+          </Route>
+          <Route path="/results">
+            {() => (
+              <NavRowContainer size="medium">
+                <NavRow center>
+                  <SearchTextInput placeholder="Search runs by label, e.g. urth/scenario.name = my-probe" />
                 </NavRow>
               </NavRowContainer>
             )}

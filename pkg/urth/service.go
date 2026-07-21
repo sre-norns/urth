@@ -101,6 +101,19 @@ type RunResultAPI interface {
 	UpdateStatus(ctx context.Context, id manifest.VersionedResourceID, token APIToken, entry ResultStatus) (bark.CreatedResponse, error)
 }
 
+// RunResultsAPI reads run results across all scenarios.
+//
+// This is separate from RunResultAPI, which is scoped to one scenario and also
+// creates and updates runs. Answering "what has run recently, anywhere" and
+// "what happened in this scenario" are different questions: the first is how an
+// operator finds a failure they have not been told the name of yet.
+//
+// It is read-only by construction. A run comes into existence by being scheduled
+// against a scenario, so there is nothing to create here.
+type RunResultsAPI interface {
+	ReadableResourceAPI[Result]
+}
+
 type ArtifactAPI interface {
 	ReadableResourceAPI[manifest.ResourceManifest]
 
@@ -122,6 +135,10 @@ type Service interface {
 	Workers() WorkersAPI
 	Scenarios() ScenarioAPI
 	Results(scenarioName manifest.ResourceName) RunResultAPI
+
+	// AllResults reads runs across every scenario.
+	AllResults() RunResultsAPI
+
 	Artifacts() ArtifactAPI
 }
 
@@ -168,6 +185,12 @@ func (s *serviceImpl) Results(scenarioName manifest.ResourceName) RunResultAPI {
 		},
 
 		resultsSigningKey: []byte("my_results signing secret key, duh"), // FIXME: Must be Runtime configurable secret
+	}
+}
+
+func (s *serviceImpl) AllResults() RunResultsAPI {
+	return &allResultsAPIImpl{
+		store: s.store,
 	}
 }
 
@@ -827,6 +850,28 @@ func (m *runnersAPIImpl) Update(ctx context.Context, id manifest.VersionedResour
 
 func (m *runnersAPIImpl) Delete(ctx context.Context, id manifest.VersionedResourceID) (bool, error) {
 	return m.store.Delete(ctx, &Runner{}, id.ID, id.Version)
+}
+
+// ------------------------------
+// / RunResultsAPI implementation (across scenarios)
+// ------------------------------
+type allResultsAPIImpl struct {
+	store *dbstore.DBStore
+}
+
+// List returns runs newest first. A run list is read to find what just happened,
+// so the most recent runs belong at the top -- unlike the resource lists, which
+// are ordered oldest first because their order is meant to be stable.
+func (m *allResultsAPIImpl) List(ctx context.Context, searchQuery manifest.SearchQuery) (results []Result, total int64, err error) {
+	total, err = m.store.Find(ctx, &results, searchQuery, dbstore.OrderByCreatedAt(dbstore.OrderDescending))
+	return
+}
+
+// Get finds a run by name without knowing which scenario it belongs to. Run
+// names are generated to be unique, so a run can be linked to directly.
+func (m *allResultsAPIImpl) Get(ctx context.Context, id manifest.ResourceName) (result Result, exists bool, err error) {
+	exists, err = m.store.GetByName(ctx, &result, id)
+	return
 }
 
 // ------------------------------

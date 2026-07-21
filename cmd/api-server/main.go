@@ -168,6 +168,18 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 			bark.Manifest(ctx).Deleted(srv.Runners().Delete(ctx.Request.Context(), bark.RequireVersionedResource(ctx)))
 		})
 		//------------
+		// Run results, across all scenarios
+		//------------
+		// Distinct from /scenarios/:id/results, which is scoped to one scenario.
+		// This answers "what has run recently, anywhere", which is how a failure
+		// is found when its scenario is not known yet.
+		v1.GET("/results", bark.SearchableAPI(paginationLimit), func(ctx *gin.Context) {
+			bark.WithContext[urth.Result](ctx).List(srv.AllResults().List(ctx.Request.Context(), bark.RequireSearchQuery(ctx)))
+		})
+		v1.GET("/results/:id", bark.ResourceAPI(), func(ctx *gin.Context) {
+			bark.WithContext[urth.Result](ctx).Found(srv.AllResults().Get(ctx.Request.Context(), bark.RequireResourceName(ctx)))
+		})
+		//------------
 		// Workers API
 		//------------
 		// Worker instances are created by registration, not by an operator, so

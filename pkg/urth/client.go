@@ -108,6 +108,13 @@ func (c *RestAPIClient) Results(scenarioName manifest.ResourceName) RunResultAPI
 	}
 }
 
+// AllResults implements the urth.Service interface.
+func (c *RestAPIClient) AllResults() RunResultsAPI {
+	return &allResultsAPIClient{
+		RestAPIClient: *c,
+	}
+}
+
 func (c *RestAPIClient) Artifacts() ArtifactAPI {
 	return &artifactAPIClient{
 		RestAPIClient: *c,
@@ -554,6 +561,30 @@ func (c *runnersAPIClient) Auth(ctx context.Context, token APIToken, newEntry ma
 // --------
 // Run Results API
 // --------
+
+// allResultsAPIClient reads runs across every scenario, rather than within one.
+type allResultsAPIClient struct {
+	RestAPIClient
+}
+
+// List all resources matching given search query
+func (c *allResultsAPIClient) List(ctx context.Context, searchQuery manifest.SearchQuery) ([]Result, int64, error) {
+	targetAPI := urlForPath(c.baseURL, "v1/results", searchToQuery(searchQuery))
+	return listResources[Result](ctx, &c.RestAPIClient, targetAPI)
+}
+
+// Get a single run by name, without needing to know its scenario.
+func (c *allResultsAPIClient) Get(ctx context.Context, id manifest.ResourceName) (result Result, exists bool, err error) {
+	var resource manifest.ResourceManifest
+	exists, err = c.getResource(ctx, fmt.Sprintf("v1/results/%v", id), &resource)
+	if !exists || err != nil {
+		return
+	}
+
+	result, err = NewResult(resource)
+
+	return
+}
 
 type resultsAPIRestClient struct {
 	RestAPIClient
