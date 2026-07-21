@@ -168,3 +168,40 @@ func TestArtifactLabelsOmitUnrepresentableValues(t *testing.T) {
 	require.NotContains(t, labels, LabelArtifactMime)
 	require.NoError(t, labels.Validate())
 }
+
+// A run records who executed it when a worker claims the job. Exposing that as
+// labels is what makes "every run this worker took" a query rather than a scan.
+func TestExecutorLabels(t *testing.T) {
+	labels := executorLabels(ExecutorRef{
+		RunnerID:   "9ab3e4b5-799c-42ab-befa-9e7dc3123791",
+		RunnerName: "example-runner",
+		WorkerID:   "74fbe1f3-ceaa-4e2a-b642-8f4587270aef",
+		WorkerName: "soultaker.carbon-ghost",
+	})
+
+	require.Equal(t, "example-runner", labels[LabelRunnerName])
+	require.Equal(t, "9ab3e4b5-799c-42ab-befa-9e7dc3123791", labels[LabelRunnerUID])
+	require.Equal(t, "soultaker.carbon-ghost", labels[LabelWorkerName])
+	require.Equal(t, "74fbe1f3-ceaa-4e2a-b642-8f4587270aef", labels[LabelWorkerUID])
+	require.NoError(t, labels.Validate())
+}
+
+// A runner name that could not be resolved must not produce an empty label
+// value, which is not valid and would be rejected along with the whole run.
+func TestExecutorLabelsOmitUnresolvedFields(t *testing.T) {
+	labels := executorLabels(ExecutorRef{
+		RunnerID: "9ab3e4b5-799c-42ab-befa-9e7dc3123791",
+		WorkerID: "74fbe1f3-ceaa-4e2a-b642-8f4587270aef",
+	})
+
+	require.NotContains(t, labels, LabelRunnerName)
+	require.NotContains(t, labels, LabelWorkerName)
+	require.Equal(t, "9ab3e4b5-799c-42ab-befa-9e7dc3123791", labels[LabelRunnerUID])
+	require.NoError(t, labels.Validate())
+}
+
+func TestExecutorRefIsZero(t *testing.T) {
+	require.True(t, ExecutorRef{}.IsZero(), "a pending run has no executor")
+	require.False(t, ExecutorRef{WorkerID: "some-uid"}.IsZero())
+	require.False(t, ExecutorRef{RunnerName: "a-runner"}.IsZero())
+}
