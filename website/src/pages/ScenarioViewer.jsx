@@ -24,9 +24,11 @@ import ObjectCapsules from '../components/ObjectCapsules.jsx'
 import FormSwitch from '../components/FormSwitch.jsx'
 import FormPropertiesEditor from '../components/FormPropertiesEditor.jsx'
 import Label from '../components/Label.js'
+import TextSpan from '../components/TextSpan.js'
 import PanelSplitter from '../components/PanelSplitter.js'
 import ProbEditor from '../components/ProbEditor.jsx'
 import { templateFor } from '../utils/probSpec.js'
+import { splitLabels } from '../utils/labels.js'
 
 const PageContainer = styled.div`
   width: 100%;
@@ -102,6 +104,47 @@ const DeleteButton = styled(Button)`
   }
 `
 
+// `summary` gives no affordance of its own beyond a small marker, and wrapped in
+// body text it reads as a caption rather than something to click. This styles it
+// the way links behave here -- pointer, underline on hover -- and adds a caret
+// that turns when the section opens, so the state is visible as well as the
+// action.
+const SystemLabels = styled.details`
+  summary {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    cursor: pointer;
+    width: fit-content;
+    list-style: none;
+    // Underlined at rest, not only on hover: without it the row reads as a
+    // caption and gives no sign it can be opened.
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+    color: ${(props) => props.theme.color.secondary[props.theme.dark ? 400 : 600]};
+  }
+
+  summary::-webkit-details-marker {
+    display: none;
+  }
+
+  summary:hover {
+    color: ${(props) => props.theme.color.secondary[props.theme.dark ? 300 : 700]};
+  }
+
+  summary::before {
+    content: '';
+    border: 0.3em solid transparent;
+    border-left-color: currentColor;
+    transform: translateX(0.1em);
+    transition: transform 0.15s ease;
+  }
+
+  &[open] summary::before {
+    transform: rotate(90deg) translateY(0.1em);
+  }
+`
+
 const validateName = (...args) => validateNotEmpty(...args) || validateMaxLength(32)(...args)
 
 const validateDescription = validateMaxLength(128)
@@ -128,7 +171,7 @@ const ScenarioViewer = ({ scenarioId, edit = false }) => {
     (response) => {
       if (response && response.metadata.name === scenarioId) {
         setName(response.metadata.name)
-        setLabels(response.metadata.labels || {})
+        setLabels(splitLabels(response.metadata.labels).user)
         setDescription(response.spec.description)
         setActive(response.spec.active)
         setSchedule(response.spec.schedule || '')
@@ -273,6 +316,9 @@ const ScenarioViewer = ({ scenarioId, edit = false }) => {
 
   const title = edit ? (isNew ? 'New Scenario' : name) : name
 
+  // Split for display: the user's own labels are editable, the server's are not.
+  const { user: userLabels, system: systemLabels } = splitLabels(response?.metadata?.labels)
+
   return (
     <PageContainer>
       <PagePanel>
@@ -311,10 +357,10 @@ const ScenarioViewer = ({ scenarioId, edit = false }) => {
               </>
             )) || <div>{description}</div>}
           </FormGroup>
-          {!edit && !isEmpty(response?.metadata?.labels) && (
+          {!edit && !isEmpty(userLabels) && (
             <FormGroup controlId="scenario-labels">
               <FormLabel>Labels</FormLabel>
-              <ObjectCapsules value={response.metadata.labels} />
+              <ObjectCapsules value={userLabels} />
             </FormGroup>
           )}
           {edit && (
@@ -323,6 +369,27 @@ const ScenarioViewer = ({ scenarioId, edit = false }) => {
               <FormPropertiesEditor controlId="scenario-labels" value={labels} onChange={setLabels} />
             </div>
           )}
+
+          {/* Server-assigned labels are shown but not offered for editing: they
+              are recomputed on every save, so a change here would not survive. */}
+          {!isEmpty(systemLabels) && (
+            <SystemLabels>
+              <summary>
+                <TextSpan size="small">
+                  {Object.keys(systemLabels).length} system{' '}
+                  {Object.keys(systemLabels).length === 1 ? 'label' : 'labels'}, assigned by the
+                  server
+                </TextSpan>
+              </summary>
+              <ObjectCapsules value={systemLabels} style={{ paddingTop: '0.5rem' }} />
+            </SystemLabels>
+          )}
+
+          <HorizontalFormGroup controlId="scenario-active">
+            <HorizontalLabel>Active</HorizontalLabel>
+            <FormSwitch checked={active} readOnly={!edit} onClick={(edit && handleActiveClick) || null} />
+          </HorizontalFormGroup>
+
           <FormGroup controlId="scenario-schedule">
             <FormLabel>Schedule</FormLabel>
             {(edit && (
@@ -345,11 +412,6 @@ const ScenarioViewer = ({ scenarioId, edit = false }) => {
               without one produces something that can never run, which is what
               this form used to do. */}
           <ProbEditor value={prob} onChange={setProb} readOnly={!edit} />
-
-          <HorizontalFormGroup controlId="scenario-active">
-            <HorizontalLabel>Active</HorizontalLabel>
-            <FormSwitch checked={active} readOnly={!edit} onClick={(edit && handleActiveClick) || null} />
-          </HorizontalFormGroup>
         </PageForm>
         {edit && !isNew && (
           <>
