@@ -42,6 +42,11 @@ export const getAt = (obj, path) =>
 export const setAt = (obj, path, value) => {
   const keys = path.split('.')
   const next = { ...(obj || {}) }
+  const blockedKeys = new Set(['__proto__', 'constructor', 'prototype'])
+
+  if (keys.some((key) => blockedKeys.has(key))) {
+    return next
+  }
 
   let cursor = next
   for (let i = 0; i < keys.length - 1; i += 1) {
