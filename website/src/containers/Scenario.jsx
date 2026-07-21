@@ -1,7 +1,6 @@
 import React, { useCallback } from 'react'
 import PropTypes from 'prop-types'
 import styled from '@emotion/styled'
-import { parseExpression } from 'cron-parser'
 import { Tooltip } from 'react-tooltip'
 import { useDispatch, useSelector } from 'react-redux'
 import OddContainer from '../components/OddContainer.js'
@@ -27,17 +26,17 @@ const BodyContainer = styled.div`
 
 const ActionsContainer = styled.div``
 
-const IconButton = styled(Button)`
+// The `size` default is applied here rather than through defaultProps, which
+// React 19 no longer honours for function components -- and emotion's styled()
+// produces one, so the default would have been dropped silently.
+const StyledIconButton = styled(Button)`
   //padding: 1px 5px;
   i {
     padding: 0 4px;
   }
 `
 
-IconButton.defaultProps = {
-  size: 'small',
-  // variant: 'outlined',
-}
+const IconButton = (props) => <StyledIconButton size="small" {...props} />
 
 const PlayButton = styled(IconButton)`
   border-radius: 0.5rem 0 0 0.5rem;

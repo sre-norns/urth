@@ -45,9 +45,15 @@ export default (env) => {
       // static: {
       //   directory: path.join(__dirname, 'public'),
       // },
-      proxy: {
-        '/api': (process.env.API_URL || 'http://localhost:8080'),
-      },
+      // webpack-dev-server 5 replaced the object form of `proxy` with an array
+      // of middleware descriptors. The object form is silently ignored, so the
+      // dev server would serve the app but every /api call would 404.
+      proxy: [
+        {
+          context: ['/api'],
+          target: process.env.API_URL || 'http://localhost:8080',
+        },
+      ],
       historyApiFallback: true,
       hot: true,
       compress: true,

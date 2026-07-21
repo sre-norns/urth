@@ -25,17 +25,15 @@ const BodyContainer = styled.div`
 
 const ActionsContainer = styled.div``
 
-const IconButton = styled(Button)`
+// See Scenario.jsx: defaults cannot ride on defaultProps under React 19.
+const StyledIconButton = styled(Button)`
   //padding: 1px 5px;
   i {
     padding: 0 4px;
   }
 `
 
-IconButton.defaultProps = {
-    size: 'small',
-    // variant: 'outlined',
-}
+const IconButton = (props) => <StyledIconButton size="small" {...props} />
 
 const ScenarioCapsules = styled(ObjectCapsules)`
   padding-top: 0.25rem;

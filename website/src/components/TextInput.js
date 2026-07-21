@@ -45,10 +45,9 @@ const TextInput = styled.input`
   }
 `
 
-TextInput.defaultProps = {
-  type: 'text',
-}
-
+// Note: `type` previously came from defaultProps, which React 19 no longer
+// applies to function components. It is dropped rather than reinstated because
+// "text" is already the HTML default for an input element.
 TextInput.propTypes = {
   baseColor: PropTypes.string,
 }
