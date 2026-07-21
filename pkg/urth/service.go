@@ -59,6 +59,29 @@ type RunnersAPI interface {
 	Auth(ctx context.Context, token APIToken, worker manifest.ResourceManifest) (manifest.ResourceManifest, error)
 }
 
+// WorkersAPI encapsulates APIs for the worker instances that have registered
+// against a runner.
+//
+// The surface is deliberately narrow. A worker instance is not something an
+// operator creates -- it comes into existence when a process authenticates with
+// a runner's token -- so there is no Create or Update here. What an operator
+// needs is to see who has registered, to take one out of service, and to revoke
+// one that should not be there.
+type WorkersAPI interface {
+	ReadableResourceAPI[manifest.ResourceManifest]
+
+	// SetPaused stops or resumes a single worker taking new jobs, leaving it
+	// registered and its runner untouched. Reports false if no such worker is
+	// registered, so that a stale name reads as "not found" rather than as a
+	// failed request.
+	SetPaused(ctx context.Context, id manifest.ResourceName, paused bool) (manifest.ResourceManifest, bool, error)
+
+	// Delete revokes a worker's registration. The worker keeps its token and can
+	// register again unless its runner is disabled or its token revoked, so this
+	// is how a worker is dropped, not how it is permanently barred.
+	Delete(ctx context.Context, id manifest.VersionedResourceID) (bool, error)
+}
+
 type ScenarioAPI interface {
 	ReadableResourceAPI[manifest.ResourceManifest]
 	ManageableResourceAPI
@@ -96,6 +119,7 @@ type Service interface {
 	Labels(manifest.Kind) LabelsAPI
 
 	Runners() RunnersAPI
+	Workers() WorkersAPI
 	Scenarios() ScenarioAPI
 	Results(scenarioName manifest.ResourceName) RunResultAPI
 	Artifacts() ArtifactAPI
@@ -119,6 +143,12 @@ func (s *serviceImpl) Runners() RunnersAPI {
 	return &runnersAPIImpl{
 		store:            s.store,
 		hmacSampleSecret: []byte("my_secret_key"), // FIXME: Must be Runtime configurable secret
+	}
+}
+
+func (s *serviceImpl) Workers() WorkersAPI {
+	return &workersAPIImpl{
+		store: s.store,
 	}
 }
 
@@ -246,14 +276,13 @@ func (m *scenarioAPIImpl) update(ctx context.Context, id manifest.VersionedResou
 	)
 
 	log.Printf("updating scenario: prod.kind: %q, prod.type %q", result.Spec.Prob.Kind, reflect.TypeOf(result.Spec.Prob.Spec))
-	ok, err := m.store.Update(ctx, &result, result.UID, dbstore.WithVersion(result.Version))
-	if err != nil {
+	// saveResource, not Update: a scenario being switched to active=false is a
+	// zero value, which Update drops. See saveResource.
+	if err := saveResource(ctx, m.store, &result); err != nil {
 		return result, err
-	} else if !ok {
-		return result, bark.ErrResourceVersionConflict
 	}
 
-	return result, err
+	return result, nil
 }
 
 func (m *scenarioAPIImpl) Create(ctx context.Context, newEntry manifest.ResourceManifest) (manifest.ResourceManifest, error) {
@@ -448,29 +477,27 @@ func (m *resultsAPIImpl) Create(ctx context.Context, newEntry manifest.ResourceM
 	return entry, err
 }
 
-// executorRef builds the record of who is executing a run from the worker that
-// just authenticated.
-//
-// The runner's name costs an extra lookup, which is why it is resolved here --
-// once, when the job is claimed -- rather than on every read of the run.
-// Failing to resolve it is not fatal: the IDs and the worker name still identify
-// the executor, and refusing to hand out the job because a display name could
-// not be read would be a poor trade.
-func (m *resultsAPIImpl) executorRef(ctx context.Context, worker WorkerInstance) ExecutorRef {
-	ref := ExecutorRef{
+// executorRef builds the record of who is executing a run, from the worker that
+// just authenticated and the runner it belongs to.
+func executorRef(worker WorkerInstance, runner Runner) ExecutorRef {
+	return ExecutorRef{
 		RunnerID:   worker.Spec.RunnerID,
+		RunnerName: runner.Name,
 		WorkerID:   worker.UID,
 		WorkerName: worker.Name,
 	}
+}
 
-	var runner Runner
-	if ok, err := m.store.GetByUID(ctx, &runner, worker.Spec.RunnerID); err != nil {
-		log.Print("failed to resolve runner name for run executor record: ", err)
-	} else if ok {
-		ref.RunnerName = runner.Name
-	}
+// workerLabels ties a worker instance back to its runner, so that "the workers
+// claiming to be this runner" is a label query. Without it the association is
+// only a foreign key, which the search API cannot reach.
+func workerLabels(runner Runner) manifest.Labels {
+	labels := manifest.Labels{}
 
-	return ref
+	putLabel(labels, LabelRunnerName, string(runner.Name))
+	putLabel(labels, LabelRunnerUID, string(runner.UID))
+
+	return labels
 }
 
 // executorLabels exposes the executor as labels, so that "every run this worker
@@ -499,6 +526,36 @@ func (m *resultsAPIImpl) Auth(ctx context.Context, resultName manifest.ResourceN
 
 	// Validate that worker if for the right Runner:
 	if authRequest.RunnerID.ID != worker.Spec.RunnerID {
+		return AuthJobResponse{}, bark.ErrResourceUnauthorized
+	}
+
+	// Business Rule: a paused worker stays registered and keeps its identity,
+	// but takes no new jobs. This is the check that makes pausing mean
+	// something -- without it the flag is a label on a worker that carries on
+	// working.
+	if worker.Status.IsPaused {
+		log.Printf("worker %q is paused and may not take job %q", worker.Name, resultName)
+		return AuthJobResponse{}, bark.ErrResourceUnauthorized
+	}
+
+	// The runner is loaded here rather than through worker.Spec.Runner, which is
+	// a lazy association and arrives zero-valued from GetByUID -- reading
+	// IsActive off it would reject every worker.
+	var runner Runner
+	if ok, err := m.store.GetByUID(ctx, &runner, worker.Spec.RunnerID); err != nil {
+		log.Print("error while looking up Runner ", worker.Spec.RunnerID, " err", err)
+		return AuthJobResponse{}, bark.ErrResourceNotFound
+	} else if !ok {
+		log.Print("no Runner found by ID ", worker.Spec.RunnerID)
+		return AuthJobResponse{}, bark.ErrResourceUnauthorized
+	}
+
+	// Business Rule: a worker of a disabled runner takes no jobs either.
+	// Disabling a runner already stops new workers registering; without this it
+	// would not stop the ones already connected, so a runner could be "disabled"
+	// and still executing work.
+	if !runner.Spec.IsActive {
+		log.Printf("runner %q is not active; worker %q may not take job %q", runner.Name, worker.Name, resultName)
 		return AuthJobResponse{}, bark.ErrResourceUnauthorized
 	}
 
@@ -532,7 +589,7 @@ func (m *resultsAPIImpl) Auth(ctx context.Context, resultName manifest.ResourceN
 	// Record who took the job. This is the only moment the association is known
 	// for certain -- the server has just authenticated this worker and checked
 	// it belongs to the runner the job was dispatched to.
-	entry.Status.Executor = m.executorRef(ctx, worker)
+	entry.Status.Executor = executorRef(worker, runner)
 
 	entry.Labels = manifest.MergeLabels(
 		entry.Labels,
@@ -736,17 +793,16 @@ func (m *runnersAPIImpl) update(ctx context.Context, id manifest.VersionedResour
 	result.Labels = newEntry.Labels
 	result.Spec = newEntry.Spec
 
-	// TODO: If a runner status changed to disabled, all instance must be disabled too
+	// Note: workers of a disabled runner are stopped at the point they try to
+	// claim a job, rather than by disabling each instance here. See Results.Auth.
 
-	// Persist changes
-	ok, err := m.store.Update(ctx, &result, result.UID, dbstore.WithVersion(result.Version))
-	if err != nil {
+	// Persist changes. saveResource, not Update: a runner being switched to
+	// active=false is a zero value, which Update drops. See saveResource.
+	if err := saveResource(ctx, m.store, &result); err != nil {
 		return result, err
-	} else if !ok {
-		return result, bark.ErrResourceVersionConflict
 	}
 
-	return result, err
+	return result, nil
 }
 
 func (m *runnersAPIImpl) Create(ctx context.Context, newEntry manifest.ResourceManifest) (manifest.ResourceManifest, error) {
@@ -771,6 +827,105 @@ func (m *runnersAPIImpl) Update(ctx context.Context, id manifest.VersionedResour
 
 func (m *runnersAPIImpl) Delete(ctx context.Context, id manifest.VersionedResourceID) (bool, error) {
 	return m.store.Delete(ctx, &Runner{}, id.ID, id.Version)
+}
+
+// ------------------------------
+// / WorkersAPI implementation
+// ------------------------------
+type workersAPIImpl struct {
+	store *dbstore.DBStore
+}
+
+func (m *workersAPIImpl) List(ctx context.Context, searchQuery manifest.SearchQuery) (results []manifest.ResourceManifest, total int64, err error) {
+	var models []WorkerInstance
+	total, err = m.store.Find(ctx, &models, searchQuery, dbstore.OrderByCreatedAt(dbstore.OrderAscending))
+	if err != nil {
+		return
+	}
+
+	results = make([]manifest.ResourceManifest, 0, len(models))
+	for _, model := range models {
+		results = append(results, model.ToManifest())
+	}
+
+	return
+}
+
+func (m *workersAPIImpl) Get(ctx context.Context, id manifest.ResourceName) (result manifest.ResourceManifest, exist bool, err error) {
+	var model WorkerInstance
+	exist, err = m.store.GetByName(ctx, &model, id)
+	result = model.ToManifest()
+
+	return
+}
+
+// SetPaused takes a single worker out of service, or puts it back.
+//
+// The flag lives in Status, which a re-registering worker does not overwrite, so
+// a paused worker stays paused when it reconnects. Read-modify-write is used
+// rather than a blind update so that the rest of the worker's record -- which
+// the worker itself owns and rewrites on every registration -- is left alone.
+func (m *workersAPIImpl) SetPaused(ctx context.Context, id manifest.ResourceName, paused bool) (manifest.ResourceManifest, bool, error) {
+	var worker WorkerInstance
+	if exist, err := m.store.GetByName(ctx, &worker, id); err != nil {
+		return manifest.ResourceManifest{}, false, err
+	} else if !exist {
+		return manifest.ResourceManifest{}, false, nil
+	}
+
+	if worker.Status.IsPaused == paused {
+		// Nothing to do. Returning early avoids bumping the resource version for
+		// a request that changes nothing.
+		return worker.ToManifest(), true, nil
+	}
+
+	worker.Status.IsPaused = paused
+
+	// CreateOrUpdate rather than Update, and not by preference: Update passes the
+	// struct to gorm's Updates, which ignores zero-valued fields. Pausing (false
+	// -> true) would persist while resuming (true -> false) silently did nothing,
+	// leaving a worker that could be taken out of service and never brought back.
+	// CreateOrUpdate goes through Save, which writes every field.
+	//
+	// The cost is the optimistic version check, which Save does not apply. For an
+	// operator toggling one worker that is an acceptable trade -- and arguably
+	// the right one, since a pause should not fail because the worker happened to
+	// re-register a moment earlier.
+	if _, err := m.store.CreateOrUpdate(ctx, &worker); err != nil {
+		return manifest.ResourceManifest{}, false, err
+	}
+
+	log.Printf("worker %q paused=%t", worker.Name, paused)
+
+	return worker.ToManifest(), true, nil
+}
+
+func (m *workersAPIImpl) Delete(ctx context.Context, id manifest.VersionedResourceID) (bool, error) {
+	return m.store.Delete(ctx, &WorkerInstance{}, id.ID, id.Version)
+}
+
+// resourceSaver is the part of the store needed to write a resource back whole.
+type resourceSaver interface {
+	CreateOrUpdate(ctx context.Context, value any, options ...dbstore.Option) (bool, error)
+}
+
+// saveResource persists a resource that was read, modified, and is being written
+// back in full.
+//
+// It deliberately avoids dbstore.Update, which hands the struct to gorm's
+// Updates and therefore skips every zero-valued field. Any bool set to false,
+// string set to "" or number set to 0 is silently dropped -- which is why
+// disabling a scenario or a runner appeared to succeed and changed nothing.
+//
+// The optimistic version check moves to the read: callers load with
+// dbstore.WithVersion, so a write against a stale version is rejected there.
+// That is a narrower guarantee than a version-guarded write, so this is for
+// resource edits, not for status transitions that race -- claiming a job still
+// uses a version-guarded Update, because two workers reaching for the same run
+// is exactly the case it has to lose.
+func saveResource(ctx context.Context, store resourceSaver, value any) error {
+	_, err := store.CreateOrUpdate(ctx, value)
+	return err
 }
 
 func manifestMatch(entry manifest.ObjectMeta) manifest.SearchQuery {
@@ -897,10 +1052,11 @@ func (m *runnersAPIImpl) Auth(ctx context.Context, apiToken APIToken, newEntry m
 		// Re-auth attempt for the same worker?
 		log.Printf("Worker %q re-authenticating before TTL timeout", existingWorkerRecord.Name)
 
-		// if !existingWorkerRecord.Spec.IsActive {
-		// }
-
-		existingWorkerRecord.Labels = worker.Labels
+		// Note: only Spec and Labels are taken from the re-registering worker.
+		// Status is left as the server has it, which is what keeps an operator's
+		// pause in force across a reconnect -- a worker must not be able to
+		// un-pause itself by restarting.
+		existingWorkerRecord.Labels = manifest.MergeLabels(worker.Labels, workerLabels(runner))
 		worker.Spec.RunnerID = existingWorkerRecord.Spec.RunnerID
 		existingWorkerRecord.Spec = worker.Spec
 
@@ -910,6 +1066,8 @@ func (m *runnersAPIImpl) Auth(ctx context.Context, apiToken APIToken, newEntry m
 		if runner.Spec.MaxInstances > 0 && runner.Status.NumberInstances >= runner.Spec.MaxInstances {
 			return result, bark.ErrResourceUnauthorized
 		}
+
+		worker.Labels = manifest.MergeLabels(worker.Labels, workerLabels(runner))
 
 		err = m.store.Create(ctx, &worker)
 		runner.Status.Instances = append(runner.Status.Instances, worker)

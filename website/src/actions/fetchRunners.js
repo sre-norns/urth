@@ -1,22 +1,19 @@
 import ActionType from './ActionType.js'
 import { apiGet } from '../utils/api.js'
 
-const fetchRunners = () => async (dispatch) => {
-    dispatch({ type: ActionType.SCENARIOS_FETCHING })
+// Note: this previously dispatched SCENARIOS_* and wrote into the scenarios
+// slice, so opening the runners page replaced the scenario list and vice versa.
+const fetchRunners = (searchQuery) => async (dispatch) => {
+  dispatch({ type: ActionType.RUNNERS_FETCHING })
 
-    try {
-        const response = await apiGet('/api/v1/runners')
+  try {
+    const query = searchQuery ? `?${searchQuery}` : ''
+    const response = await apiGet(`/api/v1/runners${query}`)
 
-        dispatch({
-            type: ActionType.SCENARIOS_FETCHED,
-            response,
-        })
-    } catch (error) {
-        dispatch({
-            type: ActionType.SCENARIOS_FETCH_FAILED,
-            error,
-        })
-    }
+    dispatch({ type: ActionType.RUNNERS_FETCHED, response })
+  } catch (error) {
+    dispatch({ type: ActionType.RUNNERS_FETCH_FAILED, error })
+  }
 }
 
 export default fetchRunners

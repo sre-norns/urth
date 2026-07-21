@@ -6,6 +6,9 @@ import scenarioResults from './scenarioResults.js'
 import run from './run.js'
 import runArtifacts from './runArtifacts.js'
 import artifactContent from './artifactContent.js'
+import runners from './runners.js'
+import runner from './runner.js'
+import workers from './workers.js'
 
 export default combineReducers({
   scenarios,
@@ -15,4 +18,7 @@ export default combineReducers({
   run,
   runArtifacts,
   artifactContent,
+  runners,
+  runner,
+  workers,
 })

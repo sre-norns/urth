@@ -15,20 +15,33 @@ var (
 )
 
 // WorkerInstanceSpec defines details about an instance of worker active
+// WorkerInstanceSpec is what a worker declares about itself when it registers.
+// A worker is not a trusted party here: everything in this struct arrives from
+// the worker, so nothing that governs whether it may take jobs belongs in it.
 type WorkerInstanceSpec struct {
 	RunnerID manifest.ResourceID `json:"-" yaml:"-"`
 	// Runner is the 'class' that this worker is an instance of
 	Runner Runner `json:"-" yaml:"-" gorm:"foreignKey:RunnerID;references:UID"`
 
-	// IsActive is true if this worker is permitted to take on jobs
-	IsActive bool `form:"active" json:"active,omitempty" yaml:"active,omitempty" xml:"active"`
-
 	// RequestedTTL is the desired TTL value
 	RequestedTTL time.Duration `form:"requestedTTL,omitempty" json:"requestedTTL,omitempty" yaml:"requestedTTL,omitempty" xml:"requestedTTL,omitempty"`
 }
 
+// WorkerInstanceStatus is owned by the server. A worker overwrites its own Spec
+// every time it re-registers, so anything an operator sets has to live here to
+// survive -- a paused worker that could un-pause itself by reconnecting would
+// not be paused at all.
 type WorkerInstanceStatus struct {
 	TTL time.Duration `form:"ttl,omitempty" json:"ttl,omitempty" yaml:"ttl,omitempty" xml:"ttl,omitempty"`
+
+	// IsPaused stops this worker from taking new jobs while leaving it
+	// registered and leaving its runner active. Used to take one misbehaving
+	// worker out of service without disturbing the rest of the pool.
+	//
+	// The flag is negative on purpose: the zero value is an working worker, so a
+	// record written before this existed -- or by any code path that forgets it
+	// -- keeps taking jobs rather than silently going dark.
+	IsPaused bool `form:"paused" json:"paused,omitempty" yaml:"paused,omitempty" xml:"paused,omitempty"`
 }
 
 // RunnerSpec holds information about a runner as supplied by the administrator to register one

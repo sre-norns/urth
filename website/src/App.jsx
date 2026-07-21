@@ -8,6 +8,7 @@ import ScenarioDetail from './pages/ScenarioDetail.jsx'
 import ScenarioViewer from './pages/ScenarioViewer.jsx'
 import RunDetail from './pages/RunDetail.jsx'
 import Runners from './pages/Runners.jsx'
+import RunnerDetail from './pages/RunnerDetail.jsx'
 
 import { Redirect, Route, Switch } from 'wouter'
 
@@ -33,6 +34,7 @@ export default () => {
           </Route>
           <Route path="/scenarios/:scenarioId">{(params) => <ScenarioDetail scenarioId={params.scenarioId} />}</Route>
           <Route path="/runners">{() => <Runners />}</Route>
+          <Route path="/runners/:runnerId">{(params) => <RunnerDetail runnerId={params.runnerId} />}</Route>
           <Route>{() => <p>Not found</p>}</Route>
         </Switch>
       </>

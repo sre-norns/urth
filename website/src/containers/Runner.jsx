@@ -4,15 +4,11 @@ import styled from '@emotion/styled'
 import { Tooltip } from 'react-tooltip'
 import { useDispatch, useSelector } from 'react-redux'
 import OddContainer from '../components/OddContainer.js'
-import Capsule from '../components/Capsule.jsx'
 import RagIndicator from '../components/RagIndicator.js'
 import TextSpan, { TextDiv } from '../components/TextSpan.js'
-import { cyrb53 } from '../utils/hash.js'
 import Button from '../components/Button.js'
 import Link from '../components/Link.js'
-import runScenario from '../actions/runScenario.js'
 import ObjectCapsules from '../components/ObjectCapsules.jsx'
-import Runners from '../pages/Runners.jsx'
 
 const TopContainer = styled.div`
   display: flex;
@@ -45,7 +41,7 @@ const statusToColor = (status) => {
         : 'neutral';
 }
 
-const Runner = ({ data, odd }) => {
+const Runner = ({ data, odd, onCapsuleClick }) => {
     const { metadata, spec, status } = data
     const { uid, name, labels } = metadata
     const { description, active, maxInstance, requirements } = spec
@@ -114,7 +110,7 @@ const Runner = ({ data, odd }) => {
                     </StopButton> */}
                 </ActionsContainer>
             </TopContainer>
-            <ScenarioCapsules value={labels} />
+            <ScenarioCapsules value={labels} onCapsuleClick={onCapsuleClick} />
         </OddContainer>
     )
 }
@@ -149,6 +145,7 @@ const RunnerManifest = PropTypes.shape({
 Runner.propTypes = {
     data: RunnerManifest.isRequired,
     odd: PropTypes.bool,
+    onCapsuleClick: PropTypes.func,
 }
 
 export default Runner

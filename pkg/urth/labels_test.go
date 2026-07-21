@@ -205,3 +205,18 @@ func TestExecutorRefIsZero(t *testing.T) {
 	require.False(t, ExecutorRef{WorkerID: "some-uid"}.IsZero())
 	require.False(t, ExecutorRef{RunnerName: "a-runner"}.IsZero())
 }
+
+// Workers are tied back to their runner by label, so that "which workers claim
+// to be this runner" is a query rather than a join the search API cannot reach.
+func TestWorkerLabels(t *testing.T) {
+	labels := workerLabels(Runner{
+		ObjectMeta: manifest.ObjectMeta{
+			Name: "example-runner",
+			UID:  "31574348-0b13-4a35-9c6b-1f0a2d4e5f60",
+		},
+	})
+
+	require.Equal(t, "example-runner", labels[LabelRunnerName])
+	require.Equal(t, "31574348-0b13-4a35-9c6b-1f0a2d4e5f60", labels[LabelRunnerUID])
+	require.NoError(t, labels.Validate())
+}
