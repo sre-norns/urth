@@ -205,6 +205,66 @@ func TestAckedJobIsNotRedelivered(t *testing.T) {
 	}
 }
 
+// TestNakedJobIsRedelivered is the broker-level guarantee behind the claim
+// lifecycle: when the API cannot decide a claim right now -- a transient store or
+// internal failure -- the worker NAKs the dispatch, and a NAK must bring the run
+// back. The prototype instead acked such failures away as if the run were stale,
+// which on a work-queue stream is unrecoverable loss. Naking here proves the
+// worker's transient disposition actually redelivers rather than dropping.
+func TestNakedJobIsRedelivered(t *testing.T) {
+	conn := startNATS(t)
+	js := mustJetStream(t, conn)
+	cfg := testConfig()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if _, err := natsq.EnsureJobStream(ctx, js, cfg); err != nil {
+		t.Fatalf("failed to ensure stream: %v", err)
+	}
+
+	const runnerUID = manifest.ResourceID("runner-nak")
+	consumer, err := natsq.EnsureRunnerConsumer(ctx, js, cfg, runnerUID)
+	if err != nil {
+		t.Fatalf("failed to ensure consumer: %v", err)
+	}
+
+	publishJob(t, js, runnerUID, "result-nak", 1)
+
+	// First delivery: the claim "fails transiently", so the worker NAKs instead
+	// of acking. On a work-queue stream this must not consume the message.
+	first, err := consumer.Fetch(1, jetstream.FetchMaxWait(5*time.Second))
+	if err != nil {
+		t.Fatalf("first fetch failed: %v", err)
+	}
+	var naked int
+	for msg := range first.Messages() {
+		naked++
+		if err := msg.Nak(); err != nil {
+			t.Fatalf("failed to nak: %v", err)
+		}
+	}
+	if naked != 1 {
+		t.Fatalf("expected 1 message to nak, got %d", naked)
+	}
+
+	// The run must come back to be claimed again, and this time succeed.
+	second, err := consumer.Fetch(1, jetstream.FetchMaxWait(5*time.Second))
+	if err != nil {
+		t.Fatalf("second fetch failed: %v", err)
+	}
+	var redelivered int
+	for msg := range second.Messages() {
+		redelivered++
+		if err := msg.Ack(); err != nil {
+			t.Fatalf("failed to ack redelivered message: %v", err)
+		}
+	}
+	if redelivered != 1 {
+		t.Errorf("naked job was not redelivered: got %d, want 1", redelivered)
+	}
+}
+
 // TestDuplicatePublishIsSuppressed checks that republishing the same dispatch
 // -- what an outbox relay retry or a lost publish ack produces -- does not
 // enqueue the run twice.

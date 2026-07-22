@@ -80,6 +80,41 @@ func RequireKind(ctx *gin.Context) manifest.Kind {
 	return ctx.MustGet(kindRequestKey).(manifest.Kind)
 }
 
+// Generic, reason-free claim rejections. A worker keys off the status class, not
+// the body: the body must not reveal which run exists, who holds it, or the exact
+// reason it was refused. The status class is enough for the worker to decide
+// whether to retry, acknowledge, or terminate the dispatch.
+var (
+	errClaimUnavailable = &bark.ErrorResponse{Code: http.StatusServiceUnavailable, Message: "claim temporarily unavailable"}
+	errClaimObsolete    = &bark.ErrorResponse{Code: http.StatusConflict, Message: "run is not claimable"}
+	errClaimForbidden   = &bark.ErrorResponse{Code: http.StatusForbidden, Message: "claim refused"}
+)
+
+// claimHTTPResponse maps a claim outcome to the generic response the worker sees.
+// An unclassified error becomes 503 rather than a terminal refusal: acking or
+// terminating the only dispatch for a still-pending run loses it, so the safe
+// default is to have the worker retry. This is a pure function so the mapping can
+// be tested without standing up the HTTP stack.
+func claimHTTPResponse(err error) *bark.ErrorResponse {
+	disposition, _ := urth.ClaimDispositionOf(err)
+	switch disposition {
+	case urth.ClaimObsolete:
+		return errClaimObsolete
+	case urth.ClaimForbidden:
+		return errClaimForbidden
+	default:
+		return errClaimUnavailable
+	}
+}
+
+// abortClaim answers a failed claim with a generic body while recording the full
+// reason server-side. The worker never learns more than the status class.
+func abortClaim(ctx *gin.Context, resultUID manifest.ResourceID, err error) {
+	response := claimHTTPResponse(err)
+	log.Printf("claim for run %v refused (%d): %v", resultUID, response.Code, err)
+	bark.AbortWithError(ctx, response.Code, response)
+}
+
 func apiRoutes(srv urth.Service, natsConn *nats.Conn) *gin.Engine {
 	router := gin.Default()
 	router.UseRawPath = true
@@ -164,11 +199,7 @@ func apiRoutes(srv urth.Service, natsConn *nats.Conn) *gin.Engine {
 			session := urth.APIToken(bark.RequireBearerToken(ctx))
 			resource, err := srv.Results("").ClaimRun(ctx.Request.Context(), resultUID, session, claimRequest)
 			if err != nil {
-				// Deliberately not distinguishing "no such run" from "not
-				// yours" from "already taken": a worker that may not have this
-				// job has no business learning which of those it was.
-				log.Print("claim refused for run ", resultUID, ": ", err)
-				bark.AbortWithError(ctx, http.StatusUnauthorized, bark.ErrResourceUnauthorized)
+				abortClaim(ctx, resultUID, err)
 				return
 			}
 

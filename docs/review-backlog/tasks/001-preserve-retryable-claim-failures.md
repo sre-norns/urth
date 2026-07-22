@@ -4,12 +4,12 @@ Shared context: [`CONTEXT.md`](../CONTEXT.md).
 
 | Field | Value |
 |---|---|
-| Status | `ready` |
+| Status | `done` |
 | Priority | `P0` |
 | Workstream | Claim lifecycle |
 | Depends on | — |
 | Likely conflicts | 003, 010, 011 |
-| Owner | Unclaimed |
+| Owner | main (this change) |
 
 ## Why This Matters
 
@@ -108,7 +108,47 @@ git diff --check
 ## Completion Record
 
 - **Implemented:**
+  - Introduced typed, transport-neutral claim outcomes at the service boundary
+    (`pkg/urth/claim.go`): `ClaimError` carrying a `ClaimDisposition` of
+    `ClaimUnavailable` (transient), `ClaimObsolete` (stale), or `ClaimForbidden`
+    (policy). Retryability is decided here, not re-derived downstream.
+  - Reclassified every return in `ClaimRun`, `loadClaimant`, and `authorizeRun`
+    (`pkg/urth/service.go`). Fixed the latent bug where a store error on
+    `GetByUID`/`Update` was reported as `ErrResourceNotFound`/`Unauthorized` — a
+    transient failure masquerading as a terminal one. The version-guarded update
+    still loses the race (now surfaced as `ClaimObsolete`, not a raw error).
+  - API handler maps disposition to a status *class* with a generic, reason-free
+    body: transient → `503`, obsolete → `409`, forbidden → `403`; an unclassified
+    error defaults to `503`, never a terminal refusal (`cmd/api-server/main.go`,
+    `claimHTTPResponse`/`abortClaim`). Replaces the old flat `401`.
+  - Worker maps status class to one JetStream disposition in one place
+    (`cmd/nats-worker/consume.go`): `2xx`→Ack+execute, `5xx`→Nak(delay),
+    `409`→Ack(drop), `401/403/400/404`→Term. Added a fourth outcome,
+    `claimAbandon`, for a claim interrupted by shutdown: the message is left
+    unacknowledged for redelivery rather than acked/naked/termed. Extracted
+    `applyDisposition` so the Ack/Nak/Term decision is unit-testable.
 - **Tests added/updated:**
-- **Documentation updated:**
-- **Validation evidence:**
-- **Follow-ups:**
+  - `cmd/api-server/claim_test.go`: `claimHTTPResponse` disposition→status table,
+    wrapped-error unwrapping, and a body-does-not-leak-reason guard.
+  - `cmd/nats-worker/consume_test.go`: `applyDisposition` outcome→queue-action
+    table (incl. abandon-leaves-untouched and delayed-nak), `classifyClaimFailure`
+    status→outcome table, and `claim()` shutdown-abandon vs live-classification
+    against a stubbed service. These fail against the old code: old `409`→retry
+    (now stale), old `403/404`→stale-ack (now term), old shutdown→retry (now
+    abandon).
+  - `pkg/natsq/natsq_test.go`: `TestNakedJobIsRedelivered` proves on an embedded
+    JetStream server that the transient disposition (NAK) actually redelivers on a
+    work-queue stream rather than dropping.
+- **Documentation updated:** `cmd/nats-worker/README.md` gains a "claim outcome
+  contract" table; ADR 0004 already described the disposition split abstractly and
+  the implementation now realizes it.
+- **Validation evidence:** `go test -race -count=1 ./...` pass; `go vet ./...`
+  clean; `git diff --check` clean. (staticcheck still blocked by the pre-existing
+  Go 1.25/1.26 toolchain mismatch, deferred to the Go-uplift PR — it fails at
+  compile, unrelated to this change.)
+- **Follow-ups:** A full API+DB+NATS crash-point integration test is owned by
+  task 011. Session-expiry is currently `ClaimForbidden`→Term per this task's
+  required outcome; if operators want an expired session to renew-and-retry rather
+  than dead-letter, revisit under the auth workstream (004/005). The legacy
+  `Auth` claim path (`resultsAPIImpl.Auth`) still uses the old flat error mapping;
+  it is asynq-only and removed by task 015.

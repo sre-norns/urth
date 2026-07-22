@@ -827,14 +827,13 @@ func (m *resultsAPIImpl) Auth(ctx context.Context, resultName manifest.ResourceN
 func (m *resultsAPIImpl) ClaimRun(ctx context.Context, resultUID manifest.ResourceID, session APIToken, request ClaimJobRequest) (AuthJobResponse, error) {
 	claims, err := ParseWorkerSession(m.keys, session)
 	if err != nil {
-		return AuthJobResponse{}, bark.ErrResourceUnauthorized
+		return AuthJobResponse{}, claimForbidden("invalid worker session")
 	}
 
 	if request.DispatchID == "" {
-		return AuthJobResponse{}, &bark.ErrorResponse{
-			Code:    http.StatusBadRequest,
-			Message: "claim requires a dispatch ID",
-		}
+		// A well-formed dispatch always carries an ID. A claim without one is
+		// malformed, not transient, so redelivery would only repeat the mistake.
+		return AuthJobResponse{}, claimForbidden("claim requires a dispatch ID")
 	}
 
 	worker, runner, err := m.loadClaimant(ctx, claims)
@@ -847,9 +846,12 @@ func (m *resultsAPIImpl) ClaimRun(ctx context.Context, resultUID manifest.Resour
 	// recycled name would authorise a worker against the wrong run.
 	var entry Result
 	if ok, err := m.store.GetByUID(ctx, &entry, resultUID); err != nil {
-		return AuthJobResponse{}, bark.ErrResourceNotFound
+		// A store failure is not evidence the run is gone. Reporting it as
+		// "not found" -- as the prototype did -- would have the worker ack and
+		// discard the only dispatch for a run that may still be pending.
+		return AuthJobResponse{}, claimUnavailable("load result", err)
 	} else if !ok {
-		return AuthJobResponse{}, bark.ErrResourceUnauthorized
+		return AuthJobResponse{}, claimObsolete("result not found")
 	}
 
 	// The dispatch must describe the Result as it now is. A message published
@@ -858,16 +860,18 @@ func (m *resultsAPIImpl) ClaimRun(ctx context.Context, resultUID manifest.Resour
 	if request.ResultVersion != 0 && request.ResultVersion != entry.Version {
 		log.Printf("rejecting claim for %q: dispatch is for version %v, current is %v",
 			entry.Name, request.ResultVersion, entry.Version)
-		return AuthJobResponse{}, bark.ErrResourceUnauthorized
+		return AuthJobResponse{}, claimObsolete("dispatch superseded by newer result version")
 	}
 
 	// Business Rule: a run may only be claimed by a worker of the runner it was
 	// dispatched to. Without this a worker could claim jobs placed on a runner
 	// it has no membership of, and label-based placement would mean nothing.
+	// Reaching here means the run was already claimed for another runner, so for
+	// this worker the dispatch is obsolete rather than a policy error.
 	if entry.Status.Executor.RunnerID != "" && entry.Status.Executor.RunnerID != runner.UID {
 		log.Printf("worker %q of runner %q may not claim %q, dispatched to runner %q",
 			worker.Name, runner.UID, resultUID, entry.Status.Executor.RunnerID)
-		return AuthJobResponse{}, bark.ErrResourceUnauthorized
+		return AuthJobResponse{}, claimObsolete("result claimed by another runner")
 	}
 
 	// The idempotent case: this worker already holds this run.
@@ -879,11 +883,11 @@ func (m *resultsAPIImpl) ClaimRun(ctx context.Context, resultUID manifest.Resour
 		}
 
 		// Someone else has it, or this worker has it for an older dispatch.
-		return AuthJobResponse{}, bark.ErrResourceUnauthorized
+		return AuthJobResponse{}, claimObsolete("result already claimed")
 	}
 
 	if entry.Status.Status != JobPending {
-		return AuthJobResponse{}, bark.ErrResourceUnauthorized
+		return AuthJobResponse{}, claimObsolete("result is not pending")
 	}
 
 	// Business Rule: the server sets the deadline. A worker may ask for less
@@ -915,9 +919,11 @@ func (m *resultsAPIImpl) ClaimRun(ctx context.Context, resultUID manifest.Resour
 	// stale and its update does not apply. Do not convert this to saveResource
 	// -- that path uses gorm Save, which would let both writes succeed.
 	if ok, err := m.store.Update(ctx, &entry, entry.UID, dbstore.WithVersion(entry.Version)); err != nil {
-		return AuthJobResponse{}, err
+		return AuthJobResponse{}, claimUnavailable("commit claim", err)
 	} else if !ok {
-		return AuthJobResponse{}, bark.ErrResourceUnauthorized
+		// The version guard rejected the write: another worker committed its
+		// claim first. The dispatch is now obsolete for this one.
+		return AuthJobResponse{}, claimObsolete("lost claim race")
 	}
 
 	log.Printf("worker %q claimed %q until %v (dispatch %v)", worker.Name, entry.Name, deadline, request.DispatchID)
@@ -931,36 +937,36 @@ func (m *resultsAPIImpl) loadClaimant(ctx context.Context, claims WorkerSessionC
 	var runner Runner
 
 	if ok, err := m.store.GetByUID(ctx, &worker, claims.WorkerID); err != nil {
-		return worker, runner, bark.ErrResourceNotFound
+		return worker, runner, claimUnavailable("load worker", err)
 	} else if !ok {
 		// The session is validly signed but its worker record is gone -- the
 		// instance was deleted or expired. ADR 0002 makes that a revocation, so
 		// the credential must stop working even though it has not expired.
-		return worker, runner, bark.ErrResourceUnauthorized
+		return worker, runner, claimForbidden("worker instance revoked")
 	}
 
 	// The session names the runner it was issued for. If the worker has since
 	// been re-registered against a different runner, the credential no longer
 	// describes reality and is refused rather than silently re-scoped.
 	if worker.Spec.RunnerID != claims.RunnerID {
-		return worker, runner, bark.ErrResourceUnauthorized
+		return worker, runner, claimForbidden("session runner mismatch")
 	}
 
 	// Business Rule: a paused worker stays registered and keeps its identity,
 	// but takes no new jobs.
 	if worker.Status.IsPaused {
-		return worker, runner, bark.ErrResourceUnauthorized
+		return worker, runner, claimForbidden("worker is paused")
 	}
 
 	if ok, err := m.store.GetByUID(ctx, &runner, worker.Spec.RunnerID); err != nil {
-		return worker, runner, bark.ErrResourceNotFound
+		return worker, runner, claimUnavailable("load runner", err)
 	} else if !ok {
-		return worker, runner, bark.ErrResourceUnauthorized
+		return worker, runner, claimForbidden("runner missing")
 	}
 
 	// Business Rule: a worker of a disabled runner takes no jobs either.
 	if !runner.Spec.IsActive {
-		return worker, runner, bark.ErrResourceUnauthorized
+		return worker, runner, claimForbidden("runner is disabled")
 	}
 
 	return worker, runner, nil
@@ -976,9 +982,12 @@ func (m *resultsAPIImpl) authorizeRun(ctx context.Context, entry Result, deadlin
 	scenario := entry.Spec.Scenario
 	if scenario.Spec.Prob.Kind == "" {
 		if ok, err := m.store.GetByUID(ctx, &scenario, entry.Spec.ScenarioID); err != nil {
-			return AuthJobResponse{}, fmt.Errorf("failed to load scenario for run %q: %w", entry.Name, err)
+			return AuthJobResponse{}, claimUnavailable("load scenario", err)
 		} else if !ok {
-			return AuthJobResponse{}, bark.ErrResourceNotFound
+			// The run's scenario has been deleted out from under it. There is
+			// nothing left to execute, so the dispatch is obsolete rather than
+			// something to retry.
+			return AuthJobResponse{}, claimObsolete("scenario no longer exists")
 		}
 	}
 
@@ -997,7 +1006,7 @@ func (m *resultsAPIImpl) authorizeRun(ctx context.Context, entry Result, deadlin
 
 	signed, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(m.keys.Run)
 	if err != nil {
-		return AuthJobResponse{}, fmt.Errorf("failed to sign a run capability: %w", err)
+		return AuthJobResponse{}, claimUnavailable("sign run capability", err)
 	}
 
 	return AuthJobResponse{

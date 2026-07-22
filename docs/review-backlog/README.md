@@ -30,7 +30,7 @@ Status values:
 
 | ID | Priority | Status | Task | Depends on | Likely conflicts |
 |---|---|---|---|---|---|
-| 001 | P0 | ready | [Preserve retryable claim failures](tasks/001-preserve-retryable-claim-failures.md) | — | 003, 010, 011 |
+| 001 | P0 | done | [Preserve retryable claim failures](tasks/001-preserve-retryable-claim-failures.md) | — | 003, 010, 011 |
 | 002 | P0 | ready | [Add the transactional dispatch outbox](tasks/002-transactional-dispatch-outbox.md) | — | 003, 007, 011, 012 |
 | 003 | P0 | blocked | [Reconcile dispatch and execution lifecycle](tasks/003-reconcile-dispatch-and-execution.md) | 002 | 001, 011, 012 |
 | 004 | P0 | ready | [Issue Runner-scoped NATS credentials](tasks/004-runner-scoped-nats-credentials.md) | — | 005, 009, 011, 013 |
