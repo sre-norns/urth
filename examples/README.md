@@ -60,8 +60,8 @@ Create a scenario using manifest file:
 ```bash
 go run ./cmd/urthctl create ./examples/scenario.yml
 ```
-Create a worker using manifest file:
+Create a runner using manifest file:
 ```bash
-go run ./cmd/urthctl create ./examples/worker.yml
+go run ./cmd/urthctl create ./examples/runner.yaml
 ```
 

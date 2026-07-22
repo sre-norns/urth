@@ -6,9 +6,11 @@ import (
 	"log"
 	"net/http"
 	"reflect"
+	"time"
 
 	"github.com/alecthomas/kong"
 	_ "github.com/joho/godotenv/autoload"
+	"github.com/sre-norns/urth/pkg/natsq"
 	"github.com/sre-norns/urth/pkg/redqueue"
 	"github.com/sre-norns/urth/pkg/urth"
 	"github.com/sre-norns/wyrd/pkg/bark"
@@ -17,6 +19,7 @@ import (
 	"github.com/sre-norns/wyrd/pkg/manifest"
 
 	"github.com/gin-gonic/gin"
+	"github.com/nats-io/nats.go"
 	"gorm.io/gorm"
 	// dlogger "gorm.io/gorm/logger"
 
@@ -77,7 +80,7 @@ func RequireKind(ctx *gin.Context) manifest.Kind {
 	return ctx.MustGet(kindRequestKey).(manifest.Kind)
 }
 
-func apiRoutes(srv urth.Service) *gin.Engine {
+func apiRoutes(srv urth.Service, natsConn *nats.Conn) *gin.Engine {
 	router := gin.Default()
 	router.UseRawPath = true
 
@@ -116,6 +119,59 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 			token := bark.RequireBearerToken(ctx)
 			bark.Manifest(ctx).Created(srv.Runners().Auth(ctx.Request.Context(), urth.APIToken(token), bark.RequireManifest(ctx)))
 		})
+		// Worker registration: exchange an enrolment token for an identity, a
+		// session credential, and the queue to pull from.
+		//
+		// Separate from /auth/runners rather than replacing it, because the
+		// asynq prototype worker reads its identity out of the runner manifest
+		// that route returns. Both admit workers by the same rules.
+		v1.POST("/auth/workers", bark.AuthBearerAPI(), bark.ManifestAPI(urth.KindWorkerInstance), func(ctx *gin.Context) {
+			ctx.Header(bark.HTTPHeaderCacheControl, "no-store")
+
+			token := bark.RequireBearerToken(ctx)
+			registration, err := srv.Runners().AuthWorker(ctx.Request.Context(), urth.APIToken(token), bark.RequireManifest(ctx))
+			if err != nil {
+				bark.AbortWithError(ctx, http.StatusUnauthorized, err)
+				return
+			}
+
+			bark.Ok(ctx, registration)
+		})
+
+		// Job claim, authenticated by the worker's session.
+		//
+		// Unlike the legacy /auth//scenarios route below, this one derives the
+		// claiming worker and its runner from the bearer token. Nothing in the
+		// request body identifies the caller, because a request body is not
+		// evidence of identity.
+		v1.POST("/auth/runs/:resultUid/claim", bark.AuthBearerAPI(), func(ctx *gin.Context) {
+			resultUID := manifest.ResourceID(ctx.Param("resultUid"))
+			if resultUID == "" {
+				bark.AbortWithError(ctx, http.StatusNotFound, bark.ErrResourceNotFound)
+				return
+			}
+
+			var claimRequest urth.ClaimJobRequest
+			if err := ctx.ShouldBind(&claimRequest); err != nil {
+				bark.AbortWithError(ctx, http.StatusBadRequest, err)
+				return
+			}
+
+			session := urth.APIToken(bark.RequireBearerToken(ctx))
+			resource, err := srv.Results("").ClaimRun(ctx.Request.Context(), resultUID, session, claimRequest)
+			if err != nil {
+				// Deliberately not distinguishing "no such run" from "not
+				// yours" from "already taken": a worker that may not have this
+				// job has no business learning which of those it was.
+				log.Print("claim refused for run ", resultUID, ": ", err)
+				bark.AbortWithError(ctx, http.StatusUnauthorized, bark.ErrResourceUnauthorized)
+				return
+			}
+
+			ctx.Header(bark.HTTPHeaderCacheControl, "no-store")
+			bark.Ok(ctx, resource)
+		})
+
 		// Request a JWT token to be used by workers to Auth as a Runner instance
 		v1.GET("/auth/runners/:id" /*bark.AuthBearerAPI(),*/, bark.ResourceAPI(), func(ctx *gin.Context) {
 			ctx.Header(bark.HTTPHeaderCacheControl, "no-store")
@@ -337,6 +393,9 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 
 			bark.WithContext[urth.Result](ctx).Found(srv.Results(manifest.ResourceName(resourceRequest.ID)).Get(ctx.Request.Context(), manifest.ResourceName(resourceRequest.RunID)))
 		})
+		// Live run log, falling back to the stored artifact once the run has
+		// finished, so one URL serves a run whether or not it is still going.
+		v1.GET("/scenarios/:id/results/:runId/logs", runLogHandler(srv, natsConn))
 		v1.PUT("/scenarios/:id/results/:runId/status", bark.AuthBearerAPI(), bark.VersionedResourceAPI(), func(ctx *gin.Context) {
 			var resourceRequest urth.ScenarioRunResultsRequest
 			if err := ctx.ShouldBindUri(&resourceRequest); err != nil {
@@ -406,7 +465,20 @@ func apiRoutes(srv urth.Service) *gin.Engine {
 var appCli struct {
 	dbstore.Config `help:"Persistent storage URL" embed:"" prefix:"store."`
 
-	MessageBrokerURL string `help:"Message broker address:port to connect to" default:"localhost:6379"`
+	// Named rather than embedded: both of these are called Config, and
+	// embedding a second one collides with dbstore's.
+	Signing urth.SigningKeysConfig `embed:"" prefix:"signing."`
+	NATS    natsq.Config           `embed:"" prefix:"nats."`
+
+	// Transport selects the job queue. Both implementations are kept while the
+	// migration in ADR 0004 proceeds, so an operator can cut over and back
+	// without changing binaries.
+	Transport string `help:"Job transport to use: nats or asynq" enum:"nats,asynq" default:"asynq"`
+
+	MessageBrokerURL string `help:"Message broker address:port to connect to (asynq transport)" default:"localhost:6379"`
+
+	SessionTTL     time.Duration `help:"How long an issued worker session remains valid" default:"1h"`
+	MaxRunDuration time.Duration `help:"Maximum time a worker may hold a run capability" default:"30m"`
 }
 
 func main() {
@@ -440,13 +512,45 @@ func main() {
 	store, err := dbstore.NewDBStore(db, dbstore.ManifestModel)
 	grace.SuccessRequired(err, "db store")
 
-	// scheduler, err := gqueue.NewScheduler(ctx, "test-local-321", "prob-request")
-	scheduler, err := redqueue.NewScheduler(context.TODO(), appCli.MessageBrokerURL)
-	grace.SuccessRequired(err, "failed to create a scheduler")
+	keys, err := appCli.Signing.Build()
+	grace.SuccessRequired(err, "failed to prepare token signing keys")
+
+	serviceOptions := []urth.ServiceOption{
+		urth.WithSigningKeys(keys),
+		urth.WithSessionTTL(appCli.SessionTTL),
+		urth.WithMaxRunDuration(appCli.MaxRunDuration),
+	}
+
+	var natsConn *nats.Conn
+
+	var scheduler urth.Scheduler
+	switch appCli.Transport {
+	case "nats":
+		natsScheduler, nerr := natsq.NewScheduler(context.TODO(), appCli.NATS)
+		grace.SuccessRequired(nerr, "failed to connect to NATS")
+		scheduler = natsScheduler
+
+		// The NATS scheduler doubles as the transport provider: it already owns
+		// the JetStream handle and the naming, so having it answer "where does
+		// this runner collect work" keeps one component responsible for the
+		// topology.
+		if provider, ok := natsScheduler.(urth.WorkerTransportProvider); ok {
+			serviceOptions = append(serviceOptions, urth.WithWorkerTransport(provider))
+		}
+
+		// A separate connection for log tailing, so a browser holding a slow
+		// stream open cannot interfere with job publication.
+		natsConn, err = appCli.NATS.Connect("urth-api-server-logs")
+		grace.SuccessRequired(err, "failed to connect to NATS for run log streaming")
+		defer natsConn.Drain()
+	default:
+		scheduler, err = redqueue.NewScheduler(context.TODO(), appCli.MessageBrokerURL)
+		grace.SuccessRequired(err, "failed to create a scheduler")
+	}
 	defer scheduler.Close()
 
-	api := urth.NewService(store, scheduler)
-	router := apiRoutes(api)
+	api := urth.NewService(store, scheduler, serviceOptions...)
+	router := apiRoutes(api, natsConn)
 
 	grace.FatalOnError(router.Run()) // listen and serve on 0.0.0.0:8080
 }

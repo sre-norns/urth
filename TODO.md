@@ -26,10 +26,16 @@ looks deceptively like passing.
 
    **Deliberately deferred, not forgotten.** A distributed scheduler is important
    and fiddly enough to deserve a design pass of its own rather than being
-   grown incrementally. The intended direction: drive it from **Postgres
-   notifications** (LISTEN/NOTIFY) rather than polling -- there are prototypes in
-   `wyrd` already -- and use the same channel to push **UI updates**, which also
-   answers the "UI does not update live" item below.
+   grown incrementally.
+
+   **Correction:** earlier notes here proposed driving it from Postgres
+   LISTEN/NOTIFY. [ADR 0004](docs/adr/0004-nats-communication-backbone.md)
+   considered that and chose NATS JetStream instead -- a `URTH_EVENTS` stream
+   with one durable consumer per projection. Postgres-only remains a viable
+   simpler design, but it was weighed and not selected, so treat the ADR as the
+   direction rather than this paragraph. The scheduler still owns cron
+   evaluation, missed-run policy, and runner selection; NATS carries the
+   wakeups, not the decisions.
 
    Until that design lands, treat manual triggering as the supported path and
    build everything else against it. The scheduler removes the need to press the
@@ -63,12 +69,10 @@ looks deceptively like passing.
 - No authentication on non-GET requests. Anyone who can reach the API can
   disable a runner or drop a worker. Fine for local development, not for the
   "enterprise friendly" claim.
-- `examples/README.md` references `run.scenario.json` and `worker.yml`, neither
-  of which exist.
 - The UI polls; there is no live update. A run triggered from the UI only
-  appears after a refetch. Expected to be solved by the same Postgres
-  notification channel as the scheduler -- do not build a bespoke polling or
-  websocket layer for it in the meantime.
+  appears after a refetch. Per ADR 0004, resource changes belong on the durable
+  `URTH_EVENTS` JetStream stream used by the scheduler and projections -- do not
+  build a separate notification transport for the UI in the meantime.
 
 ---
 
@@ -86,7 +90,11 @@ looks deceptively like passing.
 [?] Expose option for headless chrome remote debug?
 [] Search for config files using xdg! lib and standard
 [] Architecture: Implement web-hooks for events! (UI design to add option to add hooks + UI to manage existing hooks on account level?)
-[] Implement server event streaming: new scenarios / new runs / scenario update. To sync multiple running instances of web-api - use redis events queue
+[] Implement server event streaming: new scenarios / new runs / scenario update, to sync
+   multiple running instances of web-api. Per ADR 0004 this is the `URTH_EVENTS` JetStream
+   stream, not a Redis event queue as previously noted here.
+   Live *run logs* already stream (worker -> Core NATS -> SSE); this item is about
+   resource change events.
 [] Support pluggable scenario runners via go plugins
 [] All scripts must contain "EXPECT" section to test for:
 - Deadline for a TCP request
@@ -94,16 +102,12 @@ looks deceptively like passing.
 - Regexp to match response body for TCP request
 - Response code for HTTP request
 [x] Validate labels names!
-[~] Labels returned by a worker for a job-results / artifacts must be immutable
-   (system labels are merged last, so a worker cannot relabel its own upload as clean;
-    worker-supplied labels are still stored as given)
 [X] Add API to find workers give a set of labels and requirements - to enable better UX where user can see how many probers will qualify for a given set of labels. (NOTE: This is a statdards label-besed search API)
 [X] A run results object with an update time-limited JWT token must be created when a job is scheduled. Worker can only update, within a time alloted, an already `pending` run.
 [x] Restore labels API: Extract labels from JSON field
 [x] Create API must return metadata for a newly created object as `names` may be generated.
 [X] For `Create` API set `Location` header to point to a newly created resource as per rest best practice
 [] All non-GET request should require authentication!
-[] API to create artifacts must only accept valid auth-tokens from workers that authorized to run a scenario
 [] Artifacts should expire and be removed in accordance with retention policy, unless `pinned`
 
 
@@ -127,7 +131,10 @@ looks deceptively like passing.
 "As a user, I want to be save a set of tags that can be quickly acceessed when I use the app UI"
 
 ## Workers / Prob Runners
-[] Workers should talk to API servers over gRPC
+[~] Workers should talk to API servers over gRPC -- reconsidered. ADR 0004 evaluated direct
+   gRPC streams as the job backbone and rejected them: they would require Urth to implement
+   durable offline queues, redelivery, and backpressure itself. gRPC may still be worth it
+   for request/response API calls; it is not the job transport.
 [X] Add .HTTP/.REST file runner into its own package
 [X] Worker should check puppeteer availability and add labels it available
 [X] Workers should be annotated with the type of puppeteer available: JS or Python and versions
@@ -153,7 +160,8 @@ looks deceptively like passing.
 - Docker has `--init` flag to run init process in a container that rips zombie processes.
 - Consider Tempo (Grafana tracing solution) for tracing
 - KeyDB - better implementation of Redis for distributed compute
-- Consider using Postgres as PubSub for API server - to - worker job distribution and scheduling.
+- ~~Consider using Postgres as PubSub for API server - to - worker job distribution~~ --
+  settled by ADR 0004 in favour of NATS JetStream.
 
 ## TODOs:
 [X] Worker instances are manageable: list/get, pause (server-owned, enforced at job
@@ -176,8 +184,7 @@ looks deceptively like passing.
    labelled `urth/artifact.data-class: secret-bearing`.
 [] Retention and access control should act on `urth/artifact.data-class`: secret-bearing
    artifacts want a shorter default expiry and restricted download.
-[] `examples/README.md` references `run.scenario.json` and `worker.yml`, neither of which
-   exist.
+[] `examples/README.md` references `run.scenario.json`, which does not exist.
 [] SQLite backend is broken: AutoMigrate fails with `index idx_name already exists`.
    `wyrd`'s `manifest.ResourceMeta.Name` carries a hardcoded `gorm:"index:idx_name"`, and
    every model embeds it; index names are schema-global in SQLite so the second
@@ -194,11 +201,20 @@ looks deceptively like passing.
 [] Move `script` out of `CreateScenario` => `Scenario`
 [] Use proper types for Script marshaling
 [] runner/log.go must implement `go/logger` interface!
-[] Serialize `job` into msgpack!
+## NATS migration (ADR 0004)
+
+`cmd/nats-worker`, `pkg/natsq`, per-runner JetStream consumers, worker sessions, the
+authenticated claim, and live run logs have landed as a development slice.
+
+The detailed NATS review and migration work is tracked in
+[`docs/review-backlog/`](docs/review-backlog/README.md). Those task files are the source of
+truth for outbox/reconciliation, claim outcomes, NATS credentials, enrollment and run
+capabilities, immutable execution snapshots, Runner policy and blocklists, JetStream ACKs,
+failure testing, dead letters, capacity/observability, placement, and eventual Asynq
+retirement. Do not duplicate those items as flat bullets here.
+
 [] Ensure DB constraints: Each Scenario ->* Result -> * Artifacts
 [] Use staw / S3 for artifacts storage!
-[] Separate `Runner` -> `Worker (Slot)` + `Worker Instance` object
 [] Ensure that `Worker Instance` login session expires.
-[] All tokens must be treated as passwords: stored securely salted and hashed
 [] OTel instrument server and worker
 [] HAR prob should produce HAR files as output.

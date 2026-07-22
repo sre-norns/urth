@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sort"
 	"reflect"
 	"strconv"
 	"strings"
@@ -56,7 +57,14 @@ type RunnersAPI interface {
 	GetToken(ctx context.Context, runID manifest.ResourceName) (APIToken, bool, error)
 
 	// Authenticate a worker and receive Identity from the server
+	//
+	// Deprecated: returns no session credential, leaving the caller to find its
+	// own identity in the runner's Status.Instances. Use AuthWorker.
 	Auth(ctx context.Context, token APIToken, worker manifest.ResourceManifest) (manifest.ResourceManifest, error)
+
+	// AuthWorker registers a worker, returning its assigned identity, a session
+	// credential for authenticating later calls, and where to collect work.
+	AuthWorker(ctx context.Context, token APIToken, worker manifest.ResourceManifest) (WorkerRegistrationResponse, error)
 }
 
 // WorkersAPI encapsulates APIs for the worker instances that have registered
@@ -94,8 +102,16 @@ type RunResultAPI interface {
 
 	Create(ctx context.Context, entry manifest.ResourceManifest) (Result, error)
 
-	// Auth(ctx context.Context, runID manifest.VersionedResourceID, authRequest AuthJobRequest) (AuthJobResponse, error)
+	// Auth claims a job using identity supplied in the request body.
+	//
+	// Deprecated: the caller asserts its own identity, which is not evidence of
+	// anything. Retained for the asynq prototype worker. Use ClaimRun.
 	Auth(ctx context.Context, runID manifest.ResourceName, authRequest AuthJobRequest) (AuthJobResponse, error)
+
+	// ClaimRun claims a dispatched job on behalf of the worker that owns the
+	// given session credential. The run is identified by UID, matching the
+	// dispatch envelope.
+	ClaimRun(ctx context.Context, resultUID manifest.ResourceID, session APIToken, request ClaimJobRequest) (AuthJobResponse, error)
 
 	// TODO: Token can be used to look-up ID!
 	UpdateStatus(ctx context.Context, id manifest.VersionedResourceID, token APIToken, entry ResultStatus) (bark.CreatedResponse, error)
@@ -142,24 +158,101 @@ type Service interface {
 	Artifacts() ArtifactAPI
 }
 
-func NewService(store *dbstore.DBStore, scheduler Scheduler) Service {
-	return &serviceImpl{
-		store:     store,
-		scheduler: scheduler,
+// ServiceOption configures optional service dependencies.
+//
+// Variadic options rather than more constructor parameters: signing keys and a
+// transport provider are things a production server has and a test usually does
+// not, and threading nils through every call site to say so reads worse than
+// leaving them out.
+type ServiceOption func(*serviceImpl)
+
+// WithSigningKeys supplies the secrets used to mint and verify tokens.
+//
+// A service built without this generates ephemeral keys, which is fine for
+// tests and fatal for a multi-replica deployment -- see SigningKeysConfig.
+func WithSigningKeys(keys SigningKeys) ServiceOption {
+	return func(s *serviceImpl) { s.keys = keys }
+}
+
+// WithWorkerTransport supplies the provider that tells a registered worker
+// where to collect its jobs. Without it, registration still succeeds but
+// returns no connection details, which is what an asynq-only deployment wants.
+func WithWorkerTransport(provider WorkerTransportProvider) ServiceOption {
+	return func(s *serviceImpl) { s.transport = provider }
+}
+
+// WithSessionTTL sets how long an issued worker session stays valid.
+func WithSessionTTL(ttl time.Duration) ServiceOption {
+	return func(s *serviceImpl) { s.sessionTTL = ttl }
+}
+
+// WithMaxRunDuration caps how long a worker may hold a run capability.
+func WithMaxRunDuration(d time.Duration) ServiceOption {
+	return func(s *serviceImpl) { s.maxRunDuration = d }
+}
+
+const (
+	// DefaultSessionTTL bounds a worker session. Short enough that revoking a
+	// worker takes effect within a shift, long enough that renewal is not a
+	// constant load on the API.
+	DefaultSessionTTL = 1 * time.Hour
+
+	// DefaultMaxRunDuration is the ceiling on any single run's capability.
+	// A worker may request less; it cannot request more.
+	DefaultMaxRunDuration = 30 * time.Minute
+)
+
+func NewService(store *dbstore.DBStore, scheduler Scheduler, options ...ServiceOption) Service {
+	s := &serviceImpl{
+		store:          store,
+		scheduler:      scheduler,
+		sessionTTL:     DefaultSessionTTL,
+		maxRunDuration: DefaultMaxRunDuration,
 	}
+
+	for _, option := range options {
+		option(s)
+	}
+
+	// A service with no keys at all would sign with empty secrets, which is
+	// worse than the hardcoded literals this replaced. Generate instead.
+	if len(s.keys.Session) == 0 || len(s.keys.Run) == 0 || len(s.keys.Enrolment) == 0 {
+		keys, err := SigningKeysConfig{}.Build()
+		if err == nil {
+			if len(s.keys.Enrolment) == 0 {
+				s.keys.Enrolment = keys.Enrolment
+			}
+			if len(s.keys.Session) == 0 {
+				s.keys.Session = keys.Session
+			}
+			if len(s.keys.Run) == 0 {
+				s.keys.Run = keys.Run
+			}
+		}
+	}
+
+	return s
 }
 
 type (
 	serviceImpl struct {
 		store     *dbstore.DBStore
 		scheduler Scheduler
+
+		keys           SigningKeys
+		transport      WorkerTransportProvider
+		sessionTTL     time.Duration
+		maxRunDuration time.Duration
 	}
 )
 
 func (s *serviceImpl) Runners() RunnersAPI {
 	return &runnersAPIImpl{
 		store:            s.store,
-		hmacSampleSecret: []byte("my_secret_key"), // FIXME: Must be Runtime configurable secret
+		hmacSampleSecret: s.keys.Enrolment,
+		keys:             s.keys,
+		transport:        s.transport,
+		sessionTTL:       s.sessionTTL,
 	}
 }
 
@@ -184,7 +277,9 @@ func (s *serviceImpl) Results(scenarioName manifest.ResourceName) RunResultAPI {
 			store: s.store,
 		},
 
-		resultsSigningKey: []byte("my_results signing secret key, duh"), // FIXME: Must be Runtime configurable secret
+		resultsSigningKey: s.keys.Run,
+		keys:              s.keys,
+		maxRunDuration:    s.maxRunDuration,
 	}
 }
 
@@ -198,7 +293,7 @@ func (s *serviceImpl) Artifacts() ArtifactAPI {
 	return &artifactAPIImp{
 		store: s.store,
 
-		resultsSigningKey: []byte("my_results signing secret key, duh"), // FIXME: Must be Runtime configurable secret
+		resultsSigningKey: s.keys.Run,
 	}
 }
 
@@ -357,6 +452,9 @@ type resultsAPIImpl struct {
 	workersAPI *runnersAPIImpl
 
 	resultsSigningKey []byte
+
+	keys           SigningKeys
+	maxRunDuration time.Duration
 }
 
 func (m *resultsAPIImpl) scheduleRun(ctx context.Context, runResult Result) (RunID, error) {
@@ -373,24 +471,67 @@ func (m *resultsAPIImpl) scheduleRun(ctx context.Context, runResult Result) (Run
 		return InvalidRunID, nil
 	}
 
-	// Find all workers qualified to run the scenario:
+	return m.scheduler.Schedule(ctx, runResult, runResult.Spec.Scenario)
+}
+
+// placeRun selects the runner a run should be dispatched to.
+//
+// Placement is where a scenario's requirements finally mean something. The
+// prototype parsed the selector, listed the runners it matched, logged how many
+// there were, and then threw the list away -- every job went to one shared
+// queue and any worker could take it, so a scenario that declared it needed a
+// runner inside a particular network had no way of getting one.
+//
+// Reports false when nothing matches rather than failing. A transport that does
+// not route per runner -- the asynq prototype -- can still dispatch such a run,
+// and it is the routing transport's business to object. See natsq.ErrNoRunner.
+func (m *resultsAPIImpl) placeRun(ctx context.Context, runResult Result) (Runner, bool, error) {
+	if m.workersAPI == nil {
+		return Runner{}, false, nil
+	}
+
 	requirement := runResult.Spec.Scenario.Spec.Requirements.AsLabels()
-	requirementsSelector, err := manifest.ParseSelector(requirement)
+	selector, err := manifest.ParseSelector(requirement)
 	if err != nil {
-		return InvalidRunID, fmt.Errorf("failed to parse scenario requirements: %w", err)
+		return Runner{}, false, fmt.Errorf("failed to parse scenario requirements: %w", err)
 	}
 
-	// TODO: Its scheduler responsibility to match scenario to a worker. Move it there.
-	log.Printf("Scheduling scenario: looking for workers that match: %q", requirement)
-	workers, totalWorkers, err := m.workersAPI.List(ctx, manifest.SearchQuery{
-		Selector: requirementsSelector,
-	})
+	candidates, total, err := m.workersAPI.List(ctx, manifest.SearchQuery{Selector: selector})
 	if err != nil {
-		return InvalidRunID, fmt.Errorf("failed to list workers to schedule a scenario: %w", err)
+		return Runner{}, false, fmt.Errorf("failed to list runners to schedule a scenario: %w", err)
 	}
 
-	log.Printf("Scheduling scenario: %v (active=%t); qualified workers: %d / %d qualified", runResult.Spec.Scenario.Name, runResult.Spec.Scenario.Spec.IsActive, len(workers), totalWorkers)
-	return m.scheduler.Schedule(ctx, runResult, runResult.Spec.Scenario) //scenarioToRunnable(runResult, scenario))
+	// Only an active runner is a candidate: dispatching to a disabled one would
+	// queue work that, by the claim rules, no worker of that runner may take.
+	var eligible []Runner
+	for _, candidate := range candidates {
+		runner, err := NewRunner(candidate)
+		if err != nil {
+			continue
+		}
+		if runner.Spec.IsActive {
+			eligible = append(eligible, runner)
+		}
+	}
+
+	if len(eligible) == 0 {
+		log.Printf("no active runner matches requirements %q for scenario %q (%d considered)",
+			requirement, runResult.Spec.Scenario.Name, total)
+		return Runner{}, false, nil
+	}
+
+	// Deterministic selection by UID. Least-loaded or round-robin placement
+	// wants queue depth per runner, which belongs to the scheduler service that
+	// does not exist yet; picking stably means a scenario's runs land on one
+	// runner instead of scattering, which is easier to reason about in the
+	// meantime.
+	sort.Slice(eligible, func(i, j int) bool { return eligible[i].UID < eligible[j].UID })
+	selected := eligible[0]
+
+	log.Printf("placed run of %q on runner %q (%d of %d eligible)",
+		runResult.Spec.Scenario.Name, selected.Name, len(eligible), total)
+
+	return selected, true, nil
 }
 
 func (m *resultsAPIImpl) List(ctx context.Context, searchQuery manifest.SearchQuery) (results []Result, total int64, err error) {
@@ -478,6 +619,21 @@ func (m *resultsAPIImpl) Create(ctx context.Context, newEntry manifest.ResourceM
 			// LabelResultStatus: string(entry.Status.Result),
 		},
 	)
+
+	// Place the run on a runner before persisting it, so the record carries the
+	// channel it was dispatched to from the moment it exists. ADR 0003 binds a
+	// scheduled Result to a Runner and leaves worker identity empty until a
+	// claim, which is exactly the shape of ExecutorRef here.
+	if runner, placed, err := m.placeRun(ctx, entry); err != nil {
+		return Result{}, err
+	} else if placed {
+		entry.Status.Executor.RunnerID = runner.UID
+		entry.Status.Executor.RunnerName = runner.Name
+		entry.Labels = manifest.MergeLabels(entry.Labels, manifest.Labels{
+			LabelRunnerName: string(runner.Name),
+			LabelRunnerUID:  string(runner.UID),
+		})
+	}
 
 	// TODO: Validate that request is from an authentic worker that is allowed to take jobs!
 	if err := m.store.Create(ctx, &entry); err != nil {
@@ -656,6 +812,230 @@ func (m *resultsAPIImpl) Auth(ctx context.Context, resultName manifest.ResourceN
 	}, err
 }
 
+// ClaimRun authorises a worker to execute a dispatched job.
+//
+// The worker's identity comes from its session credential, never from the
+// request. This is the check the prototype did not have: its claim endpoint
+// carried no bearer middleware at all and trusted the WorkerID and RunnerID in
+// the body, so anything that could reach the API could claim any job as anyone.
+//
+// The claim is idempotent for the same worker and dispatch. A worker whose
+// claim committed but whose response was lost must be able to ask again and get
+// the same authorization back -- otherwise a dropped packet strands a run that
+// the server already believes is executing. A *different* worker asking for the
+// same run still loses, which is what keeps the race safe.
+func (m *resultsAPIImpl) ClaimRun(ctx context.Context, resultUID manifest.ResourceID, session APIToken, request ClaimJobRequest) (AuthJobResponse, error) {
+	claims, err := ParseWorkerSession(m.keys, session)
+	if err != nil {
+		return AuthJobResponse{}, bark.ErrResourceUnauthorized
+	}
+
+	if request.DispatchID == "" {
+		return AuthJobResponse{}, &bark.ErrorResponse{
+			Code:    http.StatusBadRequest,
+			Message: "claim requires a dispatch ID",
+		}
+	}
+
+	worker, runner, err := m.loadClaimant(ctx, claims)
+	if err != nil {
+		return AuthJobResponse{}, err
+	}
+
+	// Looked up by UID, not name. The dispatch envelope identifies the run by
+	// UID precisely because a name can be reused, and a claim that resolved a
+	// recycled name would authorise a worker against the wrong run.
+	var entry Result
+	if ok, err := m.store.GetByUID(ctx, &entry, resultUID); err != nil {
+		return AuthJobResponse{}, bark.ErrResourceNotFound
+	} else if !ok {
+		return AuthJobResponse{}, bark.ErrResourceUnauthorized
+	}
+
+	// The dispatch must describe the Result as it now is. A message published
+	// for an older version has been overtaken -- the run was rescheduled or
+	// amended -- and executing it would run a stale definition.
+	if request.ResultVersion != 0 && request.ResultVersion != entry.Version {
+		log.Printf("rejecting claim for %q: dispatch is for version %v, current is %v",
+			entry.Name, request.ResultVersion, entry.Version)
+		return AuthJobResponse{}, bark.ErrResourceUnauthorized
+	}
+
+	// Business Rule: a run may only be claimed by a worker of the runner it was
+	// dispatched to. Without this a worker could claim jobs placed on a runner
+	// it has no membership of, and label-based placement would mean nothing.
+	if entry.Status.Executor.RunnerID != "" && entry.Status.Executor.RunnerID != runner.UID {
+		log.Printf("worker %q of runner %q may not claim %q, dispatched to runner %q",
+			worker.Name, runner.UID, resultUID, entry.Status.Executor.RunnerID)
+		return AuthJobResponse{}, bark.ErrResourceUnauthorized
+	}
+
+	// The idempotent case: this worker already holds this run.
+	if entry.Status.Status == JobRunning {
+		if entry.Status.Executor.WorkerID == worker.UID && entry.Status.DispatchID == request.DispatchID {
+			log.Printf("worker %q re-claiming %q for dispatch %v; re-issuing authorization",
+				worker.Name, entry.Name, request.DispatchID)
+			return m.authorizeRun(ctx, entry, entry.Status.Deadline)
+		}
+
+		// Someone else has it, or this worker has it for an older dispatch.
+		return AuthJobResponse{}, bark.ErrResourceUnauthorized
+	}
+
+	if entry.Status.Status != JobPending {
+		return AuthJobResponse{}, bark.ErrResourceUnauthorized
+	}
+
+	// Business Rule: the server sets the deadline. A worker may ask for less
+	// time than the server allows -- and often should, so a hung probe fails
+	// rather than holding a slot -- but the ceiling is not negotiable. The
+	// prototype signed the run token with the worker's requested timeout
+	// verbatim, so a worker could mint itself a capability valid for a week.
+	duration := clampRunDuration(request.Timeout, m.maxRunDuration)
+
+	now := time.Now()
+	deadline := now.Add(duration)
+
+	entry.Spec.TimeStarted = &now
+	entry.Status.Status = JobRunning
+	entry.Status.Executor = executorRef(worker, runner)
+	entry.Status.DispatchID = request.DispatchID
+	entry.Status.Deadline = deadline
+
+	entry.Labels = manifest.MergeLabels(
+		entry.Labels,
+		manifest.Labels{
+			LabelResultJobState: string(entry.Status.Status),
+		},
+		executorLabels(entry.Status.Executor),
+	)
+
+	// Version-guarded, deliberately. This is the update that decides a race
+	// between two workers reaching for the same run: the loser's version is
+	// stale and its update does not apply. Do not convert this to saveResource
+	// -- that path uses gorm Save, which would let both writes succeed.
+	if ok, err := m.store.Update(ctx, &entry, entry.UID, dbstore.WithVersion(entry.Version)); err != nil {
+		return AuthJobResponse{}, err
+	} else if !ok {
+		return AuthJobResponse{}, bark.ErrResourceUnauthorized
+	}
+
+	log.Printf("worker %q claimed %q until %v (dispatch %v)", worker.Name, entry.Name, deadline, request.DispatchID)
+
+	return m.authorizeRun(ctx, entry, deadline)
+}
+
+// loadClaimant resolves and vets the worker behind a session credential.
+func (m *resultsAPIImpl) loadClaimant(ctx context.Context, claims WorkerSessionClaims) (WorkerInstance, Runner, error) {
+	var worker WorkerInstance
+	var runner Runner
+
+	if ok, err := m.store.GetByUID(ctx, &worker, claims.WorkerID); err != nil {
+		return worker, runner, bark.ErrResourceNotFound
+	} else if !ok {
+		// The session is validly signed but its worker record is gone -- the
+		// instance was deleted or expired. ADR 0002 makes that a revocation, so
+		// the credential must stop working even though it has not expired.
+		return worker, runner, bark.ErrResourceUnauthorized
+	}
+
+	// The session names the runner it was issued for. If the worker has since
+	// been re-registered against a different runner, the credential no longer
+	// describes reality and is refused rather than silently re-scoped.
+	if worker.Spec.RunnerID != claims.RunnerID {
+		return worker, runner, bark.ErrResourceUnauthorized
+	}
+
+	// Business Rule: a paused worker stays registered and keeps its identity,
+	// but takes no new jobs.
+	if worker.Status.IsPaused {
+		return worker, runner, bark.ErrResourceUnauthorized
+	}
+
+	if ok, err := m.store.GetByUID(ctx, &runner, worker.Spec.RunnerID); err != nil {
+		return worker, runner, bark.ErrResourceNotFound
+	} else if !ok {
+		return worker, runner, bark.ErrResourceUnauthorized
+	}
+
+	// Business Rule: a worker of a disabled runner takes no jobs either.
+	if !runner.Spec.IsActive {
+		return worker, runner, bark.ErrResourceUnauthorized
+	}
+
+	return worker, runner, nil
+}
+
+// authorizeRun mints the run capability and assembles the claim response,
+// including the execution snapshot the worker needs in order to run anything.
+func (m *resultsAPIImpl) authorizeRun(ctx context.Context, entry Result, deadline time.Time) (AuthJobResponse, error) {
+	// Load the scenario explicitly. Result.Spec.Scenario is a lazy association
+	// and comes back zero-valued from GetByName, so reading the prob straight
+	// off it would hand the worker an empty execution snapshot and a run that
+	// fails for no visible reason.
+	scenario := entry.Spec.Scenario
+	if scenario.Spec.Prob.Kind == "" {
+		if ok, err := m.store.GetByUID(ctx, &scenario, entry.Spec.ScenarioID); err != nil {
+			return AuthJobResponse{}, fmt.Errorf("failed to load scenario for run %q: %w", entry.Name, err)
+		} else if !ok {
+			return AuthJobResponse{}, bark.ErrResourceNotFound
+		}
+	}
+
+	now := time.Now()
+
+	claims := &jwt.RegisteredClaims{
+		Issuer:    TokenIssuer,
+		Subject:   string(entry.UID),
+		IssuedAt:  jwt.NewNumericDate(now),
+		NotBefore: jwt.NewNumericDate(now),
+		// A small grace beyond the deadline, so a run that used its full budget
+		// can still report what happened. A worker that cannot upload its
+		// result is a worker whose failure looks identical to a crash.
+		ExpiresAt: jwt.NewNumericDate(deadline.Add(artifactUploadGrace)),
+	}
+
+	signed, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(m.keys.Run)
+	if err != nil {
+		return AuthJobResponse{}, fmt.Errorf("failed to sign a run capability: %w", err)
+	}
+
+	return AuthJobResponse{
+		CreatedResponse: bark.CreatedResponse{
+			VersionedResourceID: entry.GetVersionedID(),
+		},
+		Token:    APIToken(signed),
+		Prob:     scenario.Spec.Prob,
+		Scenario: scenario.Name,
+		Deadline: deadline,
+	}, nil
+}
+
+// artifactUploadGrace is how long past a run's deadline its capability keeps
+// working, so results and artifacts from a run that used its whole budget still
+// land.
+const artifactUploadGrace = 5 * time.Minute
+
+// clampRunDuration decides how long a worker may hold a run capability.
+//
+// The direction of the clamp is the point. A worker asking for less than the
+// server allows is granted it -- a worker that knows its probe should finish in
+// ten seconds is right to ask for a short lease, because a hung probe then
+// fails instead of occupying a slot. A worker asking for more is given the
+// server's limit, not its request: the prototype passed the requested timeout
+// straight into the token's expiry, so a worker could ask for a week and get it.
+func clampRunDuration(requested, maximum time.Duration) time.Duration {
+	if maximum <= 0 {
+		maximum = DefaultMaxRunDuration
+	}
+
+	if requested > 0 && requested < maximum {
+		return requested
+	}
+
+	return maximum
+}
+
 func (m *resultsAPIImpl) validateUpdateRequest(_ context.Context, entry Result, bearerToken APIToken) error {
 	token, err := jwt.Parse(string(bearerToken), func(token *jwt.Token) (interface{}, error) {
 		// Don't forget to validate the alg is what you expect:
@@ -740,6 +1120,10 @@ func (m *resultsAPIImpl) Get(ctx context.Context, id manifest.ResourceName) (res
 type runnersAPIImpl struct {
 	store            dbstore.TransactionalStore
 	hmacSampleSecret []byte
+
+	keys       SigningKeys
+	transport  WorkerTransportProvider
+	sessionTTL time.Duration
 }
 
 func (m *runnersAPIImpl) List(ctx context.Context, searchQuery manifest.SearchQuery) (results []manifest.ResourceManifest, total int64, err error) {
@@ -1022,8 +1406,82 @@ func (m *runnersAPIImpl) GetToken(ctx context.Context, runnerName manifest.Resou
 	return APIToken(tokenString), true, nil
 }
 
+// Auth registers a worker and returns the runner manifest.
+//
+// This is the prototype's registration call, kept because the asynq worker digs
+// its identity out of Status.Instances[0] of the returned runner. New workers
+// should use AuthWorker, which returns an explicit identity and a session
+// credential instead.
 func (m *runnersAPIImpl) Auth(ctx context.Context, apiToken APIToken, newEntry manifest.ResourceManifest) (manifest.ResourceManifest, error) {
-	var result manifest.ResourceManifest
+	runner, _, err := m.admitWorker(ctx, apiToken, newEntry)
+	if err != nil {
+		return manifest.ResourceManifest{}, err
+	}
+
+	return runner.ToManifest(), nil
+}
+
+// AuthWorker registers a worker and issues it a session credential and the
+// details of where to collect work.
+//
+// The admission rules are exactly those of Auth -- the same enrolment token,
+// runner, requirements, and instance-limit checks -- because there should be
+// only one answer to "may this worker join". What differs is what the caller
+// gets back: an identity it does not have to guess at, a credential it can
+// authenticate later calls with, and its queue.
+func (m *runnersAPIImpl) AuthWorker(ctx context.Context, apiToken APIToken, newEntry manifest.ResourceManifest) (WorkerRegistrationResponse, error) {
+	runner, worker, err := m.admitWorker(ctx, apiToken, newEntry)
+	if err != nil {
+		return WorkerRegistrationResponse{}, err
+	}
+
+	ttl := m.sessionTTL
+	if ttl <= 0 {
+		ttl = DefaultSessionTTL
+	}
+	// A worker may ask for a shorter session than the server's default -- a
+	// short-lived worker has no reason to hold a credential outliving it -- but
+	// never a longer one.
+	if requested := worker.Spec.RequestedTTL; requested > 0 && requested < ttl {
+		ttl = requested
+	}
+
+	session, expiresAt, err := IssueWorkerSession(m.keys, runner.UID, worker.UID, ttl)
+	if err != nil {
+		return WorkerRegistrationResponse{}, err
+	}
+
+	var connectionInfo NATSConnectionInfo
+	if m.transport != nil {
+		// Provisioning the runner's queue here, at registration, means a runner
+		// created before this transport existed still gets one the first time a
+		// worker shows up, rather than having its jobs published into a stream
+		// with nothing bound to it.
+		if connectionInfo, err = m.transport.ConnectionInfoFor(ctx, runner.UID); err != nil {
+			return WorkerRegistrationResponse{}, fmt.Errorf("failed to prepare worker transport: %w", err)
+		}
+	}
+
+	return WorkerRegistrationResponse{
+		Runner:           runner.ToManifest(),
+		Worker:           worker.ToManifest(),
+		Session:          session,
+		SessionExpiresAt: expiresAt,
+		NATS:             connectionInfo,
+	}, nil
+}
+
+// admitWorker decides whether a worker may join a runner, and creates or
+// refreshes its WorkerInstance record if so.
+//
+// It returns the runner and the worker's own record. The caller gets the worker
+// separately rather than having to find it inside runner.Status.Instances,
+// which is what the prototype forced on its caller and what made the assigned
+// identity ambiguous once a runner had more than one instance.
+func (m *runnersAPIImpl) admitWorker(ctx context.Context, apiToken APIToken, newEntry manifest.ResourceManifest) (Runner, WorkerInstance, error) {
+	var result Runner
+	var registered WorkerInstance
+
 	token, err := jwt.Parse(string(apiToken), func(token *jwt.Token) (interface{}, error) {
 		// Don't forget to validate the alg is what you expect:
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -1034,25 +1492,25 @@ func (m *runnersAPIImpl) Auth(ctx context.Context, apiToken APIToken, newEntry m
 		return m.hmacSampleSecret, nil
 	})
 	if err != nil {
-		return result, bark.ErrResourceUnauthorized
+		return result, registered, bark.ErrResourceUnauthorized
 	}
 
 	tokenSubj, err := token.Claims.GetSubject()
 	if err != nil {
-		return result, bark.ErrResourceUnauthorized
+		return result, registered, bark.ErrResourceUnauthorized
 	}
 
 	var runner Runner
 	if ok, err := m.store.GetByUID(ctx, &runner, manifest.ResourceID(tokenSubj),
 		dbstore.Expand("Instances", manifestMatch(newEntry.Metadata))); err != nil {
-		return result, err
+		return result, registered, err
 	} else if !ok {
-		return result, bark.ErrResourceUnauthorized
+		return result, registered, bark.ErrResourceUnauthorized
 	}
 
 	// Business Rule: Runner must be active to accept new workers auth
 	if !runner.Spec.IsActive {
-		return result, bark.ErrResourceUnauthorized
+		return result, registered, bark.ErrResourceUnauthorized
 	}
 
 	// It's ok to have nameless workers, will generate name if none provided
@@ -1062,14 +1520,14 @@ func (m *runnersAPIImpl) Auth(ctx context.Context, apiToken APIToken, newEntry m
 
 	worker, err := NewWorkerInstance(newEntry)
 	if err != nil {
-		return result, err
+		return result, registered, err
 	}
 
 	// TODO: Validate that the worker matches runner's requirements
 	reqSelector, err := runner.Spec.Requirements.AsSelector()
 	if err != nil {
 		// Note, failed to parse Runner's requirements so can't auth any workers
-		return result, &bark.ErrorResponse{
+		return result, registered, &bark.ErrorResponse{
 			Code:    http.StatusUnauthorized,
 			Message: fmt.Sprintf("runner's requirements are invalid: %v", err),
 		}
@@ -1079,7 +1537,7 @@ func (m *runnersAPIImpl) Auth(ctx context.Context, apiToken APIToken, newEntry m
 	if !reqSelector.Matches(worker.Labels) {
 		log.Printf("worker doesn't matches runner's requirements: %q", runner.Spec.Requirements.AsLabels())
 		// Note, failed to parse Runner's requirements so can't auth any workers
-		return result, &bark.ErrorResponse{
+		return result, registered, &bark.ErrorResponse{
 			Code:    http.StatusUnauthorized,
 			Message: "worker does not satisfy runner's requirements",
 		}
@@ -1106,19 +1564,21 @@ func (m *runnersAPIImpl) Auth(ctx context.Context, apiToken APIToken, newEntry m
 		existingWorkerRecord.Spec = worker.Spec
 
 		_, err = m.store.Update(ctx, &existingWorkerRecord, existingWorkerRecord.UID, dbstore.WithVersion(existingWorkerRecord.Version))
+		registered = existingWorkerRecord
 	} else {
 		// Business Rule: Runner can only have a number of new worker up-to-a limit, if limit is set
 		if runner.Spec.MaxInstances > 0 && runner.Status.NumberInstances >= runner.Spec.MaxInstances {
-			return result, bark.ErrResourceUnauthorized
+			return result, registered, bark.ErrResourceUnauthorized
 		}
 
 		worker.Labels = manifest.MergeLabels(worker.Labels, workerLabels(runner))
 
 		err = m.store.Create(ctx, &worker)
 		runner.Status.Instances = append(runner.Status.Instances, worker)
+		registered = worker
 	}
 
-	return runner.ToManifest(), err
+	return runner, registered, err
 }
 
 // ------------------------------

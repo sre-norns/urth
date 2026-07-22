@@ -11,6 +11,7 @@ import EmptyInlay from '../components/EmptyInlay.jsx'
 import RagIndicator from '../components/RagIndicator.js'
 import StatTile from '../components/StatTile.jsx'
 import ArtifactPanel from '../components/ArtifactPanel.jsx'
+import LiveRunLog from '../components/LiveRunLog.jsx'
 import Link from '../components/Link.js'
 import TextSpan, { TextDiv } from '../components/TextSpan.js'
 import { statusToColor } from '../utils/status-color.js'
@@ -107,6 +108,7 @@ const RunDetail = ({ scenarioId, runId }) => {
   const scenarioName = scenarioId || result.labels?.[LabelScenario.Name] || null
   const started = runStartedAt(result)
   const finished = runFinishedAt(result)
+  const isRunning = result.status?.status === 'running' || result.status?.status === 'pending'
 
   // Logs first: they are what an operator opens when a run went wrong.
   const ordered = [...artifactList].sort((a, b) => {
@@ -154,6 +156,8 @@ const RunDetail = ({ scenarioId, runId }) => {
           />
         </StatsRow>
       </Panel>
+
+      <LiveRunLog runId={result.name} scenarioName={scenarioName} isRunning={isRunning} />
 
       <Panel>
         <SectionHeader>

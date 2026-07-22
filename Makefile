@@ -15,6 +15,17 @@ run-api-server: # Start API server
 run-asynq-worker: # Start Redis based worker
 	@go run ./cmd/asynq-runner
 
+.PHONY: run-api-server-nats
+run-api-server-nats: # Start API server using the NATS/JetStream transport
+	@go run ./cmd/api-server --store.url="$(store-url)" --transport=nats
+
+# The enrolment token comes from the environment or a file rather than a flag:
+# an argument is visible in the process table to every user on the host.
+#   export RUNNER_TOKEN=$$(go run ./cmd/urthctl auth-worker -f ./examples/runner.yaml)
+.PHONY: run-nats-worker
+run-nats-worker: # Start NATS based worker
+	@go run ./cmd/nats-worker --client.token="$(RUNNER_TOKEN)"
+
 .PHONY: run-scheduler
 run-scheduler: # Start scheduler server
 	@echo Not implemented yet....
@@ -33,6 +44,12 @@ run-redis-podman: # Start redis using podman container
 .PHONY: run-postgres-podman
 run-postgres-podman: # Start postgres using podman container
 	@podman run -p 5432:5432 -e POSTGRES_USER=urth -e POSTGRES_PASSWORD=urth -e POSTGRES_DB=urth postgres:15
+
+# Single non-replicated server with JetStream: fine for development, explicitly
+# not highly available. Production wants three replicas on persistent volumes.
+.PHONY: run-nats-podman
+run-nats-podman: # Start NATS with JetStream using podman container
+	@podman run -p 4222:4222 -p 8222:8222 nats:2.10-alpine -js -m 8222
 
 
 # ==================================================================================== #

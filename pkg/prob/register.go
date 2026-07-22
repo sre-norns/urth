@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -62,9 +63,7 @@ func UnregisterProbKind(kind Kind) error {
 // modification of registration info.
 func ListProbs() map[Kind]ProbRegistration {
 	result := make(map[Kind]ProbRegistration, len(kindRunnerMap))
-	for kind, info := range kindRunnerMap {
-		result[kind] = info
-	}
+	maps.Copy(result, kindRunnerMap)
 
 	return result
 }

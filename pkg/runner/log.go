@@ -13,7 +13,7 @@ import (
 
 const LogRelType = "log"
 
-// runLogSink is the shared destination for a single script run.
+// LogPublisher is the shared destination for a single script run.
 // It accumulates everything written so the run can be published as an artifact,
 // while teeing to the process log so an operator watching a worker sees the run
 // unfold live.
@@ -21,10 +21,22 @@ const LogRelType = "log"
 // A run may be written to concurrently: probers commonly attach a subprocess'
 // stdout and stderr in addition to logging from their own goroutines, so access
 // to the buffer is guarded.
+// LogPublisher receives run log output as it is written, so a run in progress
+// can be watched from elsewhere.
+//
+// PublishLine returns nothing on purpose. Streaming is best-effort: a run must
+// not fail, stall, or spam its own log because whatever was watching went away.
+type LogPublisher interface {
+	PublishLine(line []byte)
+}
+
 type runLogSink struct {
 	mu sync.Mutex
 
 	content bytes.Buffer
+
+	// publisher tees output to a live subscriber, if any.
+	publisher LogPublisher
 
 	// rawWrites records whether anything reached this log other than through a
 	// slog record. Probers redact credentials as they build the records they
@@ -48,6 +60,18 @@ func (s *runLogSink) Write(p []byte) (n int, err error) {
 
 	n, err = s.content.Write(p)
 	log.Writer().Write(p)
+
+	if s.publisher != nil {
+		// Published under the lock, so subscribers see lines in the same order
+		// the artifact records them. A publisher that blocked here would stall
+		// the run, which is why LogPublisher is documented as best-effort and
+		// the NATS implementation never blocks.
+		//
+		// The slice is cloned because the caller may reuse its buffer -- slog's
+		// handler does -- and a publisher that queues the bytes would otherwise
+		// send whatever the buffer held later.
+		s.publisher.PublishLine(bytes.Clone(p))
+	}
 
 	return
 }
@@ -84,8 +108,12 @@ type RunLogger struct {
 	handler slog.Handler
 }
 
-func NewRunLogger() *RunLogger {
-	sink := &runLogSink{}
+// NewRunLogger returns a logger capturing one run's output.
+//
+// The publisher may be nil, in which case the log is only captured as an
+// artifact.
+func NewRunLogger(publisher LogPublisher) *RunLogger {
+	sink := &runLogSink{publisher: publisher}
 
 	return &RunLogger{
 		sink:    sink,
