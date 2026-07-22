@@ -1,6 +1,6 @@
 module github.com/sre-norns/urth
 
-go 1.25.0
+go 1.26
 
 require (
 	github.com/adhocore/gronx v1.20.0

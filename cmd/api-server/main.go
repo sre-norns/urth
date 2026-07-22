@@ -117,6 +117,10 @@ func apiRoutes(srv urth.Service, natsConn *nats.Conn) *gin.Engine {
 			ctx.Header(bark.HTTPHeaderCacheControl, "no-store")
 
 			token := bark.RequireBearerToken(ctx)
+			// This route exists to serve the deprecated Auth flow; the /auth/workers
+			// route below is the replacement. Kept because the asynq prototype worker
+			// still reads its identity out of the runner manifest this returns.
+			//lint:ignore SA1019 deliberate: this handler implements the deprecated endpoint the prototype worker depends on.
 			bark.Manifest(ctx).Created(srv.Runners().Auth(ctx.Request.Context(), urth.APIToken(token), bark.RequireManifest(ctx)))
 		})
 		// Worker registration: exchange an enrolment token for an identity, a
@@ -207,6 +211,9 @@ func apiRoutes(srv urth.Service, natsConn *nats.Conn) *gin.Engine {
 				return
 			}
 
+			// This route implements the deprecated body-asserted job claim retained
+			// for the asynq prototype worker; ClaimRun is the session-backed replacement.
+			//lint:ignore SA1019 deliberate: this handler implements the deprecated endpoint the prototype worker depends on.
 			resource, err := srv.Results(manifest.ResourceName(resourceRequest.ID)).Auth(ctx.Request.Context(), resourceRequest.RunID, authRequest)
 			if err != nil {
 				log.Print("error while calling auth", "err", err)
