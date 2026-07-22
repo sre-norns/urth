@@ -26,10 +26,16 @@ looks deceptively like passing.
 
    **Deliberately deferred, not forgotten.** A distributed scheduler is important
    and fiddly enough to deserve a design pass of its own rather than being
-   grown incrementally. The intended direction: drive it from **Postgres
-   notifications** (LISTEN/NOTIFY) rather than polling -- there are prototypes in
-   `wyrd` already -- and use the same channel to push **UI updates**, which also
-   answers the "UI does not update live" item below.
+   grown incrementally.
+
+   **Correction:** earlier notes here proposed driving it from Postgres
+   LISTEN/NOTIFY. [ADR 0004](docs/adr/0004-nats-communication-backbone.md)
+   considered that and chose NATS JetStream instead -- a `URTH_EVENTS` stream
+   with one durable consumer per projection. Postgres-only remains a viable
+   simpler design, but it was weighed and not selected, so treat the ADR as the
+   direction rather than this paragraph. The scheduler still owns cron
+   evaluation, missed-run policy, and runner selection; NATS carries the
+   wakeups, not the decisions.
 
    Until that design lands, treat manual triggering as the supported path and
    build everything else against it. The scheduler removes the need to press the
@@ -63,8 +69,7 @@ looks deceptively like passing.
 - No authentication on non-GET requests. Anyone who can reach the API can
   disable a runner or drop a worker. Fine for local development, not for the
   "enterprise friendly" claim.
-- `examples/README.md` references `run.scenario.json` and `worker.yml`, neither
-  of which exist.
+- `examples/README.md` references `run.scenario.json` which does not exist.
 - The UI polls; there is no live update. A run triggered from the UI only
   appears after a refetch. Expected to be solved by the same Postgres
   notification channel as the scheduler -- do not build a bespoke polling or
@@ -86,7 +91,11 @@ looks deceptively like passing.
 [?] Expose option for headless chrome remote debug?
 [] Search for config files using xdg! lib and standard
 [] Architecture: Implement web-hooks for events! (UI design to add option to add hooks + UI to manage existing hooks on account level?)
-[] Implement server event streaming: new scenarios / new runs / scenario update. To sync multiple running instances of web-api - use redis events queue
+[] Implement server event streaming: new scenarios / new runs / scenario update, to sync
+   multiple running instances of web-api. Per ADR 0004 this is the `URTH_EVENTS` JetStream
+   stream, not a Redis event queue as previously noted here.
+   Live *run logs* already stream (worker -> Core NATS -> SSE); this item is about
+   resource change events.
 [] Support pluggable scenario runners via go plugins
 [] All scripts must contain "EXPECT" section to test for:
 - Deadline for a TCP request
@@ -127,7 +136,10 @@ looks deceptively like passing.
 "As a user, I want to be save a set of tags that can be quickly acceessed when I use the app UI"
 
 ## Workers / Prob Runners
-[] Workers should talk to API servers over gRPC
+[~] Workers should talk to API servers over gRPC -- reconsidered. ADR 0004 evaluated direct
+   gRPC streams as the job backbone and rejected them: they would require Urth to implement
+   durable offline queues, redelivery, and backpressure itself. gRPC may still be worth it
+   for request/response API calls; it is not the job transport.
 [X] Add .HTTP/.REST file runner into its own package
 [X] Worker should check puppeteer availability and add labels it available
 [X] Workers should be annotated with the type of puppeteer available: JS or Python and versions
@@ -153,7 +165,8 @@ looks deceptively like passing.
 - Docker has `--init` flag to run init process in a container that rips zombie processes.
 - Consider Tempo (Grafana tracing solution) for tracing
 - KeyDB - better implementation of Redis for distributed compute
-- Consider using Postgres as PubSub for API server - to - worker job distribution and scheduling.
+- ~~Consider using Postgres as PubSub for API server - to - worker job distribution~~ --
+  settled by ADR 0004 in favour of NATS JetStream.
 
 ## TODOs:
 [X] Worker instances are manageable: list/get, pause (server-owned, enforced at job
@@ -194,7 +207,38 @@ looks deceptively like passing.
 [] Move `script` out of `CreateScenario` => `Scenario`
 [] Use proper types for Script marshaling
 [] runner/log.go must implement `go/logger` interface!
-[] Serialize `job` into msgpack!
+[~] Serialize `job` into msgpack! -- largely moot for the NATS path: the dispatch envelope
+   is a handful of identifiers in JSON, chosen so a stuck queue can be read with
+   `nats stream view`. Still applies to the asynq `urth.Job`, which carries the whole
+   prob spec in YAML.
+
+## NATS migration (ADR 0004)
+
+`cmd/nats-worker`, `pkg/natsq`, per-runner JetStream consumers, worker sessions, the
+authenticated claim, and live run logs have landed. What is deliberately not done:
+
+[] **Transactional outbox and relay.** The API server currently commits a Result and then
+   publishes to JetStream in two steps. A crash between them leaves a pending Result with
+   no queue message. ADR 0004 section 2 requires the outbox; this is the largest remaining
+   gap and should come before NATS is called production-ready.
+[] **Reconciler.** Detect unpublished outbox rows, pending Results with no live message,
+   running Results whose lease expired, and terminal Results with stale messages. The
+   `Deadline` field on `ResultStatus` exists to make the third of these possible.
+[] **Urth-issued NATS credentials.** Registration returns a `NATSConnectionInfo` whose
+   credential type is `none` or `creds`. The wire contract is settled, so Auth Callout or
+   minted NKey/JWT slots in behind it -- but until then subject permissions are whatever
+   the operator configured on the NATS server, and the per-runner isolation is enforced by
+   consumer binding rather than by NATS authorization.
+[] **Runner blocklist** (ADR 0003). Checked at neither registration nor claim yet.
+[] **Dead-letter workflow.** Messages that exhaust `MaxDeliver` are terminated and logged;
+   nothing surfaces them to an operator or reflects them on the Result.
+[] **Better placement.** `placeRun` picks the first matching active runner by UID.
+   Least-loaded placement needs per-runner queue depth, which belongs with the scheduler.
+[] **Drain and remove asynq.** `cmd/asynq-runner`, `pkg/redqueue`, and the legacy
+   unauthenticated claim route at `POST /auth//scenarios/:id/:runId` all still exist. The
+   legacy route trusts identity from the request body and should not outlive the migration.
+[] **Retire `urth.Job`** once nothing publishes it, along with `RunScenarioTopicName`.
+
 [] Ensure DB constraints: Each Scenario ->* Result -> * Artifacts
 [] Use staw / S3 for artifacts storage!
 [] Separate `Runner` -> `Worker (Slot)` + `Worker Instance` object

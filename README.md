@@ -3,11 +3,19 @@
 [![Build](https://github.com/sre-norns/urth/actions/workflows/go.yml/badge.svg)](https://github.com/sre-norns/urth/actions/workflows/go.yml)
 [![Go Report Card](https://goreportcard.com/badge/sre-norns/urth)](https://goreportcard.com/report/github.com/sre-norns/urth)
 
-**Synthetic monitoring for networks you can't reach from the public internet.**
+**Uptime Kuma meets Prometheus Blackbox Exporter and self-hosted CI runners — with
+character.**
 
-Urth runs scheduled probes against your services — HTTP, TCP, DNS, ICMP, gRPC, and full
-browser scenarios — and turns the results into pass/fail history plus Prometheus-style
-metrics.
+Urth is synthetic monitoring for networks you cannot reach from the public internet.
+Define HTTP, TCP, DNS, ICMP, gRPC, and full-browser checks as versioned,
+Kubernetes-inspired **Scenario** resources. Scenarios are designed to run manually or on
+a schedule, and each job is routed to a self-hosted runner in the network you want to
+observe. Results become pass/fail history, artifacts, and Prometheus-style metrics.
+
+Every durable concept in Urth is a resource exposed by the same resource-oriented REST
+API. The Web UI and `urthctl` — a CLI inspired by `kubectl` — are equivalent clients of
+that API. Resources use CRD-like manifests, but Urth implements the model directly and
+does not require Kubernetes.
 
 ---
 
@@ -18,9 +26,9 @@ monitor lives inside a VPC, behind a VPN, or on a segmented factory network. At 
 point you are asked to punch a hole through your perimeter so someone else's prober can
 reach in.
 
-Urth inverts that. **Probes execute on runners you host, inside the network segment being
-tested.** The runner reaches out to the API server; nothing reaches in. This is the same
-model as self-hosted CI runners.
+Urth inverts that. **Probes execute on Worker processes you host, inside the network
+segment being tested.** Workers reach out to the API server; nothing reaches in. The
+deployment model is the same as self-hosted CI runners.
 
 That design carries a second benefit. A large organisation is not one network — it's
 dozens, each owned by a different team. Urth models this explicitly:
@@ -28,11 +36,11 @@ dozens, each owned by a different team. Urth models this explicitly:
 - **Runners advertise labels** describing where they sit and what they can do
   (`os: linux`, `region: eu-west-1`, `urth/capability.prob.puppeteer`).
 - **Scenarios declare requirements** as label selectors.
-- The scheduler only dispatches a scenario to a runner that satisfies its requirements.
+- A job is only dispatched to a runner that satisfies the scenario's requirements.
 
 If you have written a Kubernetes `nodeSelector`, this will feel familiar. Team A's probes
 run on Team A's runners, which are the only ones with a route to Team A's infrastructure —
-enforced by the scheduler rather than by convention.
+enforced by the control plane rather than by convention.
 
 ```yaml
 # A scenario that must run on a Linux runner, and never in dev or test environments
@@ -62,17 +70,26 @@ DNS and ICMP semantics should be familiar if you already run it.
 
 ## Concepts
 
-| Resource | What it is |
+| Concept | What it is |
 |---|---|
 | **Scenario** | A probe definition: what to test, on what schedule, and which runners may execute it. |
 | **Prob** | The executable body of a scenario, typed by `kind` (see below). |
-| **Runner** | A registration slot describing a class of worker, its labels, and its auth token. |
-| **Worker** | A running process that claims the slot and executes jobs. |
+| **Runner** | An operator-created logical scheduling channel: its queue, placement labels, job policy, and Worker admission policy. |
+| **Worker** | A physical process deployed by an operator. Its binary and configuration determine which probes it can execute. |
+| **WorkerInstance** | The API resource and session representing a live Worker connected to exactly one Runner. |
 | **Result** | The record of one execution: status, timing, and who ran it. |
 | **Artifact** | Data produced by a run — logs, metrics, HAR files, screenshots. |
 
-Resources are versioned and manipulated through a REST API using manifests, in the style
-of `kubectl`. `urthctl` is the CLI front end.
+Scenarios, Runners, WorkerInstances, Results, and Artifacts are versioned API resources.
+Their manifests use the familiar `apiVersion`, `kind`, `metadata`, `spec`, and, where
+appropriate, `status` structure. The model is deliberately CRD-like rather than a
+Kubernetes API implementation: the concepts transfer, but no Kubernetes cluster is
+needed.
+
+The Web UI and `urthctl` operate on those same resources through the REST API. Core
+functionality belongs to the API rather than either client, so a resource created in one
+is immediately manageable from the other. `urthctl` adopts familiar `kubectl` workflows
+such as applying manifests and getting resources, while also providing local probe tools.
 
 ### Available prob kinds
 
@@ -144,63 +161,91 @@ so a worker cannot relabel its upload as clean.
                            │  REST
    ┌───────────┐    ┌──────┴───────┐    ┌──────────────┐
    │  urthctl  ├────┤  API server  ├────┤   Database   │
-   └───────────┘    └──────┬───────┘    │ SQLite / PG  │
+   └───────────┘    └──────┬───────┘    │  Postgres   │
                            │            └──────────────┘
-                           │ enqueue job matching
-                           │ scenario requirements
-                    ┌──────┴───────┐
-                    │  Job queue   │  (Redis)
-                    └──────┬───────┘
-                           │  workers poll outbound
-        ┌──────────────────┼──────────────────┐
-        │                  │                  │
-  ┌─────┴─────┐      ┌─────┴─────┐      ┌─────┴─────┐
-  │  Worker   │      │  Worker   │      │  Worker   │
-  │ team-a    │      │ team-b    │      │ dmz       │
-  │ VPC A     │      │ VPC B     │      │           │
-  └───────────┘      └───────────┘      └───────────┘
+                           │ schedule Result to Runner
+                ┌──────────┴──────────┐
+          ┌─────┴───────┐      ┌─────┴───────┐
+          │ Runner      │      │ Runner      │  logical queues
+          │ team-a queue│      │ dmz queue   │  (JetStream)
+          └───┬─────┬───┘      └─────┬───────┘
+              │     │                │
+        ┌─────┴──┐ ┌┴───────┐  ┌─────┴─────┐
+        │ Worker │ │ Worker │  │  Worker   │
+        │ VPC A  │ │ VPC A  │  │   DMZ     │
+        └────────┘ └────────┘  └───────────┘
 ```
 
 Workers only ever make **outbound** connections, so a network segment can be probed
 without granting inbound access to it.
+
+The scheduler binds each pending Result to a Runner, not to a process. The job waits in
+that Runner's logical queue until one of its authenticated WorkerInstances claims it or
+the job expires. Different Worker versions and configurations can share a Runner only
+when they satisfy the channel's Worker requirements. See
+[ADR 0003](./docs/adr/0003-runner-worker-model.md) for the full model and
+[ADR 0004](./docs/adr/0004-nats-communication-backbone.md) for the NATS transport.
 
 ### Components
 
 | Component | Path | Role |
 |---|---|---|
 | **api-server** | [`cmd/api-server`](./cmd/api-server/README.md) | REST API for all resources; hands out jobs. Run several replicas in production. |
-| **asynq-runner** | [`cmd/asynq-runner`](./cmd/asynq-runner/README.md) | Worker. Claims jobs from Redis, executes probes, uploads results and artifacts. |
+| **asynq-runner** | [`cmd/asynq-runner`](./cmd/asynq-runner/README.md) | Worker. Claims jobs for one Runner, executes probes, uploads results and artifacts. The name reflects the current prototype transport. |
 | **urthctl** | [`cmd/urthctl`](./cmd/urthctl/README.md) | CLI. Apply manifests, inspect resources, run scenarios locally. |
 | **Web UI** | [`website`](./website) | React front end. |
+
+The architectural commitments behind the resource model and distributed runner design
+are recorded in [the architecture decision records](./docs/README.md).
 
 **Dependencies**
 
 - **Database** — a Postgres-compatible database, for development as well as production.
-- **Job queue** — Redis (via [asynq](https://github.com/hibiken/asynq)).
+- **Job transport** — NATS with JetStream is the accepted target. The current prototype
+  still uses Redis via [asynq](https://github.com/hibiken/asynq).
 
 > **Project status.** Urth is under active development and not yet at a stable release.
-> Two things are worth knowing before you start:
+> Four things are worth knowing before you start:
 >
 > - **Postgres is required.** `--store.url` still defaults to `sqlite:test.sqlite`, but
 >   schema migration currently fails on SQLite with `index idx_name already exists`, so
 >   you must pass a Postgres URL explicitly. See [TODO.md](./TODO.md).
-> - **There is no standalone scheduler process yet.** Scenario `schedule` fields are
->   stored and validated, but runs must be triggered manually via the API, UI, or
+> - **There is no scheduling loop yet.** Scenario `schedule` fields are stored and
+>   validated, but runs must currently be triggered manually via the API, UI, or
 >   `urthctl`.
+> - **Runner-level queues are not implemented yet.** The prototype currently sends jobs
+>   through one shared Asynq queue. Per-Runner scheduling and admission are specified in
+>   [ADR 0003](./docs/adr/0003-runner-worker-model.md); migration to NATS and JetStream is
+>   specified in [ADR 0004](./docs/adr/0004-nats-communication-backbone.md).
+> - **Authentication is not production-ready.** Runner enrollment issuance and job
+>   claims still have unauthenticated paths, and the server currently uses development
+>   signing secrets. Run Urth only in a trusted development environment until the gaps
+>   in [ADR 0002](./docs/adr/0002-worker-authentication.md) are closed.
 >
 > See [TODO.md](./TODO.md) for the full backlog.
 
-### Worker lifecycle
+### Worker authentication model
 
-1. An operator creates a **Runner** resource, which mints a registration token.
-2. A worker process starts with that token and authenticates to the API server.
-3. The worker joins the job queue and waits.
-4. When it claims a job, the API server verifies the worker actually satisfies the
-   scenario's requirements, then issues a **short-lived token** scoped to that one run.
-5. The worker executes the probe and posts results and artifacts using that token.
+1. An operator creates a **Runner** resource. Its creation mints the initial Runner
+   enrollment credential.
+2. A Worker presents that credential to register a **WorkerInstance**. The API checks
+   the Runner's policy and returns the instance identity with a short-lived Worker
+   session.
+3. The WorkerInstance joins that Runner's logical queue and waits.
+4. Before executing a job, it authenticates the claim with its Worker session. The API
+   checks current Runner and Worker state, the Runner blocklist and Worker requirements,
+   and atomically assigns the pending Result.
+5. The API issues a short-lived capability token scoped to that Result. The worker uses
+   it only to post the Result's status and Artifacts.
 
-The token's lifetime is roughly the scenario's maximum run duration plus a margin. This
-prevents a restarted or replayed worker from posting results for runs it no longer owns.
+Enrollment grants permission to join one Runner pool; a Worker session grants permission
+to request job claims; a run capability grants permission to report one execution. The
+server controls each lifetime, with the run token bounded by the Scenario's maximum
+duration plus a small upload margin. [ADR 0002](./docs/adr/0002-worker-authentication.md)
+records the trust model, revocation semantics, and known implementation gaps.
+
+The channel and executor relationship is defined by
+[ADR 0003](./docs/adr/0003-runner-worker-model.md).
 
 ---
 

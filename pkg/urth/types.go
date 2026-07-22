@@ -180,6 +180,21 @@ type ResultStatus struct {
 	// a worker claims the job and is empty while the run is still pending.
 	Executor ExecutorRef `form:"executor,omitempty" json:"executor,omitempty" yaml:"executor,omitempty" xml:"executor,omitempty" gorm:"embedded;embeddedPrefix:executor_"`
 
+	// DispatchID identifies the dispatch this run was claimed for.
+	//
+	// It is what makes a claim idempotent: a worker that claimed successfully
+	// but lost the response presents the same value again, and the server can
+	// tell "this is the same worker asking twice" apart from "a second worker
+	// wants the same run".
+	DispatchID string `form:"dispatchId,omitempty" json:"dispatchId,omitempty" yaml:"dispatchId,omitempty" xml:"dispatchId,omitempty"`
+
+	// Deadline is when the server stops accepting writes for this run.
+	//
+	// It is the execution lease. A worker that dies mid-run leaves the Result
+	// sitting in `running` forever otherwise; with a deadline, a reconciler can
+	// tell an abandoned run from a slow one.
+	Deadline time.Time `form:"deadline,omitempty" json:"deadline,omitempty" yaml:"deadline,omitempty" xml:"deadline,omitempty" gorm:"type:TIMESTAMPTZ NULL"`
+
 	// Result of the job execution, if job has been scheduled and finished one way or the other.
 	Result prob.RunStatus `form:"result" json:"result,omitempty" yaml:"result,omitempty" xml:"result"`
 

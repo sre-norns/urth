@@ -23,9 +23,34 @@ import (
 	_ "github.com/sre-norns/urth/pkg/probers/tcp"
 )
 
+// PlayOption adjusts how a run is executed.
+//
+// Variadic options rather than another parameter, so that adding a way to
+// observe a run does not disturb existing callers -- cmd/asynq-runner passes
+// none of these and continues to work unchanged.
+type PlayOption func(*playConfig)
+
+type playConfig struct {
+	logPublisher LogPublisher
+}
+
+// WithLogPublisher tees the run's log to a publisher as it is written, in
+// addition to capturing it as an artifact.
+//
+// The artifact remains the authoritative record; this is for watching a run
+// that is still going.
+func WithLogPublisher(publisher LogPublisher) PlayOption {
+	return func(c *playConfig) { c.logPublisher = publisher }
+}
+
 // Play executes a single scenario, returning its result along with the
 // artifacts it produced.
-func Play(ctx context.Context, probSpec prob.Manifest, options prob.RunOptions) (urth.ResultStatus, []urth.ArtifactSpec, error) {
+func Play(ctx context.Context, probSpec prob.Manifest, options prob.RunOptions, playOptions ...PlayOption) (urth.ResultStatus, []urth.ArtifactSpec, error) {
+	var config playConfig
+	for _, option := range playOptions {
+		option(&config)
+	}
+
 	if probSpec.Spec == nil {
 		return urth.NewRunResults(prob.RunFinishedError, urth.WithStatus(urth.JobErrored)), nil, fmt.Errorf("no prob spec")
 	}
@@ -44,7 +69,7 @@ func Play(ctx context.Context, probSpec prob.Manifest, options prob.RunOptions) 
 		Help: "Returns how long the probe took to complete in seconds",
 	})
 
-	logger := NewRunLogger()
+	logger := NewRunLogger(config.logPublisher)
 	slLogger := slog.New(logger) // .Default() // TODO: Add a wrapper .New(logger)
 
 	start := time.Now()
