@@ -3,13 +3,13 @@ import PropTypes from 'prop-types'
 import styled from '@emotion/styled'
 import OddContainer from '../components/OddContainer.js'
 import RagIndicator from '../components/RagIndicator.js'
-import TextSpan, { TextDiv } from '../components/TextSpan.js'
+import TextSpan, {TextDiv} from '../components/TextSpan.js'
 import Link from '../components/Link.js'
 import ObjectCapsules from '../components/ObjectCapsules.jsx'
-import { statusToColor } from '../utils/status-color.js'
-import { formatDuration, formatRelative, formatTimestamp } from '../utils/time.js'
-import { runDurationMs, runStartedAt } from '../utils/runStats.js'
-import { LabelScenario, LabelWorker } from '../utils/labels.js'
+import {statusToColor} from '../utils/status-color.js'
+import {formatDuration, formatRelative, formatTimestamp} from '../utils/time.js'
+import {runDurationMs, runStartedAt} from '../utils/runStats.js'
+import {LabelScenario, LabelWorker} from '../utils/labels.js'
 
 const TopContainer = styled.div`
   display: flex;
@@ -55,11 +55,10 @@ const ROW_LABELS = new Set([
   'run.messageId',
 ])
 
-const displayLabels = (labels) =>
-  Object.fromEntries(Object.entries(labels || {}).filter(([k]) => !ROW_LABELS.has(k)))
+const displayLabels = (labels) => Object.fromEntries(Object.entries(labels || {}).filter(([k]) => !ROW_LABELS.has(k)))
 
-const RunResult = ({ data, odd, onCapsuleClick }) => {
-  const { name, labels } = data
+const RunResult = ({data, odd, onCapsuleClick}) => {
+  const {name, labels} = data
   const status = data.status || {}
   const scenarioName = labels?.[LabelScenario.Name]
   const worker = labels?.[LabelWorker.Name] || status.executor?.workerName

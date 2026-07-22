@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, {useEffect, useRef, useState} from 'react'
 import PropTypes from 'prop-types'
 import styled from '@emotion/styled'
 import Panel from './Panel.js'
@@ -35,7 +35,7 @@ const SectionHeader = styled.div`
 // stops responding.
 const MAX_LINES = 5000
 
-const LiveRunLog = ({ runId, scenarioName, isRunning }) => {
+const LiveRunLog = ({runId, scenarioName, isRunning}) => {
   const [lines, setLines] = useState([])
   const [error, setError] = useState(null)
   const [ended, setEnded] = useState(false)

@@ -1,7 +1,7 @@
-import React, { useEffect, useMemo } from 'react'
+import React, {useEffect, useMemo} from 'react'
 import PropTypes from 'prop-types'
 import styled from '@emotion/styled'
-import { useDispatch, useSelector } from 'react-redux'
+import {useDispatch, useSelector} from 'react-redux'
 import fetchRun from '../actions/fetchRun.js'
 import fetchRunArtifacts from '../actions/fetchRunArtifacts.js'
 import Panel from '../components/Panel.js'
@@ -13,11 +13,11 @@ import StatTile from '../components/StatTile.jsx'
 import ArtifactPanel from '../components/ArtifactPanel.jsx'
 import LiveRunLog from '../components/LiveRunLog.jsx'
 import Link from '../components/Link.js'
-import TextSpan, { TextDiv } from '../components/TextSpan.js'
-import { statusToColor } from '../utils/status-color.js'
-import { formatDuration, formatRelative, formatTimestamp } from '../utils/time.js'
-import { runDurationMs, runFinishedAt, runStartedAt } from '../utils/runStats.js'
-import { LabelArtifact, LabelRunner, LabelScenario, LabelWorker } from '../utils/labels.js'
+import TextSpan, {TextDiv} from '../components/TextSpan.js'
+import {statusToColor} from '../utils/status-color.js'
+import {formatDuration, formatRelative, formatTimestamp} from '../utils/time.js'
+import {runDurationMs, runFinishedAt, runStartedAt} from '../utils/runStats.js'
+import {LabelArtifact, LabelRunner, LabelScenario, LabelWorker} from '../utils/labels.js'
 
 const PageContainer = styled.div`
   width: 100%;
@@ -68,7 +68,7 @@ const SectionHeader = styled.div`
 const executorFrom = (run, artifacts) => {
   const executor = run?.status?.executor
   if (executor?.runnerName || executor?.workerName) {
-    return { runner: executor.runnerName || null, worker: executor.workerName || null }
+    return {runner: executor.runnerName || null, worker: executor.workerName || null}
   }
 
   const labelled = (artifacts || []).find((a) => a.metadata?.labels?.[LabelRunner.Name])
@@ -80,7 +80,7 @@ const executorFrom = (run, artifacts) => {
   }
 }
 
-const RunDetail = ({ scenarioId, runId }) => {
+const RunDetail = ({scenarioId, runId}) => {
   const dispatch = useDispatch()
 
   const run = useSelector((s) => s.run[runId]) || {}
@@ -170,9 +170,7 @@ const RunDetail = ({ scenarioId, runId }) => {
         </SectionHeader>
 
         {artifacts.fetching && !artifacts.response && <SpinnerInlay />}
-        {artifacts.error && (
-          <ErrorInlay message="Error loading artifacts" details={artifacts.error.message || ''} />
-        )}
+        {artifacts.error && <ErrorInlay message="Error loading artifacts" details={artifacts.error.message || ''} />}
         {!artifacts.fetching && !artifacts.error && ordered.length === 0 && <EmptyInlay />}
 
         {ordered.map((artifact, i) => (
@@ -182,8 +180,8 @@ const RunDetail = ({ scenarioId, runId }) => {
 
       <Panel>
         <TextDiv size="small" level={4}>
-          Network path, request timing and traces will appear here for prob kinds that can report
-          them. Not yet implemented.
+          Network path, request timing and traces will appear here for prob kinds that can report them. Not yet
+          implemented.
         </TextDiv>
       </Panel>
     </PageContainer>

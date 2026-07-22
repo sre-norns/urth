@@ -1,14 +1,14 @@
 import React from 'react'
-import { useDispatch, useSelector } from 'react-redux'
+import {useDispatch, useSelector} from 'react-redux'
 import styled from '@emotion/styled'
-import { useSearchParams } from 'wouter-search'
+import {useSearchParams} from 'wouter-search'
 import fetchRunners from '../actions/fetchRunners.js'
 import SpinnerInlay from '../components/SpinnerInlay.jsx'
 import Runner from '../containers/Runner.jsx'
 import EmptyInlay from '../components/EmptyInlay.jsx'
 import ErrorInlay from '../components/ErrorInlay.jsx'
-import { SearchQuery } from '../utils/searchQuery.js'
-import { Operator, Rule } from '../utils/k8s-labels.js'
+import {SearchQuery} from '../utils/searchQuery.js'
+import {Operator, Rule} from '../utils/k8s-labels.js'
 
 const ResourceContainer = styled.div`
   width: 100%;
@@ -24,7 +24,7 @@ const Runners = () => {
   const dispatch = useDispatch()
   // Note: this read from the scenarios slice, which fetchRunners also wrote to,
   // so the two lists replaced one another on navigation.
-  const { fetching, response, error } = useSelector((s) => s.runners)
+  const {fetching, response, error} = useSelector((s) => s.runners)
 
   React.useEffect(() => {
     dispatch(fetchRunners(searchParams))

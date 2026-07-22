@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import {describe, it, expect} from 'vitest'
 import {
   Period,
   filterByPeriod,
@@ -10,27 +10,27 @@ import {
   summariseRuns,
 } from './runStats.js'
 
-const run = ({ result = 'success', start, end, created } = {}) => ({
+const run = ({result = 'success', start, end, created} = {}) => ({
   name: 'run',
   creationTimestamp: created,
-  spec: { start_time: start, end_time: end },
-  status: { status: 'completed', result },
+  spec: {start_time: start, end_time: end},
+  status: {status: 'completed', result},
 })
 
 describe('runDurationMs', () => {
   it('measures the probe, start to finish', () => {
-    expect(runDurationMs(run({ start: '2026-07-21T10:00:00Z', end: '2026-07-21T10:00:01.500Z' }))).toBe(1500)
+    expect(runDurationMs(run({start: '2026-07-21T10:00:00Z', end: '2026-07-21T10:00:01.500Z'}))).toBe(1500)
   })
 
   // An unfinished run is not a zero-length run, and rendering it as 0ms would
   // quietly drag an average down.
   it('is null while a run is still in flight', () => {
-    expect(runDurationMs(run({ start: '2026-07-21T10:00:00Z' }))).toBeNull()
+    expect(runDurationMs(run({start: '2026-07-21T10:00:00Z'}))).toBeNull()
   })
 
   it('is null when timestamps are missing or unparseable', () => {
     expect(runDurationMs(run())).toBeNull()
-    expect(runDurationMs(run({ start: 'not-a-date', end: 'also-not' }))).toBeNull()
+    expect(runDurationMs(run({start: 'not-a-date', end: 'also-not'}))).toBeNull()
     expect(runDurationMs(undefined)).toBeNull()
   })
 })
@@ -39,35 +39,35 @@ describe('runStartedAt', () => {
   // A run can wait in the queue before a worker claims it; the wait is not part
   // of the run, so the probe's own start time wins where it exists.
   it('prefers the probe start over the resource creation time', () => {
-    const value = runStartedAt(run({ start: '2026-07-21T10:00:00Z', created: '2026-07-21T09:00:00Z' }))
+    const value = runStartedAt(run({start: '2026-07-21T10:00:00Z', created: '2026-07-21T09:00:00Z'}))
     expect(value.toISOString()).toBe('2026-07-21T10:00:00.000Z')
   })
 
   it('falls back to creation time for a run that never started', () => {
-    const value = runStartedAt(run({ created: '2026-07-21T09:00:00Z' }))
+    const value = runStartedAt(run({created: '2026-07-21T09:00:00Z'}))
     expect(value.toISOString()).toBe('2026-07-21T09:00:00.000Z')
   })
 })
 
 describe('outcome predicates', () => {
   it('reads success from the probe outcome, not the job state', () => {
-    expect(isSuccess({ status: { status: 'completed', result: 'success' } })).toBe(true)
+    expect(isSuccess({status: {status: 'completed', result: 'success'}})).toBe(true)
     // The job completed; the probe did not like what it found.
-    expect(isSuccess({ status: { status: 'completed', result: 'failed' } })).toBe(false)
+    expect(isSuccess({status: {status: 'completed', result: 'failed'}})).toBe(false)
   })
 
   it('treats a run with no outcome as unsettled', () => {
-    expect(isSettled({ status: { status: 'running' } })).toBe(false)
-    expect(isSettled({ status: { status: 'completed', result: 'errored' } })).toBe(true)
+    expect(isSettled({status: {status: 'running'}})).toBe(false)
+    expect(isSettled({status: {status: 'completed', result: 'errored'}})).toBe(true)
   })
 })
 
 describe('filterByPeriod', () => {
   const now = new Date('2026-07-21T12:00:00Z')
   const runs = [
-    run({ start: '2026-07-21T11:00:00Z' }), // an hour ago
-    run({ start: '2026-07-19T12:00:00Z' }), // two days ago
-    run({ start: '2026-06-01T12:00:00Z' }), // seven weeks ago
+    run({start: '2026-07-21T11:00:00Z'}), // an hour ago
+    run({start: '2026-07-19T12:00:00Z'}), // two days ago
+    run({start: '2026-06-01T12:00:00Z'}), // seven weeks ago
   ]
 
   it('keeps runs inside the window', () => {
@@ -89,9 +89,9 @@ describe('filterByPeriod', () => {
 describe('summariseRuns', () => {
   it('counts outcomes and averages duration', () => {
     const summary = summariseRuns([
-      run({ result: 'success', start: '2026-07-21T10:00:00Z', end: '2026-07-21T10:00:01Z' }),
-      run({ result: 'success', start: '2026-07-21T10:01:00Z', end: '2026-07-21T10:01:03Z' }),
-      run({ result: 'failed', start: '2026-07-21T10:02:00Z', end: '2026-07-21T10:02:02Z' }),
+      run({result: 'success', start: '2026-07-21T10:00:00Z', end: '2026-07-21T10:00:01Z'}),
+      run({result: 'success', start: '2026-07-21T10:01:00Z', end: '2026-07-21T10:01:03Z'}),
+      run({result: 'failed', start: '2026-07-21T10:02:00Z', end: '2026-07-21T10:02:02Z'}),
     ])
 
     expect(summary.total).toBe(3)
@@ -105,8 +105,8 @@ describe('summariseRuns', () => {
   // scenario look broken for as long as it takes to finish.
   it('excludes unsettled runs from the success rate', () => {
     const summary = summariseRuns([
-      run({ result: 'success', start: '2026-07-21T10:00:00Z', end: '2026-07-21T10:00:01Z' }),
-      { name: 'in-flight', spec: { start_time: '2026-07-21T10:01:00Z' }, status: { status: 'running' } },
+      run({result: 'success', start: '2026-07-21T10:00:00Z', end: '2026-07-21T10:00:01Z'}),
+      {name: 'in-flight', spec: {start_time: '2026-07-21T10:01:00Z'}, status: {status: 'running'}},
     ])
 
     expect(summary.total).toBe(2)
@@ -123,9 +123,9 @@ describe('summariseRuns', () => {
 
   it('identifies the most recent run regardless of input order', () => {
     const summary = summariseRuns([
-      run({ start: '2026-07-21T10:00:00Z' }),
-      run({ start: '2026-07-21T12:00:00Z' }),
-      run({ start: '2026-07-21T11:00:00Z' }),
+      run({start: '2026-07-21T10:00:00Z'}),
+      run({start: '2026-07-21T12:00:00Z'}),
+      run({start: '2026-07-21T11:00:00Z'}),
     ])
 
     expect(runStartedAt(summary.lastRun).toISOString()).toBe('2026-07-21T12:00:00.000Z')

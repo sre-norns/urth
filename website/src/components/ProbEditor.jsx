@@ -1,14 +1,14 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react'
 import PropTypes from 'prop-types'
 import styled from '@emotion/styled'
-import { useDispatch, useSelector } from 'react-redux'
-import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
+import {useDispatch, useSelector} from 'react-redux'
+import {parse as parseYaml, stringify as stringifyYaml} from 'yaml'
 import fetchProbKinds from '../actions/fetchProbKinds.js'
 import FormGroup from './FormGroup.jsx'
 import FormLabel from './FormLabel.jsx'
 import FormControl from './FormControl.jsx'
-import TextSpan, { TextDiv } from './TextSpan.js'
-import { fieldsFor, getAt, isScriptKind, setAt, templateFor } from '../utils/probSpec.js'
+import TextSpan, {TextDiv} from './TextSpan.js'
+import {fieldsFor, getAt, isScriptKind, setAt, templateFor} from '../utils/probSpec.js'
 
 const Row = styled.div`
   display: flex;
@@ -31,7 +31,8 @@ const KindSelect = styled.select`
   border: 1px solid ${(props) => props.theme.color.neutral[props.theme.dark ? 300 : 700]};
 
   appearance: none;
-  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
     linear-gradient(135deg, currentColor 50%, transparent 50%);
   background-position:
     calc(100% - 18px) calc(50% + 2px),
@@ -56,8 +57,7 @@ const Tab = styled.button`
   background: none;
   border: none;
   border-bottom: 2px solid
-    ${(props) =>
-      props.selected ? props.theme.color.secondary[props.theme.dark ? 400 : 600] : 'transparent'};
+    ${(props) => (props.selected ? props.theme.color.secondary[props.theme.dark ? 400 : 600] : 'transparent')};
   margin-bottom: -1px;
   padding: 0.25rem 0.75rem;
   cursor: pointer;
@@ -67,15 +67,15 @@ const Tab = styled.button`
   color: ${(props) => props.theme.color.neutral[props.theme.dark ? 200 : 800]};
 `
 
-const Mode = { Form: 'form', Yaml: 'yaml' }
+const Mode = {Form: 'form', Yaml: 'yaml'}
 
 // The raw view is YAML because that is the manifest format: what is shown here
 // matches what an author would write for `urthctl apply`.
 const formatSpec = (spec) => stringifyYaml(spec ?? {})
 
-const ProbEditor = ({ value, onChange, readOnly = false }) => {
+const ProbEditor = ({value, onChange, readOnly = false}) => {
   const dispatch = useDispatch()
-  const { response, fetching, error } = useSelector((s) => s.probKinds)
+  const {response, fetching, error} = useSelector((s) => s.probKinds)
 
   const kinds = useMemo(() => response?.data || [], [response])
   const kind = value?.kind || ''
@@ -128,18 +128,18 @@ const ProbEditor = ({ value, onChange, readOnly = false }) => {
       setRawSpec(formatSpec(spec))
       setRawError(null)
       lastEmitted.current = spec
-      onChange({ ...value, kind: nextKind, spec })
+      onChange({...value, kind: nextKind, spec})
     },
     [value, onChange]
   )
 
   const handleFieldChange = useCallback(
-    (path) => (e) => emit({ ...value, spec: setAt(value?.spec, path, e.target.value) }),
+    (path) => (e) => emit({...value, spec: setAt(value?.spec, path, e.target.value)}),
     [value, emit]
   )
 
   const handleScriptChange = useCallback(
-    (e) => emit({ ...value, spec: setAt(value?.spec, 'script', e.target.value) }),
+    (e) => emit({...value, spec: setAt(value?.spec, 'script', e.target.value)}),
     [value, emit]
   )
 
@@ -150,7 +150,7 @@ const ProbEditor = ({ value, onChange, readOnly = false }) => {
 
       try {
         const parsed = parseYaml(text)
-        emit({ ...value, spec: parsed ?? {} })
+        emit({...value, spec: parsed ?? {}})
         setRawError(null)
       } catch (parseError) {
         // Keep the text as typed and say what is wrong, rather than discarding
@@ -244,13 +244,7 @@ const ProbEditor = ({ value, onChange, readOnly = false }) => {
       {kind && !scripted && showYaml && (
         <FormGroup controlId="prob-spec">
           <FormLabel>Spec</FormLabel>
-          <ScriptArea
-            as="textarea"
-            rows="12"
-            value={rawSpec}
-            onChange={handleRawChange}
-            readOnly={readOnly}
-          />
+          <ScriptArea as="textarea" rows="12" value={rawSpec} onChange={handleRawChange} readOnly={readOnly} />
           {rawError && (
             <TextDiv size="small" level={3} color="error">
               {rawError}

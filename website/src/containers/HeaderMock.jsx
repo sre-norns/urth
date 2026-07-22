@@ -7,7 +7,7 @@ import NavLink from '../components/NavLink.js'
 import Nav from '../components/Nav.js'
 import NavRowContainer from '../components/NavRowContainer.js'
 import TextInput from '../components/TextInput.js'
-import { useDebounce } from "use-debounce";
+import {useDebounce} from 'use-debounce'
 
 const onNonClick = (e) => {
   e.preventDefault()
@@ -18,27 +18,23 @@ const SearchInput = styled(TextInput)`
 `
 
 const SearchTextInput = () => {
-  const [searchInput, setSearchInput] = useState('');
-  const [debouncedValue] = useDebounce(searchInput, 500);
+  const [searchInput, setSearchInput] = useState('')
+  const [debouncedValue] = useDebounce(searchInput, 500)
 
-  const [currentQueryParameters, setSearchParams] = useSearchParams();
-  const newQueryParameters = new URLSearchParams();
+  const [currentQueryParameters, setSearchParams] = useSearchParams()
+  const newQueryParameters = new URLSearchParams()
 
   const inputHandler = (e) => {
     if (debouncedValue) {
-      newQueryParameters.set("labels", debouncedValue);
+      newQueryParameters.set('labels', debouncedValue)
     }
 
-    console.log("setting search query to", newQueryParameters)
-    setSearchParams(newQueryParameters);
+    console.log('setting search query to', newQueryParameters)
+    setSearchParams(newQueryParameters)
     setSearchInput(e.target.value)
   }
 
-  return (<SearchInput
-    placeholder="Search"
-    value={searchInput}
-    onChange={inputHandler}
-  />)
+  return <SearchInput placeholder="Search" value={searchInput} onChange={inputHandler} />
 }
 
 const HeaderMock = () => (

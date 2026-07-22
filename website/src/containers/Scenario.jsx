@@ -1,14 +1,14 @@
-import React, { useCallback } from 'react'
+import React, {useCallback} from 'react'
 import PropTypes from 'prop-types'
 import styled from '@emotion/styled'
-import { Tooltip } from 'react-tooltip'
-import { useDispatch, useSelector } from 'react-redux'
+import {Tooltip} from 'react-tooltip'
+import {useDispatch, useSelector} from 'react-redux'
 import OddContainer from '../components/OddContainer.js'
 import Capsule from '../components/Capsule.jsx'
 import RagIndicator from '../components/RagIndicator.js'
-import TextSpan, { TextDiv } from '../components/TextSpan.js'
-import { cyrb53 } from '../utils/hash.js'
-import { statusToColor } from '../utils/status-color.js'
+import TextSpan, {TextDiv} from '../components/TextSpan.js'
+import {cyrb53} from '../utils/hash.js'
+import {statusToColor} from '../utils/status-color.js'
 import Button from '../components/Button.js'
 import Link from '../components/Link.js'
 import runScenario from '../actions/runScenario.js'
@@ -67,9 +67,10 @@ function scheduleBreakdown(schedule, status) {
   return {
     runSchedule: schedule,
     nextScheduledRun: status.nextScheduledRunTime,
-    prevScheduledRun: (status.results && status.results.length > 0)
-      ? status.results[0].spec?.start_time || status.results[0].creationTimestamp
-      : null
+    prevScheduledRun:
+      status.results && status.results.length > 0
+        ? status.results[0].spec?.start_time || status.results[0].creationTimestamp
+        : null,
   }
 
   // try {
@@ -89,24 +90,22 @@ function scheduleBreakdown(schedule, status) {
   // }
 }
 
-const Scenario = ({ data, odd, onCapsuleClick }) => {
-  const { metadata, spec, status } = data
-  const { uid, name, labels } = metadata
-  const { active, description, schedule, prob } = spec
+const Scenario = ({data, odd, onCapsuleClick}) => {
+  const {metadata, spec, status} = data
+  const {uid, name, labels} = metadata
+  const {active, description, schedule, prob} = spec
 
-  const hasStatus = (status?.results && status?.results?.length > 0)
-  const lastRunStatus = hasStatus
-    ? `${status.results[0].status.status}/${status.results[0].status.result}`
-    : 'new';
+  const hasStatus = status?.results && status?.results?.length > 0
+  const lastRunStatus = hasStatus ? `${status.results[0].status.status}/${status.results[0].status.result}` : 'new'
 
-  const statusColor = hasStatus ? statusToColor(status.results[0].status) : "neutral";
+  const statusColor = hasStatus ? statusToColor(status.results[0].status) : 'neutral'
 
   const executable = !!prob?.kind
   const playDisabled = !(active && executable)
   const stopDisabled = !(active && executable)
 
   const scenarioActions = useSelector((s) => s.scenarioActions)
-  const { fetching, response, error } = scenarioActions[name] || {}
+  const {fetching, response, error} = scenarioActions[name] || {}
 
   const runSchedule = scheduleBreakdown(schedule, status)
   const dispatch = useDispatch()
@@ -136,7 +135,7 @@ const Scenario = ({ data, odd, onCapsuleClick }) => {
 
         <BodyContainer>
           <TextDiv size="medium" level={2} weight={500}>
-            <RagIndicator color={statusColor} style={{ margin: '0 .5rem 0 2px' }} />
+            <RagIndicator color={statusColor} style={{margin: '0 .5rem 0 2px'}} />
             <Link href={`/scenarios/${name}`}>{name}</Link>
           </TextDiv>
           <TextDiv size="small" level={4}>
@@ -204,7 +203,7 @@ const ScenarioManifest = PropTypes.shape({
 Scenario.propTypes = {
   data: ScenarioManifest.isRequired,
   odd: PropTypes.bool,
-  onCapsuleClick: PropTypes.func
+  onCapsuleClick: PropTypes.func,
 }
 
 export default Scenario

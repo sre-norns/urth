@@ -1,16 +1,16 @@
 import React from 'react'
-import { describe, it, expect, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import {describe, it, expect, vi} from 'vitest'
+import {screen} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { renderWithProviders } from '../test/render.jsx'
+import {renderWithProviders} from '../test/render.jsx'
 import Scenario from './Scenario.jsx'
 
-const scenario = ({ results = [], active = true, schedule = '@5minutes', prob = { kind: 'http' } } = {}) => ({
+const scenario = ({results = [], active = true, schedule = '@5minutes', prob = {kind: 'http'}} = {}) => ({
   kind: 'scenarios',
   metadata: {
     uid: 'uid-1',
     name: 'checkout-probe',
-    labels: { env: 'prod', team: 'checkout' },
+    labels: {env: 'prod', team: 'checkout'},
   },
   spec: {
     active,
@@ -25,9 +25,9 @@ const scenario = ({ results = [], active = true, schedule = '@5minutes', prob = 
 })
 
 const result = (status, resultValue) => ({
-  metadata: { uid: 'run-1', name: 'run-1' },
-  spec: { start_time: '2026-07-21T09:00:00Z' },
-  status: { status, result: resultValue },
+  metadata: {uid: 'run-1', name: 'run-1'},
+  spec: {start_time: '2026-07-21T09:00:00Z'},
+  status: {status, result: resultValue},
 })
 
 describe('Scenario list item', () => {
@@ -48,7 +48,7 @@ describe('Scenario list item', () => {
   })
 
   it('reports the most recent run status', () => {
-    renderWithProviders(<Scenario data={scenario({ results: [result('completed', 'success')] })} />)
+    renderWithProviders(<Scenario data={scenario({results: [result('completed', 'success')]})} />)
 
     expect(screen.getByText('completed/success')).toBeInTheDocument()
   })
@@ -65,7 +65,7 @@ describe('Scenario list item', () => {
   // A scenario with no prob body cannot be executed, and an inactive one should
   // not be triggerable by accident.
   it('disables the run control when the scenario is not runnable', () => {
-    const { container } = renderWithProviders(<Scenario data={scenario({ active: false })} />)
+    const {container} = renderWithProviders(<Scenario data={scenario({active: false})} />)
 
     const buttons = container.querySelectorAll('button')
     expect(buttons.length).toBeGreaterThan(0)
@@ -73,7 +73,7 @@ describe('Scenario list item', () => {
   })
 
   it('enables the run control for an active scenario with a prob', () => {
-    const { container } = renderWithProviders(<Scenario data={scenario()} />)
+    const {container} = renderWithProviders(<Scenario data={scenario()} />)
 
     expect(container.querySelectorAll('button')[0]).not.toBeDisabled()
   })

@@ -2,7 +2,7 @@
 // error }, indexed by whatever identifies the thing being fetched. The existing
 // reducers each spell that out by hand; this builds one from the three action
 // types so a new resource does not mean another thirty lines of the same.
-const createKeyedFetchReducer = ({ fetching, fetched, failed }) => {
+const createKeyedFetchReducer = ({fetching, fetched, failed}) => {
   const initialState = {}
 
   return (state = initialState, action = {}) => {
@@ -10,19 +10,19 @@ const createKeyedFetchReducer = ({ fetching, fetched, failed }) => {
       case fetching:
         return {
           ...state,
-          [action.key]: { ...state[action.key], fetching: true, error: null },
+          [action.key]: {...state[action.key], fetching: true, error: null},
         }
 
       case fetched:
         return {
           ...state,
-          [action.key]: { ...state[action.key], fetching: false, error: null, response: action.response },
+          [action.key]: {...state[action.key], fetching: false, error: null, response: action.response},
         }
 
       case failed:
         return {
           ...state,
-          [action.key]: { ...state[action.key], fetching: false, error: action.error },
+          [action.key]: {...state[action.key], fetching: false, error: action.error},
         }
 
       default:

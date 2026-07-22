@@ -1,14 +1,14 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, {useCallback, useEffect, useState} from 'react'
 import PropTypes from 'prop-types'
 import styled from '@emotion/styled'
-import { useDispatch, useSelector } from 'react-redux'
+import {useDispatch, useSelector} from 'react-redux'
 import fetchArtifactContent from '../actions/fetchArtifactContent.js'
 import Button from './Button.js'
 import DataClassBadge from './DataClassBadge.jsx'
 import SpinnerInlay from './SpinnerInlay.jsx'
 import ErrorInlay from './ErrorInlay.jsx'
 import TextSpan from './TextSpan.js'
-import { LabelArtifact, dataClassOf, mayContainSecrets } from '../utils/labels.js'
+import {LabelArtifact, dataClassOf, mayContainSecrets} from '../utils/labels.js'
 
 const Container = styled.div`
   border: 1px solid ${(props) => props.theme.color.neutral[props.theme.dark ? 800 : 200]};
@@ -61,7 +61,7 @@ const isTextual = (artifact) => {
   return TEXTUAL_KINDS.includes(kind)
 }
 
-const ArtifactPanel = ({ artifact, defaultOpen = false }) => {
+const ArtifactPanel = ({artifact, defaultOpen = false}) => {
   const dispatch = useDispatch()
   const name = artifact.metadata.name
   const kind = artifact.metadata?.labels?.[LabelArtifact.Kind] || 'artifact'
@@ -105,16 +105,13 @@ const ArtifactPanel = ({ artifact, defaultOpen = false }) => {
       {open && sensitive && (
         <Warning>
           <TextSpan size="small" level={2} color="error">
-            This artifact is a faithful capture and may contain credentials. Avoid pasting it into
-            tickets or chat.
+            This artifact is a faithful capture and may contain credentials. Avoid pasting it into tickets or chat.
           </TextSpan>
         </Warning>
       )}
 
       {open && content.fetching && <SpinnerInlay />}
-      {open && content.error && (
-        <ErrorInlay message="Could not load artifact" details={content.error.message || ''} />
-      )}
+      {open && content.error && <ErrorInlay message="Could not load artifact" details={content.error.message || ''} />}
       {open && content.response !== undefined && <Content>{content.response}</Content>}
     </Container>
   )

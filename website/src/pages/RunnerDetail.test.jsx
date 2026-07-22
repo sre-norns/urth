@@ -1,18 +1,18 @@
 import React from 'react'
-import { describe, it, expect, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import {describe, it, expect, vi} from 'vitest'
+import {screen} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { renderWithProviders } from '../test/render.jsx'
+import {renderWithProviders} from '../test/render.jsx'
 import RunnerDetail from './RunnerDetail.jsx'
-import { LabelWorker } from '../utils/labels.js'
+import {LabelWorker} from '../utils/labels.js'
 
-vi.mock('../actions/fetchRunner.js', () => ({ default: () => () => {} }))
-vi.mock('../actions/fetchWorkers.js', () => ({ default: () => () => {} }))
+vi.mock('../actions/fetchRunner.js', () => ({default: () => () => {}}))
+vi.mock('../actions/fetchWorkers.js', () => ({default: () => () => {}}))
 
 const setPaused = vi.fn(() => () => {})
 const dropWorker = vi.fn(() => () => {})
-vi.mock('../actions/setWorkerPaused.js', () => ({ default: (...args) => setPaused(...args) }))
-vi.mock('../actions/deleteWorker.js', () => ({ default: (...args) => dropWorker(...args) }))
+vi.mock('../actions/setWorkerPaused.js', () => ({default: (...args) => setPaused(...args)}))
+vi.mock('../actions/deleteWorker.js', () => ({default: (...args) => dropWorker(...args)}))
 
 const runner = (overrides = {}) => ({
   kind: 'runners',
@@ -20,7 +20,7 @@ const runner = (overrides = {}) => ({
     uid: 'runner-uid',
     version: 1,
     name: 'example-runner',
-    labels: { os: 'linux' },
+    labels: {os: 'linux'},
     creationTimestamp: '2026-07-21T00:00:00Z',
   },
   spec: {
@@ -28,8 +28,8 @@ const runner = (overrides = {}) => ({
     active: true,
     maxInstance: 0,
     requirements: {
-      matchLabels: { os: 'linux' },
-      matchSelector: [{ key: 'env', operator: 'NotIn', values: ['dev', 'testing'] }],
+      matchLabels: {os: 'linux'},
+      matchSelector: [{key: 'env', operator: 'NotIn', values: ['dev', 'testing']}],
     },
     ...overrides,
   },
@@ -42,10 +42,10 @@ const worker = (name, paused = false) => ({
     version: 1,
     name,
     creationTimestamp: '2026-07-21T00:00:00Z',
-    labels: { [LabelWorker.OS]: 'linux', [LabelWorker.Arch]: 'amd64' },
+    labels: {[LabelWorker.OS]: 'linux', [LabelWorker.Arch]: 'amd64'},
   },
   spec: {},
-  status: { paused },
+  status: {paused},
 })
 
 const stateWith = (workers, runnerManifest = runner()) => ({
@@ -57,12 +57,11 @@ const stateWith = (workers, runnerManifest = runner()) => ({
   runArtifacts: {},
   artifactContent: {},
   runners: {},
-  runner: { 'example-runner': { fetching: false, response: runnerManifest } },
-  workers: { 'example-runner': { fetching: false, response: { data: workers } } },
+  runner: {'example-runner': {fetching: false, response: runnerManifest}},
+  workers: {'example-runner': {fetching: false, response: {data: workers}}},
 })
 
-const render = (state) =>
-  renderWithProviders(<RunnerDetail runnerId="example-runner" />, { preloadedState: state })
+const render = (state) => renderWithProviders(<RunnerDetail runnerId="example-runner" />, {preloadedState: state})
 
 describe('RunnerDetail', () => {
   it('shows the runner identity, state and labels', () => {
@@ -127,7 +126,7 @@ describe('RunnerDetail', () => {
   // A disabled runner takes no jobs and accepts no new registrations, so the
   // page has to say so rather than looking merely idle.
   it('shows a disabled runner as disabled and offers to enable it', () => {
-    render(stateWith([], runner({ active: false })))
+    render(stateWith([], runner({active: false})))
 
     expect(screen.getByText('disabled')).toBeInTheDocument()
     expect(screen.getByText('workers cannot take jobs')).toBeInTheDocument()
@@ -135,7 +134,7 @@ describe('RunnerDetail', () => {
   })
 
   it('reports the worker limit when the runner sets one', () => {
-    render(stateWith([worker('worker-01')], runner({ maxInstance: 3 })))
+    render(stateWith([worker('worker-01')], runner({maxInstance: 3})))
 
     expect(screen.getByText('1/3')).toBeInTheDocument()
     expect(screen.getByText('registered / limit')).toBeInTheDocument()
@@ -143,7 +142,7 @@ describe('RunnerDetail', () => {
 
   it('reports a load failure rather than rendering an empty page', () => {
     const state = stateWith([])
-    state.runner = { 'example-runner': { fetching: false, error: { message: 'boom' } } }
+    state.runner = {'example-runner': {fetching: false, error: {message: 'boom'}}}
 
     render(state)
 

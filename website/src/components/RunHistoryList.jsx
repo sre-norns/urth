@@ -2,11 +2,11 @@ import React from 'react'
 import PropTypes from 'prop-types'
 import styled from '@emotion/styled'
 import RagIndicator from './RagIndicator.js'
-import TextSpan, { TextDiv } from './TextSpan.js'
+import TextSpan, {TextDiv} from './TextSpan.js'
 import Link from './Link.js'
-import { statusToColor } from '../utils/status-color.js'
-import { formatDuration, formatRelative, formatTimestamp } from '../utils/time.js'
-import { runDurationMs, runStartedAt } from '../utils/runStats.js'
+import {statusToColor} from '../utils/status-color.js'
+import {formatDuration, formatRelative, formatTimestamp} from '../utils/time.js'
+import {runDurationMs, runStartedAt} from '../utils/runStats.js'
 
 const List = styled.div`
   display: flex;
@@ -40,7 +40,7 @@ const Numeric = styled.div`
 `
 
 const outcomeLabel = (run) => {
-  const { status, result } = run.status || {}
+  const {status, result} = run.status || {}
   if (!result) {
     return status || 'unknown'
   }
@@ -48,7 +48,7 @@ const outcomeLabel = (run) => {
   return result
 }
 
-const RunHistoryList = ({ runs, scenarioId, ...rest }) => (
+const RunHistoryList = ({runs, scenarioId, ...rest}) => (
   <List {...rest}>
     {runs.map((run) => {
       const started = runStartedAt(run)

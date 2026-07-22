@@ -1,7 +1,7 @@
-import React, { Fragment, useMemo } from 'react'
-import { useMediaQuery } from '@react-hook/media-query'
-import { ThemeProvider } from '@emotion/react'
-import { createTheme } from './theme/index.js'
+import React, {Fragment, useMemo} from 'react'
+import {useMediaQuery} from '@react-hook/media-query'
+import {ThemeProvider} from '@emotion/react'
+import {createTheme} from './theme/index.js'
 import Header from './containers/Header.jsx'
 import Scenarios from './pages/Scenarios.jsx'
 import ScenarioDetail from './pages/ScenarioDetail.jsx'
@@ -11,7 +11,7 @@ import Results from './pages/Results.jsx'
 import Runners from './pages/Runners.jsx'
 import RunnerDetail from './pages/RunnerDetail.jsx'
 
-import { Redirect, Route, Switch } from 'wouter'
+import {Redirect, Route, Switch} from 'wouter'
 
 export default () => {
   const dark = useMediaQuery('(prefers-color-scheme: dark)')

@@ -1,7 +1,7 @@
 import React from 'react'
 import PropTypes from 'prop-types'
 import styled from '@emotion/styled'
-import { DATA_CLASS_DESCRIPTIONS, DataClass } from '../utils/labels.js'
+import {DATA_CLASS_DESCRIPTIONS, DataClass} from '../utils/labels.js'
 
 const colorFor = (dataClass) => {
   switch (dataClass) {
@@ -29,8 +29,12 @@ const Badge = styled.span`
 
 // Surfaces what an artifact may expose, so that a HAR recording carrying live
 // credentials is visibly different from a redacted log before anyone opens it.
-const DataClassBadge = ({ dataClass, ...rest }) => (
-  <Badge dataClass={dataClass} title={DATA_CLASS_DESCRIPTIONS[dataClass] || DATA_CLASS_DESCRIPTIONS[DataClass.Unknown]} {...rest}>
+const DataClassBadge = ({dataClass, ...rest}) => (
+  <Badge
+    dataClass={dataClass}
+    title={DATA_CLASS_DESCRIPTIONS[dataClass] || DATA_CLASS_DESCRIPTIONS[DataClass.Unknown]}
+    {...rest}
+  >
     {dataClass}
   </Badge>
 )

@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest'
-import { Operator, Rule, Selector, parseSelectorExpression, stringify } from './k8s-labels.js'
+import {describe, it, expect} from 'vitest'
+import {Operator, Rule, Selector, parseSelectorExpression, stringify} from './k8s-labels.js'
 
 describe('Rule.toString', () => {
   const cases = [
@@ -65,34 +65,34 @@ describe('round trip', () => {
 
 describe('Selector', () => {
   it('matches labels by equality', () => {
-    const matches = Selector({ matchLabels: { env: 'prod' } })
+    const matches = Selector({matchLabels: {env: 'prod'}})
 
-    expect(matches({ env: 'prod' })).toBe(true)
-    expect(matches({ env: 'dev' })).toBe(false)
+    expect(matches({env: 'prod'})).toBe(true)
+    expect(matches({env: 'dev'})).toBe(false)
     expect(matches({})).toBe(false)
   })
 
   it('matches set membership expressions', () => {
     const matches = Selector({
-      matchExpressions: [{ operator: 'NotIn', key: 'env', values: ['dev', 'testing'] }],
+      matchExpressions: [{operator: 'NotIn', key: 'env', values: ['dev', 'testing']}],
     })
 
-    expect(matches({ env: 'prod' })).toBe(true)
-    expect(matches({ env: 'dev' })).toBe(false)
+    expect(matches({env: 'prod'})).toBe(true)
+    expect(matches({env: 'dev'})).toBe(false)
   })
 
   it('requires every expression to match', () => {
     const matches = Selector({
-      matchLabels: { env: 'prod' },
-      matchExpressions: [{ operator: 'Exists', key: 'team', values: [] }],
+      matchLabels: {env: 'prod'},
+      matchExpressions: [{operator: 'Exists', key: 'team', values: []}],
     })
 
-    expect(matches({ env: 'prod', team: 'checkout' })).toBe(true)
-    expect(matches({ env: 'prod' })).toBe(false)
+    expect(matches({env: 'prod', team: 'checkout'})).toBe(true)
+    expect(matches({env: 'prod'})).toBe(false)
   })
 
   it('treats missing labels as an empty set', () => {
-    const matches = Selector({ matchExpressions: [{ operator: 'DoesNotExist', key: 'team', values: [] }] })
+    const matches = Selector({matchExpressions: [{operator: 'DoesNotExist', key: 'team', values: []}]})
 
     expect(matches(undefined)).toBe(true)
   })

@@ -1,14 +1,14 @@
 import React from 'react'
-import { useDispatch, useSelector } from 'react-redux'
+import {useDispatch, useSelector} from 'react-redux'
 import styled from '@emotion/styled'
-import { useSearchParams } from 'wouter-search'
+import {useSearchParams} from 'wouter-search'
 import fetchResults from '../actions/fetchResults.js'
 import SpinnerInlay from '../components/SpinnerInlay.jsx'
 import EmptyInlay from '../components/EmptyInlay.jsx'
 import ErrorInlay from '../components/ErrorInlay.jsx'
 import RunResult from '../containers/RunResult.jsx'
-import { SearchQuery } from '../utils/searchQuery.js'
-import { Operator, Rule } from '../utils/k8s-labels.js'
+import {SearchQuery} from '../utils/searchQuery.js'
+import {Operator, Rule} from '../utils/k8s-labels.js'
 
 const ResourceContainer = styled.div`
   width: 100%;
@@ -25,7 +25,7 @@ const Results = () => {
   const [searchParams, setSearchParams] = useSearchParams()
 
   const dispatch = useDispatch()
-  const { fetching, response, error } = useSelector((s) => s.results)
+  const {fetching, response, error} = useSelector((s) => s.results)
 
   React.useEffect(() => {
     dispatch(fetchResults(searchParams))

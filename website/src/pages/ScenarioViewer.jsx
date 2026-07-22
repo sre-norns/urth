@@ -1,12 +1,12 @@
-import React, { useCallback } from 'react'
+import React, {useCallback} from 'react'
 import PropTypes from 'prop-types'
 import styled from '@emotion/styled'
-import { useLocation } from 'wouter'
-import { useDispatch, useSelector } from 'react-redux'
-import { useTrackedState, useTracker } from '../utils/tracking.js'
-import { validateMaxLength, validateNotEmpty } from '../utils/validators.js'
-import { routed } from '../utils/routing.jsx'
-import { isEmpty } from '../utils/objects.js'
+import {useLocation} from 'wouter'
+import {useDispatch, useSelector} from 'react-redux'
+import {useTrackedState, useTracker} from '../utils/tracking.js'
+import {validateMaxLength, validateNotEmpty} from '../utils/validators.js'
+import {routed} from '../utils/routing.jsx'
+import {isEmpty} from '../utils/objects.js'
 import fetchScenario from '../actions/fetchScenario.js'
 import createScenario from '../actions/createScenario.js'
 import updateScenario from '../actions/updateScenario.js'
@@ -27,8 +27,8 @@ import Label from '../components/Label.js'
 import TextSpan from '../components/TextSpan.js'
 import PanelSplitter from '../components/PanelSplitter.js'
 import ProbEditor from '../components/ProbEditor.jsx'
-import { templateFor } from '../utils/probSpec.js'
-import { splitLabels } from '../utils/labels.js'
+import {templateFor} from '../utils/probSpec.js'
+import {splitLabels} from '../utils/labels.js'
 
 const PageContainer = styled.div`
   width: 100%;
@@ -149,7 +149,7 @@ const validateName = (...args) => validateNotEmpty(...args) || validateMaxLength
 
 const validateDescription = validateMaxLength(128)
 
-const ScenarioViewer = ({ scenarioId, edit = false }) => {
+const ScenarioViewer = ({scenarioId, edit = false}) => {
   const [location, setLocation] = useLocation()
   const [isNew, setIsNew] = React.useState(false)
 
@@ -162,9 +162,9 @@ const ScenarioViewer = ({ scenarioId, edit = false }) => {
   const [description, setDescription] = useTrackedState(tracker, '')
   const [active, setActive] = useTrackedState(tracker, false)
   const [schedule, setSchedule] = useTrackedState(tracker, '')
-  const [prob, setProb] = useTrackedState(tracker, { kind: '', spec: {} })
+  const [prob, setProb] = useTrackedState(tracker, {kind: '', spec: {}})
 
-  const { id, fetching, creating, updating, deleting, response, error } = useSelector((s) => s.scenario)
+  const {id, fetching, creating, updating, deleting, response, error} = useSelector((s) => s.scenario)
   const dispatch = useDispatch()
 
   const handleResponse = useCallback(
@@ -175,7 +175,7 @@ const ScenarioViewer = ({ scenarioId, edit = false }) => {
         setDescription(response.spec.description)
         setActive(response.spec.active)
         setSchedule(response.spec.schedule || '')
-        setProb(response.spec.prob || { kind: '', spec: {} })
+        setProb(response.spec.prob || {kind: '', spec: {}})
         tracker.reset()
       }
     },
@@ -207,7 +207,7 @@ const ScenarioViewer = ({ scenarioId, edit = false }) => {
       setLocation('/scenarios')
     } else {
       handleResponse(response)
-      setLocation(`/scenarios/${scenarioId}`, { replace: true })
+      setLocation(`/scenarios/${scenarioId}`, {replace: true})
     }
   }, [isNew, response])
 
@@ -235,7 +235,7 @@ const ScenarioViewer = ({ scenarioId, edit = false }) => {
           },
           (id) => {
             setIsNew(false)
-            setLocation(`/scenarios/${id}`, { replace: true })
+            setLocation(`/scenarios/${id}`, {replace: true})
           }
         )
       )
@@ -261,7 +261,7 @@ const ScenarioViewer = ({ scenarioId, edit = false }) => {
               // prob: response.spec.prob,
             },
           },
-          () => setLocation(`/scenarios/${scenarioId}`, { replace: true })
+          () => setLocation(`/scenarios/${scenarioId}`, {replace: true})
         )
       )
     }
@@ -291,7 +291,7 @@ const ScenarioViewer = ({ scenarioId, edit = false }) => {
       setDescription('')
       setActive(false)
       setSchedule('')
-      setProb({ kind: '', spec: {} })
+      setProb({kind: '', spec: {}})
       tracker.reset()
     } else {
       dispatch(fetchScenario(scenarioId))
@@ -317,7 +317,7 @@ const ScenarioViewer = ({ scenarioId, edit = false }) => {
   const title = edit ? (isNew ? 'New Scenario' : name) : name
 
   // Split for display: the user's own labels are editable, the server's are not.
-  const { user: userLabels, system: systemLabels } = splitLabels(response?.metadata?.labels)
+  const {user: userLabels, system: systemLabels} = splitLabels(response?.metadata?.labels)
 
   return (
     <PageContainer>
@@ -377,11 +377,10 @@ const ScenarioViewer = ({ scenarioId, edit = false }) => {
               <summary>
                 <TextSpan size="small">
                   {Object.keys(systemLabels).length} system{' '}
-                  {Object.keys(systemLabels).length === 1 ? 'label' : 'labels'}, assigned by the
-                  server
+                  {Object.keys(systemLabels).length === 1 ? 'label' : 'labels'}, assigned by the server
                 </TextSpan>
               </summary>
-              <ObjectCapsules value={systemLabels} style={{ paddingTop: '0.5rem' }} />
+              <ObjectCapsules value={systemLabels} style={{paddingTop: '0.5rem'}} />
             </SystemLabels>
           )}
 
@@ -401,8 +400,7 @@ const ScenarioViewer = ({ scenarioId, edit = false }) => {
                   onChange={handleScheduleChange}
                 />
                 <StyledLabel>
-                  Runs are triggered manually until the scheduler lands; this is stored and shown as
-                  the next run time.
+                  Runs are triggered manually until the scheduler lands; this is stored and shown as the next run time.
                 </StyledLabel>
               </>
             )) || <div>{schedule || 'unscheduled'}</div>}
