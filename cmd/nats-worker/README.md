@@ -33,6 +33,30 @@ Acking early loses the run if the claim fails; holding the ack across the probe
 makes the redelivery timer span an arbitrarily long run, and the job gets
 executed twice.
 
+## The claim outcome contract
+
+A claim failure is not one situation, and the queue disposition depends on which
+one it is. The API classifies the reason and encodes it as an HTTP status *class*
+— never the specific reason, which would tell a caller whether a protected run
+exists or who holds it. The worker maps that class to exactly one JetStream
+action, in one place (`classifyClaimFailure` / `applyDisposition`):
+
+| API status | Meaning | Worker action |
+|---|---|---|
+| `2xx` | claim granted (or idempotently re-granted) | **Ack**, then execute |
+| `5xx` | transient store/internal failure; the run may still be pending | **Nak** with delay — redelivered |
+| `409` | the run is terminal, superseded, or already validly held | **Ack** and drop |
+| `401` / `403` / `400` / `404` | policy refusal or a malformed message that redelivery will not fix | **Term** — stops redelivery, enters the dead-letter path |
+
+A claim interrupted by worker shutdown is a fourth case: it is left
+*unacknowledged*, so the broker redelivers it after `AckWait`. It is never a
+verdict on the run, so it must not be acked, naked, or terminated.
+
+The prototype flattened every claim failure to `401`, which the worker read as
+stale and acknowledged. A momentary Postgres blip could therefore delete the only
+live message for a still-pending run — silent, unrecoverable loss on a work-queue
+stream. See [review task 001](../../docs/review-backlog/tasks/001-preserve-retryable-claim-failures.md).
+
 ## Running it
 
 ```bash

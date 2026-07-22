@@ -13,6 +13,7 @@ import (
 	"github.com/sre-norns/urth/pkg/natsq"
 	"github.com/sre-norns/urth/pkg/urth"
 	"github.com/sre-norns/wyrd/pkg/bark"
+	"github.com/sre-norns/wyrd/pkg/manifest"
 )
 
 // claimOutcome is what the worker decided to do about a delivered message.
@@ -29,15 +30,24 @@ const (
 	// claimAccepted: the API granted the claim. Acknowledge and execute.
 	claimAccepted claimOutcome = iota
 
-	// claimRetry: a transient failure. Leave the message for redelivery.
+	// claimRetry: a transient failure the API reported as 5xx. The run may still
+	// be pending, so leave the message for redelivery (NAK with a delay).
 	claimRetry
 
-	// claimStale: the run is already terminal or validly held elsewhere. The
-	// message describes work that no longer needs doing, so drop it.
+	// claimStale: the run is already terminal or validly held elsewhere (409).
+	// The message describes work that no longer needs doing, so acknowledge and
+	// drop it.
 	claimStale
 
-	// claimRefused: a policy decision that redelivery will not change.
+	// claimTerminal: a policy decision that redelivery will not change (401/403),
+	// or a malformed message. Terminate it so it stops being redelivered here and
+	// enters the operational dead-letter path.
 	claimTerminal
+
+	// claimAbandon: the claim was interrupted by worker shutdown before the API
+	// answered. That is not a verdict on the run, so leave the message
+	// unacknowledged and let the broker redeliver it after AckWait.
+	claimAbandon
 )
 
 // consume pulls jobs and executes them, up to the configured concurrency.
@@ -134,45 +144,59 @@ func (w *worker) handle(ctx context.Context, msg jetstream.Msg) {
 
 	auth, outcome := w.claim(ctx, envelope)
 
+	if applyDisposition(msg, outcome, envelope.ResultUID) {
+		w.execute(ctx, envelope, auth)
+	}
+}
+
+// applyDisposition performs the JetStream acknowledgement decided by a claim
+// outcome and reports whether the job should now be executed. This is the one
+// place a claim outcome becomes an Ack/Nak/Term, kept separate from handle so the
+// decision can be tested without a live probe.
+func applyDisposition(msg jetstream.Msg, outcome claimOutcome, resultUID manifest.ResourceID) (execute bool) {
 	switch outcome {
+	case claimAccepted:
+		// Acknowledge now, and before execution, because the claim has committed.
+		//
+		// Both other orderings are wrong in a different way. Acking after
+		// execution makes the ack-wait timer span an arbitrarily long probe, so a
+		// slow run gets redelivered and executed twice. Not acking loses the
+		// message on the next reconnect. The API's record of the claim, not the
+		// broker, owns the run from here; if this ack is lost the idempotent claim
+		// is what stops the redelivery becoming a second execution.
+		if err := msg.Ack(); err != nil {
+			log.Printf("failed to ack claimed job %v: %v", resultUID, err)
+		}
+		return true
+
 	case claimRetry:
 		// Leave it for redelivery, after a delay so a struggling API server is
 		// not immediately asked again.
-		if nerr := msg.NakWithDelay(5 * time.Second); nerr != nil {
-			log.Printf("failed to nak job %v: %v", envelope.ResultUID, nerr)
+		if err := msg.NakWithDelay(5 * time.Second); err != nil {
+			log.Printf("failed to nak job %v: %v", resultUID, err)
 		}
-		return
 
 	case claimStale:
-		log.Printf("discarding stale job message for result %v", envelope.ResultUID)
-		if aerr := msg.Ack(); aerr != nil {
-			log.Printf("failed to ack stale job %v: %v", envelope.ResultUID, aerr)
+		log.Printf("discarding stale job message for result %v", resultUID)
+		if err := msg.Ack(); err != nil {
+			log.Printf("failed to ack stale job %v: %v", resultUID, err)
 		}
-		return
 
 	case claimTerminal:
-		log.Printf("terminating job %v this worker may not run", envelope.ResultUID)
-		if terr := msg.Term(); terr != nil {
-			log.Printf("failed to terminate refused job: %v", terr)
+		log.Printf("terminating job %v this worker may not run", resultUID)
+		if err := msg.Term(); err != nil {
+			log.Printf("failed to terminate refused job %v: %v", resultUID, err)
 		}
-		return
+
+	case claimAbandon:
+		// Shutdown interrupted the claim before it resolved. Leave the message
+		// untouched: the broker redelivers it after AckWait, and acking or naking
+		// a run whose claim never got an answer would either lose it or fight the
+		// shutdown that is already in progress.
+		log.Printf("abandoning job %v; claim interrupted by shutdown", resultUID)
 	}
 
-	// Acknowledge now, and synchronously, because the claim has committed.
-	//
-	// Both orderings are wrong in a different way. Acking before the claim
-	// loses the run if the claim then fails. Holding the ack across execution
-	// makes the ack-wait timer span an arbitrarily long probe, so a slow run
-	// gets redelivered and executed twice. The API's record of the claim, not
-	// the broker, owns the run from here.
-	if err := msg.Ack(); err != nil {
-		// The run is authorised and about to execute. If the ack was lost the
-		// message will be redelivered, and the idempotent claim is what stops
-		// that becoming a second execution.
-		log.Printf("failed to ack claimed job %v: %v", envelope.ResultUID, err)
-	}
-
-	w.execute(ctx, envelope, auth)
+	return false
 }
 
 // claim asks the API server for authority to run the job.
@@ -193,36 +217,61 @@ func (w *worker) claim(ctx context.Context, envelope natsq.DispatchEnvelope) (ur
 		return auth, claimAccepted
 	}
 
-	// The server deliberately does not distinguish "already taken" from "not
-	// yours" from "no such run" -- telling a worker which would tell an
-	// attacker which. So an unauthorized answer is read as "this job is not
-	// mine to run", and the message is dropped rather than redelivered
-	// forever. If the run really is still pending and unassigned, the
-	// reconciler is what notices, not an endless retry here.
-	if isUnauthorized(err) {
-		log.Printf("claim refused for result %v: %v", envelope.ResultUID, err)
-		return auth, claimStale
-	}
-
+	// A claim cut short by worker shutdown is not a verdict on the run. Leave the
+	// message for redelivery rather than acking or naking a claim that never got
+	// an answer. Checked before classification because a cancelled request often
+	// surfaces as an opaque transport error, not a status the API chose.
 	if ctx.Err() != nil {
-		return auth, claimRetry
+		return auth, claimAbandon
 	}
 
-	log.Printf("failed to claim result %v, will retry: %v", envelope.ResultUID, err)
-	return auth, claimRetry
+	outcome := classifyClaimFailure(err)
+	log.Printf("claim for result %v: %v (%s)", envelope.ResultUID, err, outcomeName(outcome))
+	return auth, outcome
 }
 
-func isUnauthorized(err error) bool {
-	if errors.Is(err, bark.ErrResourceUnauthorized) || errors.Is(err, bark.ErrResourceNotFound) {
-		return true
-	}
-
+// classifyClaimFailure turns a claim error into a queue disposition using only the
+// HTTP status class the API returned. The API owns the mapping from "why" to
+// status; the worker owns the mapping from status to Ack/Nak/Term, here, in one
+// place. Anything that is not a recognised API status -- a network error, a
+// connection reset, an unparseable body -- is transient by default, because the
+// run may still be pending and losing its only message is the worse failure.
+func classifyClaimFailure(err error) claimOutcome {
 	var apiErr *bark.ErrorResponse
 	if errors.As(err, &apiErr) {
-		return apiErr.Code == http.StatusUnauthorized ||
-			apiErr.Code == http.StatusForbidden ||
-			apiErr.Code == http.StatusNotFound
+		switch {
+		case apiErr.Code == http.StatusConflict:
+			// The run no longer needs this dispatch: terminal, superseded, or
+			// held elsewhere. Drop the message.
+			return claimStale
+		case apiErr.Code == http.StatusForbidden,
+			apiErr.Code == http.StatusUnauthorized,
+			apiErr.Code == http.StatusBadRequest,
+			apiErr.Code == http.StatusNotFound:
+			// A refusal redelivery to this worker will not reverse, or a message
+			// malformed enough that the endpoint could not route it. Terminate it.
+			return claimTerminal
+		case apiErr.Code >= 500:
+			return claimRetry
+		}
 	}
 
-	return false
+	return claimRetry
+}
+
+func outcomeName(o claimOutcome) string {
+	switch o {
+	case claimAccepted:
+		return "accepted"
+	case claimRetry:
+		return "retry"
+	case claimStale:
+		return "stale"
+	case claimTerminal:
+		return "terminal"
+	case claimAbandon:
+		return "abandon"
+	default:
+		return "unknown"
+	}
 }
