@@ -218,3 +218,5 @@ retirement. Do not duplicate those items as flat bullets here.
 [] Ensure that `Worker Instance` login session expires.
 [] OTel instrument server and worker
 [] HAR prob should produce HAR files as output.
+
+[] Adopt [SecretSpec](https://secretspec.dev/) for secret management.
