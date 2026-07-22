@@ -1,13 +1,13 @@
 import React from 'react'
-import { describe, it, expect, vi } from 'vitest'
-import { screen } from '@testing-library/react'
-import { renderWithProviders } from '../test/render.jsx'
+import {describe, it, expect, vi} from 'vitest'
+import {screen} from '@testing-library/react'
+import {renderWithProviders} from '../test/render.jsx'
 import RunDetail from './RunDetail.jsx'
-import { LabelArtifact, LabelRunner, LabelWorker } from '../utils/labels.js'
+import {LabelArtifact, LabelRunner, LabelWorker} from '../utils/labels.js'
 
-vi.mock('../actions/fetchRun.js', () => ({ default: () => () => {} }))
-vi.mock('../actions/fetchRunArtifacts.js', () => ({ default: () => () => {} }))
-vi.mock('../actions/fetchArtifactContent.js', () => ({ default: () => () => {} }))
+vi.mock('../actions/fetchRun.js', () => ({default: () => () => {}}))
+vi.mock('../actions/fetchRunArtifacts.js', () => ({default: () => () => {}}))
+vi.mock('../actions/fetchArtifactContent.js', () => ({default: () => () => {}}))
 
 const run = {
   uid: 'run-uid',
@@ -47,13 +47,13 @@ const artifact = (kind, dataClass, extra = {}) => ({
   },
 })
 
-const stateWith = (artifacts, runState = { fetching: false, response: run }) => ({
+const stateWith = (artifacts, runState = {fetching: false, response: run}) => ({
   scenario: {},
   scenarios: {},
   scenarioResults: {},
   scenarioActions: {},
-  run: { kbjk96thvzcuiass: runState },
-  runArtifacts: { kbjk96thvzcuiass: { fetching: false, response: { data: artifacts } } },
+  run: {kbjk96thvzcuiass: runState},
+  runArtifacts: {kbjk96thvzcuiass: {fetching: false, response: {data: artifacts}}},
   artifactContent: {},
 })
 
@@ -64,8 +64,7 @@ const render = (state) =>
 
 // Opened from the cross-scenario Results list, where the URL carries only the
 // run name.
-const renderStandalone = (state) =>
-  renderWithProviders(<RunDetail runId="kbjk96thvzcuiass" />, { preloadedState: state })
+const renderStandalone = (state) => renderWithProviders(<RunDetail runId="kbjk96thvzcuiass" />, {preloadedState: state})
 
 describe('RunDetail', () => {
   it('shows the outcome, timing and type of the run', () => {
@@ -90,9 +89,9 @@ describe('RunDetail', () => {
   // Their identity is recoverable from the labels of the artifacts the worker
   // uploaded, which is where this was read from previously.
   it('falls back to artifact labels for a run with no executor recorded', () => {
-    const legacy = { ...run, status: { ...run.status, executor: undefined } }
+    const legacy = {...run, status: {...run.status, executor: undefined}}
 
-    render(stateWith([artifact('log', 'redacted')], { fetching: false, response: legacy }))
+    render(stateWith([artifact('log', 'redacted')], {fetching: false, response: legacy}))
 
     expect(screen.getByText('artifact-runner')).toBeInTheDocument()
     expect(screen.getByText('worker artifact-worker')).toBeInTheDocument()
@@ -100,9 +99,9 @@ describe('RunDetail', () => {
 
   // With neither source available the field says so rather than rendering blank.
   it('shows a dash when nothing recorded who ran it', () => {
-    const legacy = { ...run, status: { ...run.status, executor: undefined } }
+    const legacy = {...run, status: {...run.status, executor: undefined}}
 
-    render(stateWith([], { fetching: false, response: legacy }))
+    render(stateWith([], {fetching: false, response: legacy}))
 
     expect(screen.getByText('Runner')).toBeInTheDocument()
   })
@@ -132,13 +131,13 @@ describe('RunDetail', () => {
   })
 
   it('shows a spinner until the run arrives', () => {
-    const { container } = render(stateWith([], { fetching: true }))
+    const {container} = render(stateWith([], {fetching: true}))
 
     expect(container.querySelector('svg, [class*="Spinner"]')).toBeTruthy()
   })
 
   it('reports a load failure', () => {
-    render(stateWith([], { fetching: false, error: { message: 'not found' } }))
+    render(stateWith([], {fetching: false, error: {message: 'not found'}}))
 
     expect(screen.getByText(/Error loading run/)).toBeInTheDocument()
   })
@@ -150,10 +149,10 @@ describe('RunDetail', () => {
   it('finds the scenario from the run when not given one', () => {
     const withLabels = {
       ...run,
-      labels: { 'urth/scenario.name': 'tcp-self-fondle' },
+      labels: {'urth/scenario.name': 'tcp-self-fondle'},
     }
 
-    renderStandalone(stateWith([artifact('log', 'redacted')], { fetching: false, response: withLabels }))
+    renderStandalone(stateWith([artifact('log', 'redacted')], {fetching: false, response: withLabels}))
 
     expect(screen.getByText(/tcp-self-fondle/)).toBeInTheDocument()
     expect(screen.getByText('success')).toBeInTheDocument()

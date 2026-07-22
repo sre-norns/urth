@@ -1,14 +1,14 @@
 import React from 'react'
-import { useDispatch, useSelector } from 'react-redux'
+import {useDispatch, useSelector} from 'react-redux'
 import styled from '@emotion/styled'
-import { useSearchParams } from 'wouter-search';
+import {useSearchParams} from 'wouter-search'
 import fetchScenarios from '../actions/fetchScenarios.js'
 import SpinnerInlay from '../components/SpinnerInlay.jsx'
 import Scenario from '../containers/Scenario.jsx'
 import EmptyInlay from '../components/EmptyInlay.jsx'
 import ErrorInlay from '../components/ErrorInlay.jsx'
-import { SearchQuery } from '../utils/searchQuery.js';
-import { Operator, Rule } from '../utils/k8s-labels.js'
+import {SearchQuery} from '../utils/searchQuery.js'
+import {Operator, Rule} from '../utils/k8s-labels.js'
 
 const ScenariosContainer = styled.div`
   width: 100%;
@@ -19,10 +19,10 @@ const ScenariosContainer = styled.div`
 `
 
 const Scenarios = () => {
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams()
 
   const dispatch = useDispatch()
-  const { fetching, response, error } = useSelector((s) => s.scenarios)
+  const {fetching, response, error} = useSelector((s) => s.scenarios)
 
   React.useEffect(() => {
     dispatch(fetchScenarios(searchParams))
@@ -44,13 +44,12 @@ const Scenarios = () => {
     setSearchParams((q) => {
       try {
         const query = new SearchQuery(q)
-        query.setRule(new Rule(name, Operator.Equals, [value]));
-        console.log("Updating search query", query.labels)
+        query.setRule(new Rule(name, Operator.Equals, [value]))
+        console.log('Updating search query', query.labels)
 
         return query.urlSearchParams
       } catch (error) {
-        console.log("Failed to update search query", error)
-
+        console.log('Failed to update search query', error)
       }
     })
   }

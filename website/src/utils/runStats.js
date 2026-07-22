@@ -30,10 +30,10 @@ export const Period = {
 }
 
 export const PERIODS = [
-  { id: Period.Day, label: '24 hours', ms: 24 * 60 * 60 * 1000 },
-  { id: Period.Week, label: '7 days', ms: 7 * 24 * 60 * 60 * 1000 },
-  { id: Period.Month, label: '30 days', ms: 30 * 24 * 60 * 60 * 1000 },
-  { id: Period.All, label: 'All time', ms: null },
+  {id: Period.Day, label: '24 hours', ms: 24 * 60 * 60 * 1000},
+  {id: Period.Week, label: '7 days', ms: 7 * 24 * 60 * 60 * 1000},
+  {id: Period.Month, label: '30 days', ms: 30 * 24 * 60 * 60 * 1000},
+  {id: Period.All, label: 'All time', ms: null},
 ]
 
 // runStartedAt prefers the moment the probe actually began over the moment the

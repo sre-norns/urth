@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, {useEffect, useState} from 'react'
 import PropTypes from 'prop-types'
-import { Route, Switch } from 'wouter'
-import { useSearchParams } from 'wouter-search';
-import { useDebouncedCallback } from 'use-debounce';
+import {Route, Switch} from 'wouter'
+import {useSearchParams} from 'wouter-search'
+import {useDebouncedCallback} from 'use-debounce'
 import styled from '@emotion/styled'
 import NavRow from '../components/NavRow.js'
 import NavBrand from '../components/NavBrand.js'
@@ -11,8 +11,8 @@ import Nav from '../components/Nav.js'
 import NavRowContainer from '../components/NavRowContainer.js'
 import TextInput from '../components/TextInput.js'
 import Button from '../components/Button.js'
-import { routed } from '../utils/routing.jsx'
-import { SearchQuery } from '../utils/searchQuery.js'
+import {routed} from '../utils/routing.jsx'
+import {SearchQuery} from '../utils/searchQuery.js'
 
 const onNonClick = (e) => {
   e.preventDefault()
@@ -31,40 +31,31 @@ const IconButtonLink = routed(
   `.withComponent('a')
 )
 
+const SearchTextInput = ({placeholder = 'Search'}) => {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [searchInput, setSearchInput] = useState(new SearchQuery(searchParams).labels)
 
-const SearchTextInput = ({ placeholder = 'Search' }) => {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [searchInput, setSearchInput] = useState(new SearchQuery(searchParams).labels);
-
-  const debounced = useDebouncedCallback(
-    (value) => {
-      setSearchParams((q) => {
-        console.log("User input debounced, setting query to", value)
-        try {
-          const query = new SearchQuery(q)
-          query.labels = value
-          return query.urlSearchParams
-        } catch (error) {
-          console.log("Failed to parse query into search query", error)
-          return q;
-        }
-      });
-    },
-    600
-  );
+  const debounced = useDebouncedCallback((value) => {
+    setSearchParams((q) => {
+      console.log('User input debounced, setting query to', value)
+      try {
+        const query = new SearchQuery(q)
+        query.labels = value
+        return query.urlSearchParams
+      } catch (error) {
+        console.log('Failed to parse query into search query', error)
+        return q
+      }
+    })
+  }, 600)
 
   const inputHandler = (value) => {
     debounced(value)
     setSearchInput(value)
   }
 
-  return (<SearchInput
-    placeholder={placeholder}
-    value={searchInput}
-    onChange={(e) => inputHandler(e.target.value)}
-  />)
+  return <SearchInput placeholder={placeholder} value={searchInput} onChange={(e) => inputHandler(e.target.value)} />
 }
-
 
 SearchTextInput.propTypes = {
   placeholder: PropTypes.string,

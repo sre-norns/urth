@@ -29,10 +29,10 @@ export const formatDuration = (ms) => {
 }
 
 const UNITS = [
-  { limit: 60 * 1000, ms: 1000, name: 'second' },
-  { limit: 60 * 60 * 1000, ms: 60 * 1000, name: 'minute' },
-  { limit: 24 * 60 * 60 * 1000, ms: 60 * 60 * 1000, name: 'hour' },
-  { limit: 30 * 24 * 60 * 60 * 1000, ms: 24 * 60 * 60 * 1000, name: 'day' },
+  {limit: 60 * 1000, ms: 1000, name: 'second'},
+  {limit: 60 * 60 * 1000, ms: 60 * 1000, name: 'minute'},
+  {limit: 24 * 60 * 60 * 1000, ms: 60 * 60 * 1000, name: 'hour'},
+  {limit: 30 * 24 * 60 * 60 * 1000, ms: 24 * 60 * 60 * 1000, name: 'day'},
 ]
 
 // formatRelative renders a time as a distance from now, in both directions --

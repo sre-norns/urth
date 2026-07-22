@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest'
-import { SearchQuery } from './searchQuery.js'
-import { Operator, Rule } from './k8s-labels.js'
+import {describe, it, expect} from 'vitest'
+import {SearchQuery} from './searchQuery.js'
+import {Operator, Rule} from './k8s-labels.js'
 
 const params = (init) => new URLSearchParams(init)
 

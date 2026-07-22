@@ -1,10 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, {useCallback, useEffect, useMemo, useState} from 'react'
 import PropTypes from 'prop-types'
 import styled from '@emotion/styled'
-import { useDispatch, useSelector } from 'react-redux'
+import {useDispatch, useSelector} from 'react-redux'
 import fetchRunner from '../actions/fetchRunner.js'
 import fetchWorkers from '../actions/fetchWorkers.js'
-import { apiPut } from '../utils/api.js'
+import {apiPut} from '../utils/api.js'
 import Panel from '../components/Panel.js'
 import Button from '../components/Button.js'
 import ErrorInlay from '../components/ErrorInlay.jsx'
@@ -14,8 +14,8 @@ import ObjectCapsules from '../components/ObjectCapsules.jsx'
 import RagIndicator from '../components/RagIndicator.js'
 import StatTile from '../components/StatTile.jsx'
 import WorkerList from '../components/WorkerList.jsx'
-import TextSpan, { TextDiv } from '../components/TextSpan.js'
-import { formatRelative } from '../utils/time.js'
+import TextSpan, {TextDiv} from '../components/TextSpan.js'
+import {formatRelative} from '../utils/time.js'
 
 const PageContainer = styled.div`
   width: 100%;
@@ -81,7 +81,7 @@ const requirementLines = (requirements) => {
   return lines
 }
 
-const RunnerDetail = ({ runnerId }) => {
+const RunnerDetail = ({runnerId}) => {
   const dispatch = useDispatch()
   const [busy, setBusy] = useState(false)
 
@@ -94,10 +94,7 @@ const RunnerDetail = ({ runnerId }) => {
   }, [runnerId])
 
   const workerList = useMemo(() => workers.response?.data || [], [workers.response])
-  const pausedCount = useMemo(
-    () => workerList.filter((w) => w.status?.paused).length,
-    [workerList]
-  )
+  const pausedCount = useMemo(() => workerList.filter((w) => w.status?.paused).length, [workerList])
 
   const manifest = runner.response
 
@@ -123,7 +120,7 @@ const RunnerDetail = ({ runnerId }) => {
     try {
       await apiPut(`/api/v1/runners/${runnerId}`, {
         ...manifest,
-        spec: { ...manifest.spec, active: next },
+        spec: {...manifest.spec, active: next},
       })
       dispatch(fetchRunner(runnerId))
       dispatch(fetchWorkers(runnerId))
@@ -140,7 +137,7 @@ const RunnerDetail = ({ runnerId }) => {
     return <SpinnerInlay />
   }
 
-  const { metadata, spec } = manifest
+  const {metadata, spec} = manifest
   const active = Boolean(spec?.active)
   const requirements = requirementLines(spec?.requirements)
 
@@ -156,12 +153,12 @@ const RunnerDetail = ({ runnerId }) => {
         </HeaderRow>
 
         {spec?.description && (
-          <TextDiv size="small" level={3} style={{ marginTop: '0.5rem' }}>
+          <TextDiv size="small" level={3} style={{marginTop: '0.5rem'}}>
             {spec.description}
           </TextDiv>
         )}
 
-        <ObjectCapsules value={metadata.labels} style={{ paddingTop: '0.5rem' }} />
+        <ObjectCapsules value={metadata.labels} style={{paddingTop: '0.5rem'}} />
 
         <StatsRow>
           <StatTile
@@ -185,7 +182,7 @@ const RunnerDetail = ({ runnerId }) => {
         </StatsRow>
 
         {requirements.length > 0 && (
-          <div style={{ marginTop: '1rem' }}>
+          <div style={{marginTop: '1rem'}}>
             <TextDiv size="small" level={4}>
               Requirements a worker must satisfy to register
             </TextDiv>
@@ -210,16 +207,13 @@ const RunnerDetail = ({ runnerId }) => {
           </TextSpan>
         </SectionHeader>
 
-        <TextDiv size="small" level={4} style={{ marginBottom: '0.75rem' }}>
-          Every process that authenticated with this runner&apos;s token. Pause one to take it out
-          of service without disturbing the rest of the pool; drop one to revoke a registration that
-          should not be here.
+        <TextDiv size="small" level={4} style={{marginBottom: '0.75rem'}}>
+          Every process that authenticated with this runner&apos;s token. Pause one to take it out of service without
+          disturbing the rest of the pool; drop one to revoke a registration that should not be here.
         </TextDiv>
 
         {workers.fetching && !workers.response && <SpinnerInlay />}
-        {workers.error && (
-          <ErrorInlay message="Error loading workers" details={workers.error.message || ''} />
-        )}
+        {workers.error && <ErrorInlay message="Error loading workers" details={workers.error.message || ''} />}
         {!workers.fetching && !workers.error && workerList.length === 0 && <EmptyInlay />}
         {workerList.length > 0 && <WorkerList workers={workerList} runnerName={runnerId} />}
       </Panel>

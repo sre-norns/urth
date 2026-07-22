@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, {useCallback, useEffect, useMemo, useState} from 'react'
 import PropTypes from 'prop-types'
 import styled from '@emotion/styled'
-import { useDispatch, useSelector } from 'react-redux'
+import {useDispatch, useSelector} from 'react-redux'
 import fetchScenario from '../actions/fetchScenario.js'
 import fetchScenarioResults from '../actions/fetchScenarioResults.js'
 import runScenario from '../actions/runScenario.js'
@@ -14,11 +14,11 @@ import ObjectCapsules from '../components/ObjectCapsules.jsx'
 import RagIndicator from '../components/RagIndicator.js'
 import StatTile from '../components/StatTile.jsx'
 import RunHistoryList from '../components/RunHistoryList.jsx'
-import TextSpan, { TextDiv } from '../components/TextSpan.js'
-import { routed } from '../utils/routing.jsx'
-import { statusToColor } from '../utils/status-color.js'
-import { formatDuration, formatPercent, formatRelative, formatTimestamp } from '../utils/time.js'
-import { PERIODS, Period, filterByPeriod, periodQuery, summariseRuns } from '../utils/runStats.js'
+import TextSpan, {TextDiv} from '../components/TextSpan.js'
+import {routed} from '../utils/routing.jsx'
+import {statusToColor} from '../utils/status-color.js'
+import {formatDuration, formatPercent, formatRelative, formatTimestamp} from '../utils/time.js'
+import {PERIODS, Period, filterByPeriod, periodQuery, summariseRuns} from '../utils/runStats.js'
 
 const PageContainer = styled.div`
   width: 100%;
@@ -88,11 +88,11 @@ const EditLink = routed(
   true
 )
 
-const ScenarioDetail = ({ scenarioId }) => {
+const ScenarioDetail = ({scenarioId}) => {
   const dispatch = useDispatch()
   const [period, setPeriod] = useState(Period.Week)
 
-  const { id, fetching, error, response: scenario } = useSelector((s) => s.scenario)
+  const {id, fetching, error, response: scenario} = useSelector((s) => s.scenario)
   const results = useSelector((s) => s.scenarioResults[scenarioId]) || {}
   const scenarioActions = useSelector((s) => s.scenarioActions)
   const pendingRun = scenarioActions[scenarioId]?.fetching
@@ -111,11 +111,7 @@ const ScenarioDetail = ({ scenarioId }) => {
   // worker has picked it up. Re-reading the history after the request settles is
   // what makes the button feel like it did something.
   const handleRun = useCallback(() => {
-    dispatch(
-      runScenario(scenarioId, () =>
-        dispatch(fetchScenarioResults(scenarioId, periodQuery(period).toString()))
-      )
-    )
+    dispatch(runScenario(scenarioId, () => dispatch(fetchScenarioResults(scenarioId, periodQuery(period).toString()))))
   }, [scenarioId, period])
 
   // The server has already applied the window; filterByPeriod runs again over
@@ -136,7 +132,7 @@ const ScenarioDetail = ({ scenarioId }) => {
     return <SpinnerInlay />
   }
 
-  const { metadata, spec, status } = scenario
+  const {metadata, spec, status} = scenario
   const lastRunStatus = status?.results?.[0]?.status
   const executable = Boolean(spec?.prob?.kind)
   const runnable = Boolean(spec?.active) && executable
@@ -156,14 +152,14 @@ const ScenarioDetail = ({ scenarioId }) => {
         </HeaderRow>
 
         {spec?.description && (
-          <TextDiv size="small" level={3} style={{ marginTop: '0.5rem' }}>
+          <TextDiv size="small" level={3} style={{marginTop: '0.5rem'}}>
             {spec.description}
           </TextDiv>
         )}
 
-        <ObjectCapsules value={metadata.labels} style={{ paddingTop: '0.5rem' }} />
+        <ObjectCapsules value={metadata.labels} style={{paddingTop: '0.5rem'}} />
 
-        <StatsRow style={{ marginTop: '1rem' }}>
+        <StatsRow style={{marginTop: '1rem'}}>
           <StatTile caption="Type" value={spec?.prob?.kind || 'none'} />
           <StatTile caption="Schedule" value={spec?.schedule || 'unscheduled'} />
           <StatTile
@@ -171,11 +167,15 @@ const ScenarioDetail = ({ scenarioId }) => {
             value={status?.nextScheduledRunTime ? formatRelative(status.nextScheduledRunTime) : '—'}
             detail={status?.nextScheduledRunTime ? formatTimestamp(status.nextScheduledRunTime) : null}
           />
-          <StatTile caption="State" value={spec?.active ? 'active' : 'disabled'} color={spec?.active ? 'success' : 'neutral'} />
+          <StatTile
+            caption="State"
+            value={spec?.active ? 'active' : 'disabled'}
+            color={spec?.active ? 'success' : 'neutral'}
+          />
         </StatsRow>
 
         {!executable && (
-          <TextDiv size="small" level={3} color="warning" style={{ marginTop: '0.75rem' }}>
+          <TextDiv size="small" level={3} color="warning" style={{marginTop: '0.75rem'}}>
             This scenario has no prob defined, so it cannot be run.
           </TextDiv>
         )}
@@ -196,7 +196,11 @@ const ScenarioDetail = ({ scenarioId }) => {
         </SectionHeader>
 
         <StatsRow>
-          <StatTile caption="Runs" value={summary.total} detail={`in the last ${PERIODS.find((p) => p.id === period).label.toLowerCase()}`} />
+          <StatTile
+            caption="Runs"
+            value={summary.total}
+            detail={`in the last ${PERIODS.find((p) => p.id === period).label.toLowerCase()}`}
+          />
           <StatTile
             caption="Success rate"
             value={formatPercent(summary.successRate)}

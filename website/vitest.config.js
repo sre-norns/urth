@@ -1,5 +1,5 @@
-import { defineConfig } from 'vitest/config'
-import { transformAsync } from '@babel/core'
+import {defineConfig} from 'vitest/config'
+import {transformAsync} from '@babel/core'
 
 // @vitejs/plugin-react v6 transforms JSX with oxc and exposes no babel hook, so
 // two things this app relies on cannot be expressed through it:
@@ -28,13 +28,13 @@ const babelTransform = () => ({
       // modules are left as ESM (vitest cannot load CommonJS test files) and
       // preset-env targets the running node rather than browsers.
       presets: [
-        ['@babel/preset-env', { targets: { node: 'current' }, modules: false }],
-        ['@babel/preset-react', { runtime: 'automatic', importSource: '@emotion/react' }],
+        ['@babel/preset-env', {targets: {node: 'current'}, modules: false}],
+        ['@babel/preset-react', {runtime: 'automatic', importSource: '@emotion/react'}],
       ],
       plugins: ['@emotion/babel-plugin'],
     })
 
-    return result ? { code: result.code, map: result.map } : null
+    return result ? {code: result.code, map: result.map} : null
   },
 })
 

@@ -1,7 +1,7 @@
 import React from 'react'
-import { screen, act } from '@testing-library/react'
-import { renderWithProviders } from '../test/render.jsx'
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import {screen, act} from '@testing-library/react'
+import {renderWithProviders} from '../test/render.jsx'
+import {describe, it, expect, beforeEach, afterEach, vi} from 'vitest'
 import LiveRunLog from './LiveRunLog.jsx'
 
 // A minimal stand-in for the browser's EventSource, so the panel's stream
@@ -29,7 +29,7 @@ class FakeEventSource {
   }
 
   emitMessage(data) {
-    act(() => this.onmessage?.({ data }))
+    act(() => this.onmessage?.({data}))
   }
 
   emitEnd() {
@@ -87,13 +87,11 @@ describe('LiveRunLog', () => {
   it('escapes names in the endpoint URL', () => {
     renderWithProviders(<LiveRunLog runId="run/../../etc" scenarioName="a scenario" isRunning />)
 
-    expect(FakeEventSource.instances[0].url).toBe(
-      '/api/v1/scenarios/a%20scenario/results/run%2F..%2F..%2Fetc/logs'
-    )
+    expect(FakeEventSource.instances[0].url).toBe('/api/v1/scenarios/a%20scenario/results/run%2F..%2F..%2Fetc/logs')
   })
 
   it('closes the stream when unmounted', () => {
-    const { unmount } = renderWithProviders(<LiveRunLog runId="run-1" scenarioName="my-scenario" isRunning />)
+    const {unmount} = renderWithProviders(<LiveRunLog runId="run-1" scenarioName="my-scenario" isRunning />)
 
     const source = FakeEventSource.instances[0]
     unmount()

@@ -1,15 +1,15 @@
-import React, { useCallback, useState } from 'react'
+import React, {useCallback, useState} from 'react'
 import PropTypes from 'prop-types'
 import styled from '@emotion/styled'
-import { useDispatch } from 'react-redux'
+import {useDispatch} from 'react-redux'
 import setWorkerPaused from '../actions/setWorkerPaused.js'
 import deleteWorker from '../actions/deleteWorker.js'
 import Button from './Button.js'
 import RagIndicator from './RagIndicator.js'
-import TextSpan, { TextDiv } from './TextSpan.js'
+import TextSpan, {TextDiv} from './TextSpan.js'
 import ObjectCapsules from './ObjectCapsules.jsx'
-import { formatRelative } from '../utils/time.js'
-import { LabelWorker } from '../utils/labels.js'
+import {formatRelative} from '../utils/time.js'
+import {LabelWorker} from '../utils/labels.js'
 
 const List = styled.div`
   display: flex;
@@ -54,7 +54,7 @@ const platformOf = (worker) => {
   return os && arch ? `${os}/${arch}` : os || arch || '—'
 }
 
-const WorkerRow = ({ worker, runnerName }) => {
+const WorkerRow = ({worker, runnerName}) => {
   const dispatch = useDispatch()
   const [busy, setBusy] = useState(false)
   const paused = isPaused(worker)
@@ -129,7 +129,7 @@ WorkerRow.propTypes = {
   runnerName: PropTypes.string.isRequired,
 }
 
-const WorkerList = ({ workers, runnerName, ...rest }) => (
+const WorkerList = ({workers, runnerName, ...rest}) => (
   <List {...rest}>
     {workers.map((worker) => (
       <WorkerRow key={worker.metadata.uid} worker={worker} runnerName={runnerName} />

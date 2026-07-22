@@ -1,23 +1,23 @@
-import { describe, it, expect } from 'vitest'
-import { fieldsFor, getAt, isScriptKind, setAt, templateFor } from './probSpec.js'
+import {describe, it, expect} from 'vitest'
+import {fieldsFor, getAt, isScriptKind, setAt, templateFor} from './probSpec.js'
 
 describe('isScriptKind', () => {
   // Decided from the content type the server reports, not from a list of names,
   // so a scripted kind added server-side is handled without a UI change.
   it.each([
-    [{ kind: 'puppeteer', contentType: 'text/javascript' }, true],
-    [{ kind: 'pypuppeteer', contentType: 'text/x-python' }, true],
-    [{ kind: 'rest', contentType: 'application/http' }, true],
-    [{ kind: 'har', contentType: 'application/json' }, true],
-    [{ kind: 'http', contentType: 'application/yaml' }, false],
-    [{ kind: 'tcp', contentType: 'text/plain' }, false],
+    [{kind: 'puppeteer', contentType: 'text/javascript'}, true],
+    [{kind: 'pypuppeteer', contentType: 'text/x-python'}, true],
+    [{kind: 'rest', contentType: 'application/http'}, true],
+    [{kind: 'har', contentType: 'application/json'}, true],
+    [{kind: 'http', contentType: 'application/yaml'}, false],
+    [{kind: 'tcp', contentType: 'text/plain'}, false],
   ])('%o -> %s', (info, expected) => {
     expect(isScriptKind(info)).toBe(expected)
   })
 
   it('treats an unknown kind as configured rather than scripted', () => {
     expect(isScriptKind(undefined)).toBe(false)
-    expect(isScriptKind({ kind: 'something-new' })).toBe(false)
+    expect(isScriptKind({kind: 'something-new'})).toBe(false)
   })
 })
 
@@ -36,17 +36,17 @@ describe('fieldsFor', () => {
 
 describe('getAt / setAt', () => {
   it('reads a nested path', () => {
-    expect(getAt({ dns: { query_name: 'example.com' } }, 'dns.query_name')).toBe('example.com')
+    expect(getAt({dns: {query_name: 'example.com'}}, 'dns.query_name')).toBe('example.com')
     expect(getAt({}, 'dns.query_name')).toBeUndefined()
     expect(getAt(undefined, 'target')).toBeUndefined()
   })
 
   it('sets a nested path, creating what it needs', () => {
-    expect(setAt({}, 'dns.query_name', 'example.com')).toEqual({ dns: { query_name: 'example.com' } })
+    expect(setAt({}, 'dns.query_name', 'example.com')).toEqual({dns: {query_name: 'example.com'}})
   })
 
   it('does not mutate the input', () => {
-    const original = { target: 'a', http: { method: 'GET' } }
+    const original = {target: 'a', http: {method: 'GET'}}
     const updated = setAt(original, 'http.method', 'POST')
 
     expect(original.http.method).toBe('GET')
@@ -56,14 +56,14 @@ describe('getAt / setAt', () => {
   // An emptied field is removed rather than stored as "", so the spec does not
   // fill up with blank keys that then need explaining in the YAML view.
   it('removes a key when the value is cleared', () => {
-    expect(setAt({ target: 'a', http: { method: 'GET' } }, 'http.method', '')).toEqual({
+    expect(setAt({target: 'a', http: {method: 'GET'}}, 'http.method', '')).toEqual({
       target: 'a',
       http: {},
     })
   })
 
   it('leaves sibling values alone', () => {
-    const updated = setAt({ target: 'a', dns: { query_name: 'x', preferred_ip_protocol: 'ip4' } }, 'dns.query_name', 'y')
+    const updated = setAt({target: 'a', dns: {query_name: 'x', preferred_ip_protocol: 'ip4'}}, 'dns.query_name', 'y')
 
     expect(updated.target).toBe('a')
     expect(updated.dns.preferred_ip_protocol).toBe('ip4')

@@ -1,8 +1,8 @@
 import React from 'react'
-import { describe, it, expect, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import {describe, it, expect, vi} from 'vitest'
+import {screen} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { renderWithProviders } from '../test/render.jsx'
+import {renderWithProviders} from '../test/render.jsx'
 import RunResult from './RunResult.jsx'
 
 const run = (overrides = {}) => ({
@@ -21,7 +21,7 @@ const run = (overrides = {}) => ({
     start_time: '2026-07-21T10:00:00+10:00',
     end_time: '2026-07-21T10:00:01.500+10:00',
   },
-  status: { status: 'completed', result: 'success', numberArtifacts: 2 },
+  status: {status: 'completed', result: 'success', numberArtifacts: 2},
   ...overrides,
 })
 
@@ -45,10 +45,7 @@ describe('RunResult row', () => {
   it('links to the run, which is reachable without its scenario', () => {
     renderWithProviders(<RunResult data={run()} />)
 
-    expect(screen.getByText('tcp-self-fondle').closest('a')).toHaveAttribute(
-      'href',
-      '/results/kbjk96thvzcuiass'
-    )
+    expect(screen.getByText('tcp-self-fondle').closest('a')).toHaveAttribute('href', '/results/kbjk96thvzcuiass')
   })
 
   // Every run carries a dozen system labels that restate what the row already
@@ -73,7 +70,7 @@ describe('RunResult row', () => {
   // A run that has been scheduled but not yet claimed has no outcome and no
   // duration; it should read as pending rather than as a zero-length failure.
   it('renders a run that has not finished', () => {
-    const pending = run({ spec: {}, status: { status: 'pending' } })
+    const pending = run({spec: {}, status: {status: 'pending'}})
 
     renderWithProviders(<RunResult data={pending} />)
 

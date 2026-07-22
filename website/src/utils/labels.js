@@ -57,8 +57,7 @@ export const DATA_CLASS_DESCRIPTIONS = {
   [DataClass.Unknown]: 'The prober made no declaration; treat as sensitive',
 }
 
-export const dataClassOf = (artifact) =>
-  artifact?.metadata?.labels?.[LabelArtifact.DataClass] || DataClass.Unknown
+export const dataClassOf = (artifact) => artifact?.metadata?.labels?.[LabelArtifact.DataClass] || DataClass.Unknown
 
 // Mirrors DataClass.MayContainSecrets on the server: anything that is not
 // explicitly clean or redacted is treated as though it carries credentials.
@@ -89,5 +88,5 @@ export const splitLabels = (labels) => {
     }
   }
 
-  return { user, system }
+  return {user, system}
 }

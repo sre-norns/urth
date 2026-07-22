@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest'
-import { formatDuration, formatPercent, formatRelative, formatTimestamp } from './time.js'
+import {describe, it, expect} from 'vitest'
+import {formatDuration, formatPercent, formatRelative, formatTimestamp} from './time.js'
 
 describe('formatDuration', () => {
   it.each([

@@ -19,29 +19,28 @@ export const isScriptKind = (kindInfo) => SCRIPT_CONTENT_TYPES.includes(kindInfo
 // that is what someone reading the YAML fallback will see.
 export const PROB_FIELDS = {
   http: [
-    { path: 'target', label: 'Target URL', placeholder: 'https://example.com/health', required: true },
-    { path: 'http.method', label: 'Method', placeholder: 'GET' },
+    {path: 'target', label: 'Target URL', placeholder: 'https://example.com/health', required: true},
+    {path: 'http.method', label: 'Method', placeholder: 'GET'},
   ],
-  tcp: [{ path: 'target', label: 'Target host:port', placeholder: 'example.com:443', required: true }],
-  icmp: [{ path: 'target', label: 'Target host', placeholder: 'example.com', required: true }],
-  grpc: [{ path: 'target', label: 'Target host:port', placeholder: 'example.com:443', required: true }],
+  tcp: [{path: 'target', label: 'Target host:port', placeholder: 'example.com:443', required: true}],
+  icmp: [{path: 'target', label: 'Target host', placeholder: 'example.com', required: true}],
+  grpc: [{path: 'target', label: 'Target host:port', placeholder: 'example.com:443', required: true}],
   dns: [
-    { path: 'target', label: 'DNS server', placeholder: '8.8.8.8', required: true },
-    { path: 'dns.query_name', label: 'Query name', placeholder: 'example.com' },
+    {path: 'target', label: 'DNS server', placeholder: '8.8.8.8', required: true},
+    {path: 'dns.query_name', label: 'Query name', placeholder: 'example.com'},
   ],
 }
 
 export const fieldsFor = (kind) => PROB_FIELDS[kind] || null
 
-export const getAt = (obj, path) =>
-  path.split('.').reduce((acc, key) => (acc == null ? undefined : acc[key]), obj)
+export const getAt = (obj, path) => path.split('.').reduce((acc, key) => (acc == null ? undefined : acc[key]), obj)
 
 // Returns a copy with the value set, creating intermediate objects as needed.
 // An emptied field is removed rather than written as "", so a spec does not
 // accumulate blank keys that then have to be explained in the YAML view.
 export const setAt = (obj, path, value) => {
   const keys = path.split('.')
-  const next = { ...(obj || {}) }
+  const next = {...(obj || {})}
   const blockedKeys = new Set(['__proto__', 'constructor', 'prototype'])
 
   if (keys.some((key) => blockedKeys.has(key))) {
@@ -50,7 +49,7 @@ export const setAt = (obj, path, value) => {
 
   let cursor = next
   for (let i = 0; i < keys.length - 1; i += 1) {
-    cursor[keys[i]] = { ...(cursor[keys[i]] || {}) }
+    cursor[keys[i]] = {...(cursor[keys[i]] || {})}
     cursor = cursor[keys[i]]
   }
 
@@ -69,7 +68,7 @@ export const setAt = (obj, path, value) => {
 export const templateFor = (kind) => {
   switch (kind) {
     case 'http':
-      return { target: '', http: { method: 'GET', IPProtocolFallback: true } }
+      return {target: '', http: {method: 'GET', IPProtocolFallback: true}}
     // The IPProtocolFallback below is a stopgap, and deliberately spelled with
     // Go field names because that is what goes over the wire.
     //
@@ -82,18 +81,18 @@ export const templateFor = (kind) => {
     case 'tcp':
     case 'icmp':
     case 'grpc':
-      return { target: '', [kind]: { IPProtocolFallback: true } }
+      return {target: '', [kind]: {IPProtocolFallback: true}}
     case 'dns':
       return {
         target: '',
-        dns: { query_name: '', preferred_ip_protocol: 'ip4', IPProtocolFallback: true },
+        dns: {query_name: '', preferred_ip_protocol: 'ip4', IPProtocolFallback: true},
       }
     case 'rest':
-      return { script: 'GET https://example.com/health\n' }
+      return {script: 'GET https://example.com/health\n'}
     case 'puppeteer':
-      return { script: "// await page.goto('https://example.com')\n" }
+      return {script: "// await page.goto('https://example.com')\n"}
     case 'pypuppeteer':
-      return { script: "# await page.goto('https://example.com')\n" }
+      return {script: "# await page.goto('https://example.com')\n"}
     default:
       return {}
   }
