@@ -69,11 +69,10 @@ looks deceptively like passing.
 - No authentication on non-GET requests. Anyone who can reach the API can
   disable a runner or drop a worker. Fine for local development, not for the
   "enterprise friendly" claim.
-- `examples/README.md` references `run.scenario.json` which does not exist.
 - The UI polls; there is no live update. A run triggered from the UI only
-  appears after a refetch. Expected to be solved by the same Postgres
-  notification channel as the scheduler -- do not build a bespoke polling or
-  websocket layer for it in the meantime.
+  appears after a refetch. Per ADR 0004, resource changes belong on the durable
+  `URTH_EVENTS` JetStream stream used by the scheduler and projections -- do not
+  build a separate notification transport for the UI in the meantime.
 
 ---
 
@@ -103,16 +102,12 @@ looks deceptively like passing.
 - Regexp to match response body for TCP request
 - Response code for HTTP request
 [x] Validate labels names!
-[~] Labels returned by a worker for a job-results / artifacts must be immutable
-   (system labels are merged last, so a worker cannot relabel its own upload as clean;
-    worker-supplied labels are still stored as given)
 [X] Add API to find workers give a set of labels and requirements - to enable better UX where user can see how many probers will qualify for a given set of labels. (NOTE: This is a statdards label-besed search API)
 [X] A run results object with an update time-limited JWT token must be created when a job is scheduled. Worker can only update, within a time alloted, an already `pending` run.
 [x] Restore labels API: Extract labels from JSON field
 [x] Create API must return metadata for a newly created object as `names` may be generated.
 [X] For `Create` API set `Location` header to point to a newly created resource as per rest best practice
 [] All non-GET request should require authentication!
-[] API to create artifacts must only accept valid auth-tokens from workers that authorized to run a scenario
 [] Artifacts should expire and be removed in accordance with retention policy, unless `pinned`
 
 
@@ -189,8 +184,7 @@ looks deceptively like passing.
    labelled `urth/artifact.data-class: secret-bearing`.
 [] Retention and access control should act on `urth/artifact.data-class`: secret-bearing
    artifacts want a shorter default expiry and restricted download.
-[] `examples/README.md` references `run.scenario.json` and `worker.yml`, neither of which
-   exist.
+[] `examples/README.md` references `run.scenario.json`, which does not exist.
 [] SQLite backend is broken: AutoMigrate fails with `index idx_name already exists`.
    `wyrd`'s `manifest.ResourceMeta.Name` carries a hardcoded `gorm:"index:idx_name"`, and
    every model embeds it; index names are schema-global in SQLite so the second
@@ -207,42 +201,20 @@ looks deceptively like passing.
 [] Move `script` out of `CreateScenario` => `Scenario`
 [] Use proper types for Script marshaling
 [] runner/log.go must implement `go/logger` interface!
-[~] Serialize `job` into msgpack! -- largely moot for the NATS path: the dispatch envelope
-   is a handful of identifiers in JSON, chosen so a stuck queue can be read with
-   `nats stream view`. Still applies to the asynq `urth.Job`, which carries the whole
-   prob spec in YAML.
-
 ## NATS migration (ADR 0004)
 
 `cmd/nats-worker`, `pkg/natsq`, per-runner JetStream consumers, worker sessions, the
-authenticated claim, and live run logs have landed. What is deliberately not done:
+authenticated claim, and live run logs have landed as a development slice.
 
-[] **Transactional outbox and relay.** The API server currently commits a Result and then
-   publishes to JetStream in two steps. A crash between them leaves a pending Result with
-   no queue message. ADR 0004 section 2 requires the outbox; this is the largest remaining
-   gap and should come before NATS is called production-ready.
-[] **Reconciler.** Detect unpublished outbox rows, pending Results with no live message,
-   running Results whose lease expired, and terminal Results with stale messages. The
-   `Deadline` field on `ResultStatus` exists to make the third of these possible.
-[] **Urth-issued NATS credentials.** Registration returns a `NATSConnectionInfo` whose
-   credential type is `none` or `creds`. The wire contract is settled, so Auth Callout or
-   minted NKey/JWT slots in behind it -- but until then subject permissions are whatever
-   the operator configured on the NATS server, and the per-runner isolation is enforced by
-   consumer binding rather than by NATS authorization.
-[] **Runner blocklist** (ADR 0003). Checked at neither registration nor claim yet.
-[] **Dead-letter workflow.** Messages that exhaust `MaxDeliver` are terminated and logged;
-   nothing surfaces them to an operator or reflects them on the Result.
-[] **Better placement.** `placeRun` picks the first matching active runner by UID.
-   Least-loaded placement needs per-runner queue depth, which belongs with the scheduler.
-[] **Drain and remove asynq.** `cmd/asynq-runner`, `pkg/redqueue`, and the legacy
-   unauthenticated claim route at `POST /auth//scenarios/:id/:runId` all still exist. The
-   legacy route trusts identity from the request body and should not outlive the migration.
-[] **Retire `urth.Job`** once nothing publishes it, along with `RunScenarioTopicName`.
+The detailed NATS review and migration work is tracked in
+[`docs/review-backlog/`](docs/review-backlog/README.md). Those task files are the source of
+truth for outbox/reconciliation, claim outcomes, NATS credentials, enrollment and run
+capabilities, immutable execution snapshots, Runner policy and blocklists, JetStream ACKs,
+failure testing, dead letters, capacity/observability, placement, and eventual Asynq
+retirement. Do not duplicate those items as flat bullets here.
 
 [] Ensure DB constraints: Each Scenario ->* Result -> * Artifacts
 [] Use staw / S3 for artifacts storage!
-[] Separate `Runner` -> `Worker (Slot)` + `Worker Instance` object
 [] Ensure that `Worker Instance` login session expires.
-[] All tokens must be treated as passwords: stored securely salted and hashed
 [] OTel instrument server and worker
 [] HAR prob should produce HAR files as output.

@@ -74,15 +74,8 @@ links.
 
 ## What is not done yet
 
-- **No transactional outbox.** The API server publishes to JetStream directly
-  after committing the Result. A crash between the two leaves a pending Result
-  with no queue message and nothing to detect it. ADR 0004 §2 requires an outbox
-  and reconciler; that is separate work.
-- **NATS credentials are not issued by Urth.** Registration returns a
-  `NATSConnectionInfo` with a credential type of `none` or `creds`. The wire
-  contract is final, so Auth Callout or minted NKey/JWT credentials slot in
-  behind it without the worker changing — but today subject-level permissions
-  are whatever the operator configured on the NATS server.
-- **Placement picks the first matching runner** by UID. Least-loaded placement
-  needs queue depth per runner, which belongs to the scheduler service that does
-  not exist yet.
+The remaining production work is tracked in the
+[NATS Runner review backlog](../../docs/review-backlog/README.md). It covers
+outbox and reconciliation, scoped NATS credentials, authentication and Runner
+policy, acknowledgement and failure tests, dead letters, placement, and Asynq
+retirement. The task files are the source of truth for scope and ordering.

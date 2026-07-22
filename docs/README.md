@@ -15,3 +15,10 @@ changes, add a new ADR that supersedes the old one instead of rewriting the old 
 | [0002](./adr/0002-worker-authentication.md) | Accepted | Authenticate workers through Runner enrollment, Worker sessions, and Result-scoped run capabilities. |
 | [0003](./adr/0003-runner-worker-model.md) | Accepted | Schedule jobs to logical Runner channels and execute them on physical Worker processes. |
 | [0004](./adr/0004-nats-communication-backbone.md) | Accepted | Use NATS and JetStream for durable Runner jobs, resource events, and internal communication without making messaging the source of truth. |
+
+## Implementation review backlog
+
+[`review-backlog/`](./review-backlog/README.md) turns the NATS Worker implementation
+review into agent-ready tasks. It records dependencies, likely file conflicts, evidence,
+required outcomes, tests, and completion records. Use it instead of adding duplicate flat
+NATS migration bullets to `TODO.md`.

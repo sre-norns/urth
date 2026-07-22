@@ -191,7 +191,8 @@ when they satisfy the channel's Worker requirements. See
 | Component | Path | Role |
 |---|---|---|
 | **api-server** | [`cmd/api-server`](./cmd/api-server/README.md) | REST API for all resources; hands out jobs. Run several replicas in production. |
-| **asynq-runner** | [`cmd/asynq-runner`](./cmd/asynq-runner/README.md) | Worker. Claims jobs for one Runner, executes probes, uploads results and artifacts. The name reflects the current prototype transport. |
+| **nats-worker** | [`cmd/nats-worker`](./cmd/nats-worker/README.md) | Target Worker implementation. Shares its Runner's durable JetStream consumer, authenticates claims, executes probes, and uploads Results and Artifacts. |
+| **asynq-runner** | [`cmd/asynq-runner`](./cmd/asynq-runner/README.md) | Legacy Redis/Asynq Worker retained temporarily during migration. |
 | **urthctl** | [`cmd/urthctl`](./cmd/urthctl/README.md) | CLI. Apply manifests, inspect resources, run scenarios locally. |
 | **Web UI** | [`website`](./website) | React front end. |
 
@@ -201,8 +202,9 @@ are recorded in [the architecture decision records](./docs/README.md).
 **Dependencies**
 
 - **Database** — a Postgres-compatible database, for development as well as production.
-- **Job transport** — NATS with JetStream is the accepted target. The current prototype
-  still uses Redis via [asynq](https://github.com/hibiken/asynq).
+- **Job transport** — NATS with JetStream is the accepted target and has a development
+  implementation. Redis via [asynq](https://github.com/hibiken/asynq) remains as the
+  legacy path during migration.
 
 > **Project status.** Urth is under active development and not yet at a stable release.
 > Four things are worth knowing before you start:
@@ -213,18 +215,21 @@ are recorded in [the architecture decision records](./docs/README.md).
 > - **There is no scheduling loop yet.** Scenario `schedule` fields are stored and
 >   validated, but runs must currently be triggered manually via the API, UI, or
 >   `urthctl`.
-> - **Runner-level queues are not implemented yet.** The prototype currently sends jobs
->   through one shared Asynq queue. Per-Runner scheduling and admission are specified in
->   [ADR 0003](./docs/adr/0003-runner-worker-model.md); migration to NATS and JetStream is
->   specified in [ADR 0004](./docs/adr/0004-nats-communication-backbone.md).
-> - **Authentication is not production-ready.** Runner enrollment issuance and job
->   claims still have unauthenticated paths, and the server currently uses development
->   signing secrets. Run Urth only in a trusted development environment until the gaps
->   in [ADR 0002](./docs/adr/0002-worker-authentication.md) are closed.
+> - **Runner-level NATS queues are a development implementation.** The topology and
+>   authenticated claim exist, but the transactional outbox, reconciliation, scoped NATS
+>   credentials, complete Runner policy, and failure workflows are not finished. Track
+>   the ordered work in the [NATS review backlog](./docs/review-backlog/README.md).
+> - **Authentication is not production-ready.** Enrollment issuance still has an
+>   unauthenticated route, NATS authority is not derived from Worker identity, run
+>   capabilities need stronger claims, and the insecure legacy Asynq claim remains during
+>   migration. Run Urth only in a trusted development environment until the P0 backlog is
+>   closed.
 >
 > See [TODO.md](./TODO.md) for the full backlog.
 
 ### Worker authentication model
+
+The intended model is:
 
 1. An operator creates a **Runner** resource. Its creation mints the initial Runner
    enrollment credential.
@@ -233,8 +238,8 @@ are recorded in [the architecture decision records](./docs/README.md).
    session.
 3. The WorkerInstance joins that Runner's logical queue and waits.
 4. Before executing a job, it authenticates the claim with its Worker session. The API
-   checks current Runner and Worker state, the Runner blocklist and Worker requirements,
-   and atomically assigns the pending Result.
+   checks current Runner and Worker state, blocklist, channel policy, and concrete stored
+   Worker capabilities, then atomically assigns the pending Result.
 5. The API issues a short-lived capability token scoped to that Result. The worker uses
    it only to post the Result's status and Artifacts.
 
@@ -243,6 +248,11 @@ to request job claims; a run capability grants permission to report one executio
 server controls each lifetime, with the run token bounded by the Scenario's maximum
 duration plus a small upload margin. [ADR 0002](./docs/adr/0002-worker-authentication.md)
 records the trust model, revocation semantics, and known implementation gaps.
+
+The development implementation has the staged Worker session and atomic claim, but the
+blocklist, full channel policy, enrollment boundary, and scoped NATS authority remain in
+the [review backlog](./docs/review-backlog/README.md). This description is the target
+contract, not a claim that every check is already enforced.
 
 The channel and executor relationship is defined by
 [ADR 0003](./docs/adr/0003-runner-worker-model.md).
