@@ -62,6 +62,9 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 	// FIXME: Worker must use its credentials jwt
 	// Authorize this worker to pick up this job:
 	log.Print("requesting authorization to execute jobID: ", job.ResultName)
+	// This is the asynq prototype worker the deprecated Auth is retained for; the
+	// NATS runner uses the session-backed ClaimRun instead.
+	//lint:ignore SA1019 deliberate: this is the prototype worker the deprecated Auth is retained for.
 	runAuth, err := resultsAPIClient.Auth(ctx,
 		job.ResultName,
 		urth.AuthJobRequest{
@@ -210,7 +213,11 @@ func main() {
 	regoCtx, cancel := context.WithTimeout(context.Background(), appConfig.APIRegistrationTimeout)
 	defer cancel()
 
-	// Request Auth to join the workers queue
+	// Request Auth to join the workers queue.
+	// This is the asynq prototype worker the deprecated Auth is retained for; it
+	// finds its identity in the returned runner manifest. AuthWorker is the
+	// session-backed replacement used by the NATS runner.
+	//lint:ignore SA1019 deliberate: this is the prototype worker the deprecated Auth is retained for.
 	identity, err := apiClient.Runners().Auth(regoCtx,
 		appConfig.Token,
 		urth.WorkerInstance{
