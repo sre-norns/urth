@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"sync/atomic"
+	"time"
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
@@ -19,6 +19,15 @@ import (
 // that has not been placed. This is a scheduling bug rather than a transport
 // failure, and is worth a distinct error so it reads as one.
 var ErrNoRunner = fmt.Errorf("result has no runner assigned")
+
+// Transport is everything the API server needs from the NATS backbone: it
+// publishes relayed dispatches, tells a registering worker where to collect
+// work, and still satisfies the legacy Scheduler the composition takes.
+type Transport interface {
+	urth.Scheduler
+	urth.DispatchPublisher
+	urth.WorkerTransportProvider
+}
 
 type scheduler struct {
 	conn *nats.Conn
@@ -34,7 +43,7 @@ type scheduler struct {
 // Stream provisioning happens here, at startup, rather than lazily on first
 // dispatch: a misconfigured JetStream should stop an API server from coming up,
 // not surface later as the first scenario run of the day failing.
-func NewScheduler(ctx context.Context, cfg Config) (urth.Scheduler, error) {
+func NewScheduler(ctx context.Context, cfg Config) (Transport, error) {
 	conn, err := cfg.Connect("urth-api-server")
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to NATS: %w", err)
@@ -67,53 +76,32 @@ func (s *scheduler) Close() error {
 
 // Schedule publishes a dispatch envelope for a pending Result.
 //
-// The Result must already carry the runner it was placed on: placement is a
-// scheduling decision, and this function only routes.
+// It exists to satisfy urth.Scheduler, which the API server composition still
+// takes. The durable path no longer runs through here: a Result commits its
+// outbox entry in its own transaction and the relay calls PublishDispatch. This
+// method is the same publication expressed against a Result the caller already
+// holds, and is kept so that a direct dispatch -- a test, an operator tool --
+// produces exactly the message the relay would.
 func (s *scheduler) Schedule(ctx context.Context, result urth.Result, scenario urth.Scenario) (urth.RunID, error) {
-	runnerUID := result.Status.Executor.RunnerID
-	if runnerUID == "" {
-		atomic.AddUint64(&s.totalErrors, 1)
-		return urth.InvalidRunID, fmt.Errorf("can't schedule job for %q: %w", result.Name, ErrNoRunner)
+	entry := urth.NewDispatchOutboxEntry(result, time.Now())
+	entry.ScenarioName = scenario.Name
+
+	if err := s.PublishDispatch(ctx, entry); err != nil {
+		return urth.InvalidRunID, fmt.Errorf("can't schedule job for %q: %w", result.Name, err)
 	}
 
-	// The dispatch ID is derived from the Result's identity and version rather
-	// than randomly generated. That makes a republication of the same Result
-	// state produce the same ID, so JetStream's duplicate window collapses it
-	// and a worker retrying a claim presents a key the API already knows.
-	dispatchID := DispatchIDFor(result.UID, result.Version)
+	log.Printf("dispatched %q to runner %q as %v", result.Name, entry.RunnerUID, entry.EventUID)
 
-	envelope := DispatchEnvelope{
-		SchemaVersion: DispatchEnvelopeVersion,
-		ResultUID:     result.UID,
-		ResultVersion: result.Version,
-		ScenarioName:  scenario.Name,
-		RunnerUID:     runnerUID,
-		DispatchID:    dispatchID,
-	}
-
-	data, err := MarshalEnvelope(envelope)
-	if err != nil {
-		atomic.AddUint64(&s.totalErrors, 1)
-		return urth.InvalidRunID, fmt.Errorf("failed to encode dispatch for %q: %w", result.Name, err)
-	}
-
-	// Publish synchronously and wait for the storage acknowledgement. Returning
-	// before JetStream has persisted the message would let the caller mark the
-	// Result scheduled when it may never be delivered.
-	if _, err = s.js.Publish(ctx, JobSubject(runnerUID), data, jetstream.WithMsgID(dispatchID)); err != nil {
-		atomic.AddUint64(&s.totalErrors, 1)
-		return urth.InvalidRunID, fmt.Errorf("failed to publish dispatch for %q: %w", result.Name, err)
-	}
-
-	atomic.AddUint64(&s.totalScheduled, 1)
-	log.Printf("dispatched %q to runner %q as %v", result.Name, runnerUID, dispatchID)
-
-	return urth.RunID(dispatchID), nil
+	return urth.RunID(entry.EventUID), nil
 }
 
 // DispatchIDFor derives the stable dispatch identifier for a Result version.
+//
+// Deprecated: the identifier is now minted once, when the outbox entry is
+// written, and carried on the entry. Use urth.DispatchEventUID to derive it and
+// urth.DispatchOutboxEntry.EventUID to read the one actually in use.
 func DispatchIDFor(uid manifest.ResourceID, version manifest.Version) string {
-	return fmt.Sprintf("%v.%v", uid, version)
+	return urth.DispatchEventUID(uid, version)
 }
 
 // ConnectionInfoFor implements urth.WorkerTransportProvider.

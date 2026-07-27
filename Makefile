@@ -117,6 +117,16 @@ audit: verify staticcheck test # scan-vuln
 test:
 	@go test -race -buildvcs ./...
 
+# The dispatch outbox's guarantees -- Result/dispatch atomicity and relay row
+# leasing -- are Postgres guarantees, so those tests skip themselves unless
+# URTH_TEST_POSTGRES_URL is set. It is not set by default because the rest of the
+# suite is deliberately runnable with no containers; CI supplies it as a service.
+# Run `make run-postgres-podman` first.
+## test/postgres: run all tests including the Postgres-backed outbox tests
+.PHONY: test/postgres
+test/postgres:
+	@URTH_TEST_POSTGRES_URL="$(store-url)" go test -race -buildvcs ./...
+
 ## test/verbose: run all tests with per-test output
 .PHONY: test/verbose
 test/verbose:

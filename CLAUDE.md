@@ -118,6 +118,29 @@ time column.
 rather than plugin-react, because `@emotion/babel-plugin` must run or emotion's
 component selectors throw at render time.
 
+**Creating a run no longer publishes anything.** `resultsAPIImpl.Create` commits
+the `Result` and a `dispatch_outbox` row in one `dbstore` transaction; a relay
+(in-process in every api-server by default) publishes committed rows. Two
+consequences to keep: a publication failure must leave the Result `pending` —
+the old code rewrote it as `errored`, which claimed an execution that never
+happened — and the event UID is minted once at enqueue and reused on every
+retry, because it is the `Nats-Msg-Id` that suppresses the duplicate. See
+`cmd/api-server/README.md`.
+
+**`file::memory:` gives every pooled connection its own SQLite database.** A row
+written on one connection and read on another silently is not there, which reads
+exactly like the store failing to persist. Use
+`file:<unique-name>?mode=memory&cache=shared`. Relatedly, the outbox table
+deliberately carries no `type:TIMESTAMPTZ` tags: gorm's Postgres driver already
+maps `time.Time` to `timestamptz`, and naming the type forces it on SQLite too,
+where the driver cannot scan it. Verified against a live Postgres — do not
+"fix" it by adding the tags back.
+
+**Some tests need a real Postgres.** Result/dispatch atomicity and relay row
+leasing (`FOR UPDATE SKIP LOCKED`) are Postgres properties, so those tests skip
+themselves unless `URTH_TEST_POSTGRES_URL` is set. `make test/postgres` sets it;
+CI supplies it as a service. A green `make test` has not run them.
+
 **Go naming is enforced.** staticcheck runs with `-checks=all` and the codebase
 was renamed to Go initialism convention (`API`, `ID`, `URL`, `HTTP`). Match it.
 

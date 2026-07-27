@@ -179,9 +179,12 @@ so a worker cannot relabel its upload as clean.
 Workers only ever make **outbound** connections, so a network segment can be probed
 without granting inbound access to it.
 
-The scheduler binds each pending Result to a Runner, not to a process. The job waits in
-that Runner's logical queue until one of its authenticated WorkerInstances claims it or
-the job expires. Different Worker versions and configurations can share a Runner only
+The scheduler binds each pending Result to a Runner, not to a process. The Result and its
+dispatch commit in one Postgres transaction, and a relay carries the committed dispatch to
+the queue — so a broker outage delays a run rather than losing it. See
+[the API server's notes on the dispatch outbox](./cmd/api-server/README.md#the-dispatch-outbox).
+The job then waits in that Runner's logical queue until one of its authenticated
+WorkerInstances claims it or the job expires. Different Worker versions and configurations can share a Runner only
 when they satisfy the channel's Worker requirements. See
 [ADR 0003](./docs/adr/0003-runner-worker-model.md) for the full model and
 [ADR 0004](./docs/adr/0004-nats-communication-backbone.md) for the NATS transport.
@@ -215,10 +218,11 @@ are recorded in [the architecture decision records](./docs/README.md).
 > - **There is no scheduling loop yet.** Scenario `schedule` fields are stored and
 >   validated, but runs must currently be triggered manually via the API, UI, or
 >   `urthctl`.
-> - **Runner-level NATS queues are a development implementation.** The topology and
->   authenticated claim exist, but the transactional outbox, reconciliation, scoped NATS
->   credentials, complete Runner policy, and failure workflows are not finished. Track
->   the ordered work in the [NATS review backlog](./docs/review-backlog/README.md).
+> - **Runner-level NATS queues are a development implementation.** The topology, the
+>   authenticated claim, and the transactional dispatch outbox exist, but reconciliation,
+>   scoped NATS credentials, complete Runner policy, and failure workflows are not
+>   finished. Track the ordered work in the
+>   [NATS review backlog](./docs/review-backlog/README.md).
 > - **Authentication is not production-ready.** Enrollment issuance still has an
 >   unauthenticated route, NATS authority is not derived from Worker identity, run
 >   capabilities need stronger claims, and the insecure legacy Asynq claim remains during

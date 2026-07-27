@@ -84,6 +84,17 @@ type Config struct {
 	// rejecting publications for every other runner.
 	MaxJobsPerRunner int64 `help:"Maximum queued jobs per runner before publication is rejected" default:"1024"`
 
+	// DuplicateWindow is how long JetStream remembers a published message ID.
+	//
+	// The outbox relay publishes at least once: it can die between the broker
+	// accepting a message and the outbox row being marked published, and will
+	// then republish the same event UID. Suppressing that duplicate is what this
+	// window does, so it must comfortably exceed how long a relay can be down
+	// and still retry -- otherwise the retry lands as a second job and a
+	// scenario runs twice. The default is generous for that reason; it costs
+	// only the memory to remember recent IDs.
+	DuplicateWindow time.Duration `help:"How long JetStream suppresses a republished dispatch with the same message ID" default:"30m"`
+
 	// MaxJobAge is an upper bound on how long a job may sit unclaimed. It should
 	// track the point past which running a scenario is no longer useful; the
 	// reconciler is responsible for marking Results whose messages aged out.

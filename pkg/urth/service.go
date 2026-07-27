@@ -457,23 +457,6 @@ type resultsAPIImpl struct {
 	maxRunDuration time.Duration
 }
 
-func (m *resultsAPIImpl) scheduleRun(ctx context.Context, runResult Result) (RunID, error) {
-	if m.scheduler == nil || m.workersAPI == nil {
-		return InvalidRunID, nil
-	}
-
-	if runResult.Spec.Scenario.Name == "" {
-		return InvalidRunID, fmt.Errorf("internal scheduling error: results.scenario has no name")
-	}
-
-	// Check if scenario is enabled!
-	if !runResult.Spec.Scenario.Spec.IsActive {
-		return InvalidRunID, nil
-	}
-
-	return m.scheduler.Schedule(ctx, runResult, runResult.Spec.Scenario)
-}
-
 // placeRun selects the runner a run should be dispatched to.
 //
 // Placement is where a scenario's requirements finally mean something. The
@@ -636,24 +619,53 @@ func (m *resultsAPIImpl) Create(ctx context.Context, newEntry manifest.ResourceM
 	}
 
 	// TODO: Validate that request is from an authentic worker that is allowed to take jobs!
-	if err := m.store.Create(ctx, &entry); err != nil {
+	//
+	// The Result and its dispatch commit together or not at all. Creating the
+	// Result and then publishing to the broker is a dual write: a crash between
+	// the two leaves authoritative state saying a run is pending with nothing
+	// queued to wake a worker, and no amount of broker-side deduplication can
+	// publish a database change the broker never heard about.
+	if err := m.createWithDispatch(ctx, &entry); err != nil {
 		return Result{}, err
 	}
 
-	// FIXME: Its scheduler responsibility to react to a newly created run-request and schedule it.
-	// Thus it should be removed from here once we have the scheduler as a stand-alone service.
-	if _, err = m.scheduleRun(ctx, entry); err != nil {
-		// Well, scheduling failed. Might as well cancel it:
-		entry.Status.Status = JobErrored
-		// TODO: Update metrics!
-		if _, uerr := m.store.Update(ctx, &entry, entry.UID, dbstore.WithVersion(entry.Version)); uerr != nil {
-			log.Print("embarrassing error: failed to update run DB entry after failure to schedule it: ", uerr)
+	return entry, nil
+}
+
+// createWithDispatch commits a new Result and, when it should be dispatched, its
+// outbox entry in one transaction.
+func (m *resultsAPIImpl) createWithDispatch(ctx context.Context, entry *Result) error {
+	tx, err := m.store.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to open transaction to create a run: %w", err)
+	}
+	// Rollback after a successful Commit is a documented no-op in wyrd's store,
+	// so this covers every early return without a flag to track.
+	defer tx.Rollback()
+
+	if err := tx.Create(entry); err != nil {
+		return err
+	}
+
+	// Built after the insert: the entry's identity is the Result's UID and
+	// version, and gorm only assigns those on create.
+	if m.shouldDispatch(*entry) {
+		outboxEntry := NewDispatchOutboxEntry(*entry, time.Now())
+		if err := tx.Create(&outboxEntry); err != nil {
+			return fmt.Errorf("failed to enqueue dispatch for %q: %w", entry.Name, err)
 		}
-		// Note: we do want to return original error, to know why we failed to schedule in a first place
-		return Result{}, err
 	}
 
-	return entry, err
+	return tx.Commit()
+}
+
+// shouldDispatch reports whether a newly created Result asks for execution.
+//
+// A run of an inactive scenario is recorded but never dispatched, and a service
+// assembled without a scheduler -- as several tests are -- has nothing to relay
+// entries to, so writing them would only accumulate rows nobody drains.
+func (m *resultsAPIImpl) shouldDispatch(entry Result) bool {
+	return m.scheduler != nil && entry.Spec.Scenario.Name != "" && entry.Spec.Scenario.Spec.IsActive
 }
 
 // executorRef builds the record of who is executing a run, from the worker that

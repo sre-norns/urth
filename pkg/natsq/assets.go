@@ -35,6 +35,10 @@ func EnsureJobStream(ctx context.Context, js jetstream.JetStream, cfg Config) (j
 		MaxMsgsPerSubject:    cfg.MaxJobsPerRunner,
 
 		MaxAge: cfg.MaxJobAge,
+
+		// The outbox relay's duplicate suppression lives here. See
+		// Config.DuplicateWindow.
+		Duplicates: cfg.DuplicateWindow,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to provision stream %q: %w", JobsStreamName, err)
