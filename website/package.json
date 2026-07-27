@@ -34,7 +34,7 @@
   },
   "devDependencies": {
     "@babel/core": "^7.22.20",
-    "@babel/preset-env": "^7.22.20",
+    "@babel/preset-env": "^8.0.2",
     "@babel/preset-react": "^7.22.15",
     "@emotion/babel-plugin": "^11.11.0",
     "@pmmmwh/react-refresh-webpack-plugin": "^0.6.2",
