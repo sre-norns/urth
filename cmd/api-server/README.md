@@ -53,7 +53,12 @@ Consequences worth knowing:
 
 ### Operating
 
-The backlog is a table, so it can be inspected directly:
+Hand-written SQL is the current answer and a temporary one:
+[task 016](../../docs/review-backlog/tasks/016-runner-queue-operator-visibility.md)
+puts each Runner's queue stages in the Web UI and `urthctl`, so an operator does
+not need database access to find out why a Runner stopped running probes.
+
+Until then, the backlog is a table and can be inspected directly:
 
 ```sql
 -- Anything not yet published, oldest first.

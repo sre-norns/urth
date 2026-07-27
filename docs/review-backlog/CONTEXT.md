@@ -119,10 +119,25 @@ silently weaken them.
 - `pkg/runner/`: probe execution and Worker capability/label production.
 - `pkg/redqueue/` and `cmd/asynq-runner/`: migration-only legacy transport.
 - `website/`: resource UI and live run-log client.
+- `cmd/urthctl/`: kubectl-shaped CLI over every resource, and a co-equal operator
+  surface with the Web UI rather than a convenience wrapper.
 
 Keep dependencies pointing from composition toward domain interfaces and concrete
 adapters. `pkg/urth` must not import `pkg/natsq`; transport-specific implementations
 implement interfaces owned by the domain package.
+
+### Operator surfaces
+
+The Web UI and `urthctl` are both first-class. Anything an operator can see or do
+in one, they can see or do in the other — the deliberate exception being resource
+*authoring*, which the CLI leaves to manifest files and a text editor rather than
+reproducing a form.
+
+This has a consequence for how tasks are scoped: a task that adds operator-visible
+state is not finished when the API can return it. Diagnosing a stuck Runner is
+work an operator does at whichever surface they are already in, and a capability
+that exists in only one of them sends them to the database instead. Tasks adding
+such state should say so explicitly in their Required Outcome.
 
 ## Agent Workflow
 

@@ -179,5 +179,9 @@ git diff --check
   - Stats are exposed through `DispatchOutbox.Stats` and SQL, not a `/metrics`
     endpoint — the API server has no Prometheus registry yet. Worth adding with
     [task 013](013-bound-and-observe-jetstream.md), which owns broker observability.
+  - Reading the backlog currently means having database access.
+    [Task 016](016-runner-queue-operator-visibility.md) was raised to put the
+    outbox alongside the other queue stages in the Web UI and `urthctl`, per the
+    operator-surface rule in `CONTEXT.md`.
   - `natsq.DispatchIDFor` is deprecated in favour of `urth.DispatchEventUID` and
     should go when task 015 removes the legacy paths that still call it.

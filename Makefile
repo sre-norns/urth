@@ -107,6 +107,15 @@ scan-vuln:
 .PHONY: audit
 audit: verify staticcheck test # scan-vuln
 
+# What CI runs. The only difference from `audit` is that the tests requiring a
+# real database actually run instead of skipping themselves -- see test/postgres.
+# It is a separate target rather than a flag on `audit` so that the command CI
+# runs is a command a developer can run verbatim, and so `make audit` stays
+# usable with no containers.
+## audit/postgres: run quality control checks including the Postgres-backed tests
+.PHONY: audit/postgres
+audit/postgres: verify staticcheck test/postgres
+
 
 # ==================================================================================== #
 # DEVELOPMENT
@@ -120,7 +129,11 @@ test:
 # The dispatch outbox's guarantees -- Result/dispatch atomicity and relay row
 # leasing -- are Postgres guarantees, so those tests skip themselves unless
 # URTH_TEST_POSTGRES_URL is set. It is not set by default because the rest of the
-# suite is deliberately runnable with no containers; CI supplies it as a service.
+# suite is deliberately runnable with no containers; CI supplies it as a service
+# and runs this target through `audit/postgres`.
+#
+# A URL that is set but unreachable fails rather than skips, so a CI database
+# that quietly went missing shows up as a failure and not as a green run.
 # Run `make run-postgres-podman` first.
 ## test/postgres: run all tests including the Postgres-backed outbox tests
 .PHONY: test/postgres
