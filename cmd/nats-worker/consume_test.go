@@ -135,10 +135,12 @@ func apiError(code int) error {
 // embedded interfaces satisfy the rest of the surface.
 type stubService struct {
 	urth.Service
-	results urth.RunResultAPI
+	results   urth.RunResultAPI
+	artifacts urth.ArtifactAPI
 }
 
 func (s stubService) Results(manifest.ResourceName) urth.RunResultAPI { return s.results }
+func (s stubService) Artifacts() urth.ArtifactAPI                     { return s.artifacts }
 
 type stubResults struct {
 	urth.RunResultAPI
