@@ -45,6 +45,7 @@ Status values:
 | 013 | P1 | ready | [Bound and observe JetStream assets](tasks/013-bound-and-observe-jetstream.md) | — | 004, 012 |
 | 014 | P2 | ready | [Make Runner placement capacity-aware](tasks/014-capacity-aware-runner-placement.md) | — | 008 |
 | 015 | P1 | blocked | [Drain Asynq and retire the legacy job model](tasks/015-retire-asynq-transport.md) | 001–013 | all runtime tasks |
+| 016 | P1 | blocked | [Surface Runner queue state to operators](tasks/016-runner-queue-operator-visibility.md) | 012, 013 | 012, 013, 014 |
 
 Priority meanings:
 
@@ -73,6 +74,9 @@ Runner contract: 007 ─┐
                  009 ─┘
                  014 (independent placement improvement)
 
+Operability:     012 ─┐
+                 013 ─┴─→ 016 (per-Runner queue view in UI and CLI)
+
 Migration:       safety tasks + operational tasks → 015
 ```
 
@@ -85,14 +89,20 @@ should coordinate file ownership or serialize merges.
 Every task must satisfy its own Definition of Done and normally finish with:
 
 ```sh
-go test -race -count=1 ./...
-go vet ./...
+make audit/postgres     # vet + staticcheck + race tests, incl. the DB-backed ones
 git diff --check
 ```
 
+`make audit/postgres` is what CI runs, and it needs a Postgres —
+`make run-postgres-podman`. Plain `go test ./...` and `make audit` silently skip
+every test that needs a real transaction or real row locking, so they are not
+sufficient evidence for a task in the Durability workstream.
+
 Tasks changing Web UI behavior also run `(cd website && npm test)`. Tasks changing
 NATS or distributed lifecycle behavior must include focused integration tests that
-exercise the named failure, not only unit tests of the success path.
+exercise the named failure, not only unit tests of the success path. Tasks adding
+operator-visible state must land it on both operator surfaces — see
+[`CONTEXT.md`](CONTEXT.md#operator-surfaces).
 
 ## Backlog Maintenance
 

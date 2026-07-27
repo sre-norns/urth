@@ -66,7 +66,9 @@ curl -X POST 'http://localhost:8080/api/v1/scenarios/tcp-self-fondle/results' \
 This project has repeatedly hidden bugs that pass unit tests. The habits that
 caught them:
 
-- `make audit` (vet + staticcheck + race tests) must exit 0. It is what CI runs.
+- `make audit` (vet + staticcheck + race tests) must exit 0. CI runs
+  `make audit/postgres`, which is the same plus the tests that need a real
+  database — see the Postgres note below. Run that one before pushing.
 - `cd website && npm test` — vitest, currently ~119 tests.
 - **Run it.** Several of the worst bugs this session — timestamps ten hours in
   the future, workers unable to register, resources that could not be disabled —
@@ -138,8 +140,10 @@ where the driver cannot scan it. Verified against a live Postgres — do not
 
 **Some tests need a real Postgres.** Result/dispatch atomicity and relay row
 leasing (`FOR UPDATE SKIP LOCKED`) are Postgres properties, so those tests skip
-themselves unless `URTH_TEST_POSTGRES_URL` is set. `make test/postgres` sets it;
-CI supplies it as a service. A green `make test` has not run them.
+themselves unless `URTH_TEST_POSTGRES_URL` is set. `make test/postgres` and
+`make audit/postgres` set it from `store-url`; CI provisions the database as a
+service and runs `audit/postgres`. A green `make audit` has not run them. A URL
+that is set but unreachable fails rather than skips, deliberately.
 
 **Go naming is enforced.** staticcheck runs with `-checks=all` and the codebase
 was renamed to Go initialism convention (`API`, `ID`, `URL`, `HTTP`). Match it.
