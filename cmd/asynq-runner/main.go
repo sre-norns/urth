@@ -110,12 +110,12 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 	}
 
 	// Push artifacts if any:
-	wg := grace.NewWorkgroup(4)
+	wg := grace.NewWorkgroup(workCtx, 4)
 
 	artifactsAPIClient := w.apiClient.Artifacts()
 	for _, a := range artifacts {
 		artifact := a
-		wg.Go(func() error {
+		wg.Go(func(ctx context.Context) error {
 			// TODO: Must include run Auth Token
 			_, err := artifactsAPIClient.Create(ctx,
 				runAuth.Token,
@@ -147,7 +147,7 @@ func (w *WorkerConfig) handleRunScenarioTask(ctx context.Context, t *asynq.Task)
 	}
 
 	// Notify API-server that the job has been complete
-	wg.Go(func() error {
+	wg.Go(func(ctx context.Context) error {
 		created, err := resultsAPIClient.UpdateStatus(ctx, runAuth.VersionedResourceID, runAuth.Token, runResult)
 		if err != nil {
 			log.Printf("failed to post run results for %q: %v", job.ResultName, err)
