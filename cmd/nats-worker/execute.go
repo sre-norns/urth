@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -10,8 +11,8 @@ import (
 	"github.com/sre-norns/urth/pkg/prob"
 	"github.com/sre-norns/urth/pkg/runner"
 	"github.com/sre-norns/urth/pkg/urth"
-	"golang.org/x/sync/errgroup"
 
+	"github.com/sre-norns/wyrd/pkg/grace"
 	"github.com/sre-norns/wyrd/pkg/manifest"
 )
 
@@ -118,18 +119,31 @@ func (w *worker) report(ctx context.Context, envelope natsq.DispatchEnvelope, au
 		},
 	)
 
-	// errgroup rather than grace.NewWorkgroup: that helper drops the error its
-	// work items return (wyrd's Workgroup.run has a standing "TODO: Get error
-	// and handle it"), which is how the asynq worker came to report a run as
-	// complete whose artifacts had all failed to upload.
-	group, groupCtx := errgroup.WithContext(reportCtx)
-	group.SetLimit(4)
+	// A collecting workgroup, not a fail-fast one. Every part of the report is
+	// worth attempting on its own: one artifact that cannot be stored says
+	// nothing about the next one, and nothing at all about the final status.
+	//
+	// grace.NewWorkgroup is the fail-fast constructor -- the first error there
+	// cancels the group context, which drops the work items still queued and
+	// hands the in-flight ones a dead context. Applied here that means a single
+	// failed upload also loses the status post, leaving the run in `running`
+	// until its lease expires: a worse outcome than a run missing an artifact.
+	wg := grace.NewCollectingWorkgroup(reportCtx, reportConcurrency)
+
+	// Go only refuses work once the report context is done, and the caller is
+	// the only producer, so collecting the refusals here needs no locking.
+	var scheduleErrs []error
+	schedule := func(work grace.WorkItem) {
+		if err := wg.Go(work); err != nil {
+			scheduleErrs = append(scheduleErrs, err)
+		}
+	}
 
 	artifactsAPI := w.apiClient.Artifacts()
 	for _, a := range artifacts {
 		artifact := a
-		group.Go(func() error {
-			_, err := artifactsAPI.Create(groupCtx, auth.Token, manifest.ResourceManifest{
+		schedule(func(ctx context.Context) error {
+			_, err := artifactsAPI.Create(ctx, auth.Token, manifest.ResourceManifest{
 				TypeMeta: manifest.TypeMeta{
 					APIVersion: "v1",
 					Kind:       urth.KindArtifact,
@@ -149,8 +163,8 @@ func (w *worker) report(ctx context.Context, envelope natsq.DispatchEnvelope, au
 	}
 
 	resultsAPI := w.apiClient.Results(envelope.ScenarioName)
-	group.Go(func() error {
-		if _, err := resultsAPI.UpdateStatus(groupCtx, auth.VersionedResourceID, auth.Token, runResult); err != nil {
+	schedule(func(ctx context.Context) error {
+		if _, err := resultsAPI.UpdateStatus(ctx, auth.VersionedResourceID, auth.Token, runResult); err != nil {
 			return fmt.Errorf("failed to post run status: %w", err)
 		}
 
@@ -161,7 +175,7 @@ func (w *worker) report(ctx context.Context, envelope natsq.DispatchEnvelope, au
 	// failed to upload looks, from the UI, like a run that produced none --
 	// and the asynq worker threw this return value away, so that failure mode
 	// was invisible.
-	if err := group.Wait(); err != nil {
+	if err := errors.Join(append(scheduleErrs, wg.Wait())...); err != nil {
 		log.Printf("run %v: failed to report fully: %v", envelope.ResultUID, err)
 		return
 	}
@@ -171,6 +185,9 @@ func (w *worker) report(ctx context.Context, envelope natsq.DispatchEnvelope, au
 
 // reportTimeout bounds how long the worker spends uploading a finished run.
 const reportTimeout = 2 * time.Minute
+
+// reportConcurrency is how many parts of a report are uploaded at once.
+const reportConcurrency = 4
 
 // reportFailure records a run the worker could not even start.
 func (w *worker) reportFailure(ctx context.Context, auth urth.AuthJobResponse, reason string) {
