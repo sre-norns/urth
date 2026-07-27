@@ -517,6 +517,16 @@ var appCli struct {
 
 	SessionTTL     time.Duration `help:"How long an issued worker session remains valid" default:"1h"`
 	MaxRunDuration time.Duration `help:"Maximum time a worker may hold a run capability" default:"30m"`
+
+	// Relay settings. The relay runs inside every API server replica by default:
+	// ADR 0004 allows it as a separate process, but a deployment where nobody
+	// remembered to start one is a deployment where every run sits pending, so
+	// the safe default is that any process that can create a Result can also
+	// dispatch it. Competing relays are expected and handled by the row lease.
+	RelayEnabled      bool          `help:"Run the dispatch outbox relay in this process" default:"true" negatable:""`
+	RelayPollInterval time.Duration `help:"How often the dispatch relay polls the outbox when idle" default:"250ms"`
+	RelayBatchSize    int           `help:"How many outbox entries the relay leases per poll" default:"32"`
+	RelayLease        time.Duration `help:"How long a relay's claim on an outbox entry survives" default:"30s"`
 }
 
 func main() {
@@ -544,6 +554,7 @@ func main() {
 		&urth.Scenario{},
 		&urth.Result{},
 		&urth.Artifact{},
+		&urth.DispatchOutboxEntry{},
 	), "DB schema migration failed")
 
 	// Init service
@@ -562,19 +573,27 @@ func main() {
 	var natsConn *nats.Conn
 
 	var scheduler urth.Scheduler
+
+	// publisher is what the relay hands committed outbox entries to. The two
+	// transports reach it differently: NATS publishes a dispatch envelope
+	// straight from the entry, while asynq needs the whole job and so goes
+	// through an adapter that reloads the Result and Scenario. Both share one
+	// durability story, which is the point -- retiring asynq in task 015 deletes
+	// the adapter rather than a second way of dispatching.
+	var publisher urth.DispatchPublisher
+
 	switch appCli.Transport {
 	case "nats":
 		natsScheduler, nerr := natsq.NewScheduler(context.TODO(), appCli.NATS)
 		grace.SuccessRequired(nerr, "failed to connect to NATS")
 		scheduler = natsScheduler
+		publisher = natsScheduler
 
 		// The NATS scheduler doubles as the transport provider: it already owns
 		// the JetStream handle and the naming, so having it answer "where does
 		// this runner collect work" keeps one component responsible for the
 		// topology.
-		if provider, ok := natsScheduler.(urth.WorkerTransportProvider); ok {
-			serviceOptions = append(serviceOptions, urth.WithWorkerTransport(provider))
-		}
+		serviceOptions = append(serviceOptions, urth.WithWorkerTransport(natsScheduler))
 
 		// A separate connection for log tailing, so a browser holding a slow
 		// stream open cannot interfere with job publication.
@@ -584,8 +603,29 @@ func main() {
 	default:
 		scheduler, err = redqueue.NewScheduler(context.TODO(), appCli.MessageBrokerURL)
 		grace.SuccessRequired(err, "failed to create a scheduler")
+		publisher = urth.NewSchedulerDispatchPublisher(scheduler, urth.NewStoreResultLoader(store))
 	}
 	defer scheduler.Close()
+
+	if appCli.RelayEnabled {
+		relayCtx, stopRelay := context.WithCancel(context.Background())
+		defer stopRelay()
+
+		relay := urth.NewDispatchRelay(urth.NewDispatchOutbox(db), publisher,
+			urth.WithRelayPollInterval(appCli.RelayPollInterval),
+			urth.WithRelayBatchSize(appCli.RelayBatchSize),
+			urth.WithRelayLease(appCli.RelayLease),
+		)
+
+		go func() {
+			// Run only returns on cancellation; broker failures are retried
+			// against the outbox rather than taking the API server down with
+			// them. A server that stops accepting Results because NATS is
+			// unwell is strictly worse than one that keeps recording them for
+			// the relay to publish when NATS returns.
+			_ = relay.Run(relayCtx)
+		}()
+	}
 
 	api := urth.NewService(store, scheduler, serviceOptions...)
 	router := apiRoutes(api, natsConn)

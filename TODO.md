@@ -204,7 +204,8 @@ looks deceptively like passing.
 ## NATS migration (ADR 0004)
 
 `cmd/nats-worker`, `pkg/natsq`, per-runner JetStream consumers, worker sessions, the
-authenticated claim, and live run logs have landed as a development slice.
+authenticated claim, live run logs, and the transactional dispatch outbox have landed as
+a development slice.
 
 The detailed NATS review and migration work is tracked in
 [`docs/review-backlog/`](docs/review-backlog/README.md). Those task files are the source of

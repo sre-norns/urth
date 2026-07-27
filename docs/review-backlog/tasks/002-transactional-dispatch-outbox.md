@@ -4,12 +4,12 @@ Shared context: [`CONTEXT.md`](../CONTEXT.md).
 
 | Field | Value |
 |---|---|
-| Status | `ready` |
+| Status | `done` |
 | Priority | `P0` |
 | Workstream | Durability |
 | Depends on | — |
 | Likely conflicts | 003, 007, 011, 012 |
-| Owner | Unclaimed |
+| Owner | `feat/dispatch-outbox` |
 
 ## Why This Matters
 
@@ -76,12 +76,12 @@ it cannot publish a database change it never learned about.
 
 ## Acceptance Criteria / Definition of Done
 
-- [ ] Result and dispatch outbox row are atomic under commit and rollback.
-- [ ] A committed unpublished row is eventually published after NATS recovers.
-- [ ] Relay crashes before and after publish do not lose or duplicate a Result.
-- [ ] Multiple relays do not concurrently own the same row.
-- [ ] Publication failure remains observable without changing Result execution state.
-- [ ] Metrics and documentation expose stuck/old outbox rows.
+- [x] Result and dispatch outbox row are atomic under commit and rollback.
+- [x] A committed unpublished row is eventually published after NATS recovers.
+- [x] Relay crashes before and after publish do not lose or duplicate a Result.
+- [x] Multiple relays do not concurrently own the same row.
+- [x] Publication failure remains observable without changing Result execution state.
+- [x] Metrics and documentation expose stuck/old outbox rows.
 
 ## Required Tests
 
@@ -104,7 +104,80 @@ git diff --check
 ## Completion Record
 
 - **Implemented:**
+  - `pkg/urth/outbox.go`: `DispatchOutboxEntry` model (table `dispatch_outbox`),
+    `DispatchEventUID`, the `DispatchOutbox` and `DispatchPublisher` interfaces,
+    `DispatchOutboxStats`, and the `ErrPermanentDispatch` sentinel. The entry
+    stores dispatch *fields*, not a marshalled transport payload, so the row stays
+    queryable and a relay running newer code re-encodes rather than replaying a
+    stale wire format. The event UID is the one thing minted once and persisted.
+  - `pkg/urth/outbox_store.go`: gorm-backed outbox. Talks to gorm directly rather
+    than through `wyrd/dbstore`, because the store interface cannot express
+    `SELECT ... FOR UPDATE SKIP LOCKED`, and a claim that cannot skip locked rows
+    is a claim two relays can both win. Also holds `NewStoreResultLoader`.
+  - `pkg/urth/outbox_relay.go`: `DispatchRelay` (claim → publish → mark, with
+    lease, backoff, and per-attempt timeouts) and `SchedulerDispatchPublisher`,
+    the adapter that keeps the legacy asynq transport on the same outbox.
+  - `pkg/urth/service.go`: `resultsAPIImpl.Create` now commits the Result and its
+    outbox entry through one `dbstore` transaction (`createWithDispatch`) and no
+    longer publishes inline. The `scheduleRun` path and the `JobErrored` rewrite
+    on scheduling failure are both gone — a broker outage is not an execution
+    failure, and marking the Result terminal destroyed the only record a retry
+    could work from.
+  - `pkg/natsq/publisher.go`: `PublishDispatch` is now the sole publication path;
+    `scheduler.Schedule` delegates to it. Added `natsq.Transport` so the API
+    server composition no longer type-asserts for the transport provider.
+  - `pkg/natsq/config.go`, `assets.go`: added `--nats.duplicate-window` (default
+    30m) and set `Duplicates` on `URTH_JOBS`. The relay's at-least-once
+    republication depends on this window; the stream previously left it default.
+  - `cmd/api-server/main.go`: migrates `dispatch_outbox`, builds the transport's
+    publisher (native for NATS, adapter for asynq), and runs the relay in-process
+    by default with `--relay-*` flags.
 - **Tests added/updated:**
-- **Documentation updated:**
+  - `pkg/urth/outbox_relay_test.go` (no DB): crash-before-marking reuses the event
+    UID; transport failure retries without marking published; permanent failures
+    get the long backoff; one bad entry does not stop the batch; the legacy
+    adapter dispatches and rejects a stale Result version.
+  - `pkg/urth/outbox_store_test.go`: lease and release, expired-lease reclaim with
+    the attempt still counted, failure backoff and stats. Postgres-only:
+    `TestOutboxCompetingRelaysDoNotDoubleClaim` runs four relays over one backlog.
+  - `pkg/urth/service_outbox_test.go` (Postgres): Result and dispatch commit
+    together; a failed outbox insert rolls the Result back; a publication failure
+    leaves the Result `pending` and the entry observable; the entry publishes once
+    the transport recovers; an inactive scenario writes no entry.
+  - `pkg/natsq/outbox_test.go` (embedded `nats-server`): dispatch committed while
+    the broker is stopped is published after it restarts, and the stream holds
+    exactly one message; a relay that publishes then fails to mark republishes and
+    JetStream still holds one message; an unplaced dispatch is reported permanent.
+  - `.github/workflows/go.yml`: Postgres service plus `URTH_TEST_POSTGRES_URL`.
+    Without it CI reports green having skipped every atomicity and leasing test.
+  - `Makefile`: `make test/postgres`. Plain `make test` stays container-free.
+- **Documentation updated:** `cmd/api-server/README.md` (dispatch outbox: design,
+  flags, the SQL to inspect the backlog, what to alert on, transport migration);
+  `README.md` architecture and project-status notes; this record.
 - **Validation evidence:**
+  - `make audit` — pass. `URTH_TEST_POSTGRES_URL=… go test -race -count=1 ./...` —
+    207 tests, all packages pass. `gofmt -l ./cmd ./pkg` — clean.
+    `go mod tidy` — clean. `actionlint` on the changed workflow — clean.
+  - Mutation-checked the two tests that carry the guarantees, because this
+    repository has repeatedly shipped tests that passed against the bug they were
+    meant to catch: disabling the locking clause makes the competing-relays test
+    report duplicate claims; committing the Result before writing the outbox entry
+    makes the rollback test find an orphaned Result.
+  - Ran the real stack (Postgres + NATS + api-server + nats-worker). Verified end
+    to end: an outbox row written on `POST /results`, relayed, executed, marked
+    published. Then stopped NATS, triggered a run — `201`, Result stayed
+    `pending`, entry unpublished with the failure and a backoff recorded — and
+    restarted NATS: the entry published on attempt 3 and the run completed, with
+    nobody re-requesting it. Confirmed `duplicate_window=30m` on the live stream
+    and `timestamp with time zone` on every outbox time column.
 - **Follow-ups:**
+  - Dead-lettering parked entries is [task 012](012-dead-letter-workflow.md);
+    until it lands, a permanently unpublishable entry retries hourly forever
+    rather than being retired.
+  - Reconciling pending Results against live queue state remains
+    [task 003](003-reconcile-dispatch-and-execution.md), which is now unblocked.
+  - Stats are exposed through `DispatchOutbox.Stats` and SQL, not a `/metrics`
+    endpoint — the API server has no Prometheus registry yet. Worth adding with
+    [task 013](013-bound-and-observe-jetstream.md), which owns broker observability.
+  - `natsq.DispatchIDFor` is deprecated in favour of `urth.DispatchEventUID` and
+    should go when task 015 removes the legacy paths that still call it.
