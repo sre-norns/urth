@@ -22,6 +22,7 @@ type fakeOutbox struct {
 	entries []urth.DispatchOutboxEntry
 
 	published map[uint]time.Time
+	receipts  map[uint]urth.DispatchReceipt
 	failures  map[uint]error
 	notBefore map[uint]time.Time
 
@@ -36,6 +37,7 @@ func newFakeOutbox(entries ...urth.DispatchOutboxEntry) *fakeOutbox {
 	return &fakeOutbox{
 		entries:   entries,
 		published: map[uint]time.Time{},
+		receipts:  map[uint]urth.DispatchReceipt{},
 		failures:  map[uint]error{},
 		notBefore: map[uint]time.Time{},
 	}
@@ -62,7 +64,7 @@ func (f *fakeOutbox) Claim(_ context.Context, _ string, limit int, _ time.Durati
 	return due, nil
 }
 
-func (f *fakeOutbox) MarkPublished(_ context.Context, id uint, at time.Time) error {
+func (f *fakeOutbox) MarkPublished(_ context.Context, id uint, at time.Time, receipt urth.DispatchReceipt) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
@@ -70,6 +72,7 @@ func (f *fakeOutbox) MarkPublished(_ context.Context, id uint, at time.Time) err
 		return f.markPublishedErr
 	}
 	f.published[id] = at
+	f.receipts[id] = receipt
 
 	return nil
 }
@@ -94,18 +97,23 @@ type recordingPublisher struct {
 
 	seen []string
 	err  error
+
+	// sequence stands in for a transport that addresses its messages, so the
+	// relay is seen to carry the receipt through to the row rather than dropping
+	// it on the floor.
+	sequence uint64
 }
 
-func (p *recordingPublisher) PublishDispatch(_ context.Context, entry urth.DispatchOutboxEntry) error {
+func (p *recordingPublisher) PublishDispatch(_ context.Context, entry urth.DispatchOutboxEntry) (urth.DispatchReceipt, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	if p.err != nil {
-		return p.err
+		return urth.DispatchReceipt{}, p.err
 	}
 	p.seen = append(p.seen, entry.EventUID)
 
-	return nil
+	return urth.DispatchReceipt{Sequence: p.sequence}, nil
 }
 
 func (p *recordingPublisher) uids() []string {
@@ -255,7 +263,8 @@ func TestSchedulerPublisherDispatchesThroughLegacyScheduler(t *testing.T) {
 	scheduler := &stubScheduler{}
 	publisher := urth.NewSchedulerDispatchPublisher(scheduler, &stubLoader{result: result})
 
-	require.NoError(t, publisher.PublishDispatch(context.Background(), testEntry(1, "result-1.1")))
+	_, err := publisher.PublishDispatch(context.Background(), testEntry(1, "result-1.1"))
+	require.NoError(t, err)
 	require.Len(t, scheduler.scheduled, 1)
 }
 
@@ -270,7 +279,7 @@ func TestSchedulerPublisherRejectsStaleResultVersion(t *testing.T) {
 	scheduler := &stubScheduler{}
 	publisher := urth.NewSchedulerDispatchPublisher(scheduler, &stubLoader{result: result})
 
-	err := publisher.PublishDispatch(context.Background(), testEntry(1, "result-1.1"))
+	_, err := publisher.PublishDispatch(context.Background(), testEntry(1, "result-1.1"))
 	require.ErrorIs(t, err, urth.ErrPermanentDispatch)
 	require.Empty(t, scheduler.scheduled)
 }

@@ -55,6 +55,11 @@ func (s *dispatchOutboxStore) Claim(ctx context.Context, relayID string, limit i
 
 		query := tx.Model(&DispatchOutboxEntry{}).
 			Where("published_at IS NULL").
+			// A retired entry is one the reconciler has decided will never be
+			// published -- its Result is terminal or expired. Leaving it visible
+			// here would have the relay keep publishing dispatches for runs
+			// nothing can execute.
+			Where("retired_at IS NULL").
 			Where("not_before <= ?", now).
 			// Either unclaimed, or claimed by a relay whose lease has lapsed.
 			// The second case is the crash recovery path: a relay that died
@@ -114,11 +119,12 @@ func (s *dispatchOutboxStore) Claim(ctx context.Context, relayID string, limit i
 	return claimed, nil
 }
 
-func (s *dispatchOutboxStore) MarkPublished(ctx context.Context, id uint, at time.Time) error {
+func (s *dispatchOutboxStore) MarkPublished(ctx context.Context, id uint, at time.Time, receipt DispatchReceipt) error {
 	tx := s.db.WithContext(ctx).Model(&DispatchOutboxEntry{}).
 		Where("id = ?", id).
 		Updates(map[string]any{
 			"published_at":     at,
+			"published_seq":    receipt.Sequence,
 			"claimed_by":       "",
 			"claim_expires_at": nil,
 			"last_error":       "",
@@ -199,8 +205,13 @@ func (s *dispatchOutboxStore) Stats(ctx context.Context, now time.Time) (Dispatc
 
 	db := s.db.WithContext(ctx)
 
+	// Retired entries are excluded: they are not backlog. Counting a dispatch
+	// the reconciler has deliberately dropped as "pending" would keep the alert
+	// that watches this number lit for something already dealt with.
 	unpublished := func() *gorm.DB {
-		return db.Model(&DispatchOutboxEntry{}).Where("published_at IS NULL")
+		return db.Model(&DispatchOutboxEntry{}).
+			Where("published_at IS NULL").
+			Where("retired_at IS NULL")
 	}
 
 	if err := unpublished().Count(&stats.Pending).Error; err != nil {

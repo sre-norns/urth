@@ -21,7 +21,7 @@ import (
 // also why they are the tests that matter most: the atomicity being asserted is
 // a property of a real transaction, not of a store abstraction.
 
-func newTestService(t *testing.T, scheduler urth.Scheduler) (urth.Service, *gorm.DB, *dbstore.DBStore) {
+func newTestService(t *testing.T, scheduler urth.Scheduler, options ...urth.ServiceOption) (urth.Service, *gorm.DB, *dbstore.DBStore) {
 	t.Helper()
 
 	db := openPostgres(t)
@@ -33,6 +33,7 @@ func newTestService(t *testing.T, scheduler urth.Scheduler) (urth.Service, *gorm
 		&urth.Result{},
 		&urth.Artifact{},
 		&urth.DispatchOutboxEntry{},
+		&urth.ReconcileLease{},
 	}
 
 	// Dropped in reverse dependency order so a rerun starts clean; leftover rows
@@ -50,7 +51,7 @@ func newTestService(t *testing.T, scheduler urth.Scheduler) (urth.Service, *gorm
 	store, err := dbstore.NewDBStore(db, dbstore.ManifestModel)
 	require.NoError(t, err)
 
-	return urth.NewService(store, scheduler), db, store
+	return urth.NewService(store, scheduler, options...), db, store
 }
 
 // seedScenario creates an active runner and an active scenario that will place

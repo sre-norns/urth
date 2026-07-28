@@ -16,12 +16,12 @@ import (
 // relay brings that entry here. What used to be one uncoordinated write pair is
 // now a commit followed by an at-least-once delivery keyed on the entry's event
 // UID.
-func (s *scheduler) PublishDispatch(ctx context.Context, entry urth.DispatchOutboxEntry) error {
+func (s *scheduler) PublishDispatch(ctx context.Context, entry urth.DispatchOutboxEntry) (urth.DispatchReceipt, error) {
 	if entry.RunnerUID == "" {
 		// No subject to publish on. Retrying will not conjure a runner, and the
 		// entry is not this transport's to fix -- the run was never placed.
 		atomic.AddUint64(&s.totalErrors, 1)
-		return fmt.Errorf("%w: %w for result %v", urth.ErrPermanentDispatch, ErrNoRunner, entry.ResultUID)
+		return urth.DispatchReceipt{}, fmt.Errorf("%w: %w for result %v", urth.ErrPermanentDispatch, ErrNoRunner, entry.ResultUID)
 	}
 
 	envelope := DispatchEnvelope{
@@ -42,19 +42,24 @@ func (s *scheduler) PublishDispatch(ctx context.Context, entry urth.DispatchOutb
 		atomic.AddUint64(&s.totalErrors, 1)
 		// An envelope this build cannot encode will not encode on the next
 		// attempt either.
-		return fmt.Errorf("%w: failed to encode dispatch %v: %w", urth.ErrPermanentDispatch, entry.EventUID, err)
+		return urth.DispatchReceipt{}, fmt.Errorf("%w: failed to encode dispatch %v: %w", urth.ErrPermanentDispatch, entry.EventUID, err)
 	}
 
 	// Publish synchronously and wait for the storage acknowledgement. Returning
 	// before JetStream has persisted the message would let the relay mark the
 	// entry published when it may never be delivered -- reintroducing, one layer
 	// further down, exactly the lost-dispatch window the outbox closes.
-	if _, err := s.js.Publish(ctx, JobSubject(entry.RunnerUID), data, jetstream.WithMsgID(entry.EventUID)); err != nil {
+	ack, err := s.js.Publish(ctx, JobSubject(entry.RunnerUID), data, jetstream.WithMsgID(entry.EventUID))
+	if err != nil {
 		atomic.AddUint64(&s.totalErrors, 1)
-		return fmt.Errorf("failed to publish dispatch %v: %w", entry.EventUID, err)
+		return urth.DispatchReceipt{}, fmt.Errorf("failed to publish dispatch %v: %w", entry.EventUID, err)
 	}
 
 	atomic.AddUint64(&s.totalScheduled, 1)
 
-	return nil
+	// The stream sequence is what makes this message addressable later. A
+	// duplicate suppressed by the message-ID window comes back with the sequence
+	// of the original, which is the answer the reconciler wants: the message that
+	// is actually queued.
+	return urth.DispatchReceipt{Sequence: ack.Sequence}, nil
 }

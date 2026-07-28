@@ -263,13 +263,13 @@ type failOnceOutbox struct {
 	failed bool
 }
 
-func (o *failOnceOutbox) MarkPublished(ctx context.Context, id uint, at time.Time) error {
+func (o *failOnceOutbox) MarkPublished(ctx context.Context, id uint, at time.Time, receipt urth.DispatchReceipt) error {
 	if !o.failed {
 		o.failed = true
 		return errors.New("relay died before recording the publication")
 	}
 
-	return o.DispatchOutbox.MarkPublished(ctx, id, at)
+	return o.DispatchOutbox.MarkPublished(ctx, id, at, receipt)
 }
 
 // A relay that publishes and dies before marking the row republishes on
@@ -346,7 +346,7 @@ func TestPublishUnplacedDispatchIsPermanent(t *testing.T) {
 	}
 	defer transport.Close()
 
-	err = transport.PublishDispatch(ctx, urth.DispatchOutboxEntry{
+	_, err = transport.PublishDispatch(ctx, urth.DispatchOutboxEntry{
 		SchemaVersion: urth.DispatchOutboxEntryVersion,
 		EventUID:      "result-1.1",
 		ResultUID:     "result-1",

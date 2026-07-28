@@ -32,7 +32,7 @@ Status values:
 |---|---|---|---|---|---|
 | 001 | P0 | done | [Preserve retryable claim failures](tasks/001-preserve-retryable-claim-failures.md) | — | 003, 010, 011 |
 | 002 | P0 | done | [Add the transactional dispatch outbox](tasks/002-transactional-dispatch-outbox.md) | — | 003, 007, 011, 012 |
-| 003 | P0 | ready | [Reconcile dispatch and execution lifecycle](tasks/003-reconcile-dispatch-and-execution.md) | 002 | 001, 011, 012 |
+| 003 | P0 | done | [Reconcile dispatch and execution lifecycle](tasks/003-reconcile-dispatch-and-execution.md) | 002 | 001, 011, 012 |
 | 004 | P0 | ready | [Issue Runner-scoped NATS credentials](tasks/004-runner-scoped-nats-credentials.md) | — | 005, 009, 011, 013 |
 | 005 | P0 | ready | [Secure Runner enrollment issuance and rotation](tasks/005-secure-runner-enrollment.md) | — | 004, 006, 009 |
 | 006 | P0 | ready | [Harden run capabilities and reporting authorization](tasks/006-harden-run-capabilities.md) | — | 005, 007, 008, 011 |
@@ -41,7 +41,7 @@ Status values:
 | 009 | P0 | blocked | [Add stable Worker identity and Runner blocklists](tasks/009-worker-identity-and-blocklist.md) | 005 | 004, 008 |
 | 010 | P1 | ready | [Synchronously acknowledge claimed dispatches](tasks/010-synchronous-jetstream-ack.md) | — | 001, 003, 011 |
 | 011 | P1 | blocked | [Exercise the NATS Worker end to end and at crash points](tasks/011-nats-worker-failure-integration-tests.md) | 001–010 | all runtime tasks |
-| 012 | P1 | blocked | [Implement an operational dead-letter workflow](tasks/012-dead-letter-workflow.md) | 003 | 002, 003, 013 |
+| 012 | P1 | ready | [Implement an operational dead-letter workflow](tasks/012-dead-letter-workflow.md) | 003 (done) | 002, 003, 013 |
 | 013 | P1 | ready | [Bound and observe JetStream assets](tasks/013-bound-and-observe-jetstream.md) | — | 004, 012 |
 | 014 | P2 | ready | [Make Runner placement capacity-aware](tasks/014-capacity-aware-runner-placement.md) | — | 008 |
 | 015 | P1 | blocked | [Drain Asynq and retire the legacy job model](tasks/015-retire-asynq-transport.md) | 001–013 | all runtime tasks |
