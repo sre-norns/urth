@@ -65,6 +65,9 @@ type (
 		Runner    Runner    `cmd:"" help:"Get a runner object from the server"`
 		Runners   Runners   `cmd:"" help:"List all runners"`
 		Labels    Labels    `cmd:"" help:"Get labels"`
+
+		DeadLetter  DeadLetter  `cmd:"" name:"dead-letter" help:"Get one dispatch failure in full"`
+		DeadLetters DeadLetters `cmd:"" name:"dead-letters" help:"List dispatches that stopped making progress"`
 	}
 )
 
