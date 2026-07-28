@@ -142,6 +142,13 @@ type Config struct {
 	// in lockstep; too high and a runner reserves work its workers cannot claim
 	// promptly, which is what redelivery storms are made of.
 	MaxAckPending int `help:"Maximum unacknowledged claim handshakes per runner" default:"64"`
+
+	// MaxRunnerSeries caps per-runner metric cardinality. Runner UID is an
+	// unbounded label -- a deployment that creates a runner per tenant, branch or
+	// test run writes a time series per runner into Prometheus and keeps it
+	// forever -- so beyond this many runners only the busiest are reported
+	// individually. Fleet totals stay exact whatever the cap.
+	MaxRunnerSeries int `help:"Maximum runners reported as individual metric series; 0 reports every runner" default:"100"`
 }
 
 // Flag names as an operator typed them, for validation messages.
@@ -160,6 +167,7 @@ const (
 	flagAckWait          = "--nats.ack-wait"
 	flagMaxDeliver       = "--nats.max-deliver"
 	flagMaxAckPending    = "--nats.max-ack-pending"
+	flagMaxRunnerSeries  = "--nats.max-runner-series"
 )
 
 // Validate checks every constraint that can be settled from the flags alone.
@@ -211,6 +219,12 @@ func (c Config) Validate() error {
 	}
 	if c.MaxAckPending <= 0 {
 		problems = append(problems, fmt.Errorf("%s must be a positive number of handshakes, got %d", flagMaxAckPending, c.MaxAckPending))
+	}
+
+	// Zero is meaningful here -- report every runner -- so only a negative one is
+	// wrong.
+	if c.MaxRunnerSeries < 0 {
+		problems = append(problems, fmt.Errorf("%s must not be negative, got %d (0 reports every runner)", flagMaxRunnerSeries, c.MaxRunnerSeries))
 	}
 
 	// JetStream accepts 1 to 5. An even count buys no quorum for its write cost,
