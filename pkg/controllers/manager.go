@@ -50,6 +50,9 @@ const (
 // ErrShutdownTimeout reports that a loop was still running when Wait gave up.
 var ErrShutdownTimeout = errors.New("controllers did not stop within the shutdown timeout")
 
+// ErrManagerStarted reports a loop registered after its manager was running.
+var ErrManagerStarted = errors.New("controllers: manager has already started")
+
 // Loop is one control loop.
 //
 // Run blocks until ctx is cancelled and returns ctx.Err() when it stops for that
@@ -122,18 +125,32 @@ func NewManager(options ...ManagerOption) *Manager {
 
 // Add registers a loop under a name used in its log lines.
 //
-// Registering after Start is a programming error rather than a race to tolerate:
-// a loop added to a running manager would never be started, and failing loudly
-// beats a control loop that silently does not exist.
-func (m *Manager) Add(name string, loop Loop) {
+// Registering after Start is refused rather than tolerated: a loop added to a
+// running manager would never be started, and a control loop that silently does
+// not exist is the failure this whole arrangement is trying to avoid.
+func (m *Manager) Add(name string, loop Loop) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	if m.started {
-		panic(fmt.Sprintf("controllers: loop %q added after the manager started", name))
+		return fmt.Errorf("%w: cannot add loop %q", ErrManagerStarted, name)
 	}
 
 	m.loops = append(m.loops, namedLoop{name: name, loop: loop})
+
+	return nil
+}
+
+// MustAdd registers a loop and panics if it cannot.
+//
+// For composition that has no way to report a failure and no business
+// continuing without the loop. Everything else should use Add: the only error
+// it returns is a programming mistake, but a command that has one is better off
+// saying so through its own startup path than dying in a stack trace.
+func (m *Manager) MustAdd(name string, loop Loop) {
+	if err := m.Add(name, loop); err != nil {
+		panic(err)
+	}
 }
 
 // Len reports how many loops are registered, so a command can say so at startup.

@@ -635,13 +635,15 @@ func main() {
 	// because NATS is unwell is strictly worse than one that keeps recording them
 	// for the relay to publish when NATS returns.
 	controllerManager := controllers.NewManager()
-	controllers.Register(controllerManager, appCli.Controllers, controllers.Dependencies{
+	_, err = controllers.Register(controllerManager, appCli.Controllers, controllers.Dependencies{
 		DB:        db,
 		Store:     store,
 		Publisher: publisher,
 		Channels:  channels,
 		MaxJobAge: appCli.NATS.MaxJobAge,
 	})
+	grace.SuccessRequired(err, "failed to compose the control loops")
+
 	controllerManager.Start(ctx)
 
 	if names := controllerManager.Names(); len(names) > 0 {
