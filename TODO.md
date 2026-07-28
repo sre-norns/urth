@@ -227,6 +227,25 @@ looks deceptively like passing.
    forever, and the relay settles a dispatch it can never publish instead of retrying
    it hourly. `GET /scenarios/:id/placement` is the preflight the UI gates "Run now"
    on. See [task 018](docs/review-backlog/tasks/018-fail-unplaceable-runs.md).
+[] **`notin` means two different things depending on where it is evaluated.** With the
+   label *absent*, `wyrd`'s Go matcher (`manifest.Requirement.Matches`) matches — the
+   Kubernetes rule — while its SQL translation (`NOT IN` over a JSON path) yields NULL
+   and excludes. Urth uses both: placement is a store query, worker admission at
+   registration is `Matches`. Consequence, and the reason this was found: the shipped
+   `examples/runner.yaml` cannot satisfy `examples/scenario.rest.httpbin.yml`'s
+   `envX notin (dev,testing)`, because the runner has no `envX` label — which is what
+   made task 018's runs unplaceable. Pick one rule, document it, make both evaluators
+   obey it. See [task 020](docs/review-backlog/tasks/020-settle-notin-selector-semantics.md).
+[] Live run logs return 406 in a browser: `EventSource` sends
+   `Accept: text/event-stream` and `bark.ContentTypeAPI()` on the `/api/v1` group
+   refuses it before the handler runs. See
+   [task 019](docs/review-backlog/tasks/019-serve-run-log-stream.md).
+[] SQLite backend is broken: AutoMigrate fails with `index idx_name already exists`.
+   `wyrd`'s `manifest.ResourceMeta.Name` carries a hardcoded `gorm:"index:idx_name"`, and
+   every model embeds it; index names are schema-global in SQLite so the second
+   CREATE INDEX collides. Postgres is unaffected. Either fix upstream in `wyrd`
+   (use `index` and let gorm name it per-table) or drop the `sqlite:test.sqlite`
+   default from `dbstore.Config` so the broken path isn't the default.
 [X] Rename identifiers to Go initialism convention (`Api`->`API`, `Id`->`ID`, `Url`->`URL`,
     `Http`->`HTTP`) so `staticcheck` passes and `make audit` is green.
 [X] Fix API to accept `version` query param

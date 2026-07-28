@@ -52,6 +52,8 @@ Status values:
 | 016 | P1 | blocked | [Surface Runner queue state to operators](tasks/016-runner-queue-operator-visibility.md) | 012 (done), 013 | 012, 013, 014 |
 | 017 | P1 | ready | [Apply prober config defaults on every authoring path](tasks/017-apply-prober-config-defaults.md) | — | 015 |
 | 018 | P1 | done | [Fail unplaceable runs instead of queueing them forever](tasks/018-fail-unplaceable-runs.md) | 002, 003, 012 | 014, 016 |
+| 019 | P1 | ready | [Serve the live run log stream instead of refusing it](tasks/019-serve-run-log-stream.md) | — | — |
+| 020 | P1 | ready | [Settle `notin` selector semantics across both evaluators](tasks/020-settle-notin-selector-semantics.md) | — | 014, 018 |
 
 Priority meanings:
 
