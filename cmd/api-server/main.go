@@ -527,6 +527,21 @@ var appCli struct {
 	RelayPollInterval time.Duration `help:"How often the dispatch relay polls the outbox when idle" default:"250ms"`
 	RelayBatchSize    int           `help:"How many outbox entries the relay leases per poll" default:"32"`
 	RelayLease        time.Duration `help:"How long a relay's claim on an outbox entry survives" default:"30s"`
+
+	// Reconciler settings. Runs in every replica for the same reason the relay
+	// does -- a deployment where nobody started one is a deployment where an
+	// abandoned run stays `running` forever -- and competing scans are settled by
+	// a lease row plus the version guard on every transition.
+	ReconcileEnabled   bool          `help:"Run the dispatch/execution reconciler in this process" default:"true" negatable:""`
+	ReconcileInterval  time.Duration `help:"How often the reconciler scans for drift between Results and the transport" default:"1m"`
+	ReconcileLease     time.Duration `help:"How long one reconciler holds the right to scan" default:"5m"`
+	ReconcileBatchSize int           `help:"How many inconsistencies one reconciler scan repairs" default:"256"`
+
+	// PendingDispatchGrace is added to the transport's own message expiry to
+	// decide when a published dispatch is presumed lost. Expiring a pending run
+	// while its message is still claimable would terminate live work, so the
+	// margin is deliberately generous.
+	PendingDispatchGrace time.Duration `help:"How long past the transport's job expiry a pending run waits before it is expired" default:"30m"`
 }
 
 func main() {
@@ -555,6 +570,7 @@ func main() {
 		&urth.Result{},
 		&urth.Artifact{},
 		&urth.DispatchOutboxEntry{},
+		&urth.ReconcileLease{},
 	), "DB schema migration failed")
 
 	// Init service
@@ -582,12 +598,20 @@ func main() {
 	// the adapter rather than a second way of dispatching.
 	var publisher urth.DispatchPublisher
 
+	// channels is the transport's half of reconciliation: restoring a runner's
+	// queue and withdrawing a dispatch nothing will claim. It stays nil for the
+	// legacy transport, which has neither notion -- that is the honest answer,
+	// not a degraded mode, and the reconciler skips those passes rather than
+	// pretending it repaired something.
+	var channels urth.RunnerChannelReconciler
+
 	switch appCli.Transport {
 	case "nats":
 		natsScheduler, nerr := natsq.NewScheduler(context.TODO(), appCli.NATS)
 		grace.SuccessRequired(nerr, "failed to connect to NATS")
 		scheduler = natsScheduler
 		publisher = natsScheduler
+		channels = natsScheduler
 
 		// The NATS scheduler doubles as the transport provider: it already owns
 		// the JetStream handle and the naming, so having it answer "where does
@@ -624,6 +648,27 @@ func main() {
 			// unwell is strictly worse than one that keeps recording them for
 			// the relay to publish when NATS returns.
 			_ = relay.Run(relayCtx)
+		}()
+	}
+
+	if appCli.ReconcileEnabled {
+		reconcileCtx, stopReconciler := context.WithCancel(context.Background())
+		defer stopReconciler()
+
+		reconciler := urth.NewReconciler(urth.NewReconcileStore(db, store),
+			urth.WithReconcileInterval(appCli.ReconcileInterval),
+			urth.WithReconcileLease(appCli.ReconcileLease),
+			urth.WithReconcileBatchSize(appCli.ReconcileBatchSize),
+			// Derived from the transport's own expiry rather than configured
+			// independently: a pending run must be given longer than the broker
+			// will hold its message, or the reconciler expires runs that are
+			// still sitting in a queue waiting to be claimed.
+			urth.WithPendingDispatchTimeout(appCli.NATS.MaxJobAge+appCli.PendingDispatchGrace),
+			urth.WithRunnerChannels(channels),
+		)
+
+		go func() {
+			_ = reconciler.Run(reconcileCtx)
 		}()
 	}
 

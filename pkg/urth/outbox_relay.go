@@ -187,7 +187,8 @@ func (r *DispatchRelay) publish(ctx context.Context, entry DispatchOutboxEntry) 
 	publishCtx, cancel := context.WithTimeout(ctx, r.publishTimeout)
 	defer cancel()
 
-	if err := r.publisher.PublishDispatch(publishCtx, entry); err != nil {
+	receipt, err := r.publisher.PublishDispatch(publishCtx, entry)
+	if err != nil {
 		return r.recordFailure(ctx, entry, err)
 	}
 
@@ -200,7 +201,7 @@ func (r *DispatchRelay) publish(ctx context.Context, entry DispatchOutboxEntry) 
 	markCtx, cancel := r.bookkeeping(ctx)
 	defer cancel()
 
-	if err := r.outbox.MarkPublished(markCtx, entry.ID, time.Now()); err != nil {
+	if err := r.outbox.MarkPublished(markCtx, entry.ID, time.Now(), receipt); err != nil {
 		return r.recordFailure(ctx, entry, err)
 	}
 
@@ -304,23 +305,29 @@ func NewSchedulerDispatchPublisher(scheduler Scheduler, results ResultLoader) *S
 	return &SchedulerDispatchPublisher{scheduler: scheduler, results: results}
 }
 
-func (p *SchedulerDispatchPublisher) PublishDispatch(ctx context.Context, entry DispatchOutboxEntry) error {
+// PublishDispatch implements DispatchPublisher.
+//
+// The receipt is always empty: asynq names its tasks, but nothing in this build
+// can withdraw one, so claiming an address the reconciler cannot act on would be
+// worse than admitting there is none. Retiring a stale asynq task belongs to
+// task 015, which removes this path rather than extending it.
+func (p *SchedulerDispatchPublisher) PublishDispatch(ctx context.Context, entry DispatchOutboxEntry) (DispatchReceipt, error) {
 	result, scenario, err := p.results.LoadForDispatch(ctx, entry)
 	if err != nil {
-		return err
+		return DispatchReceipt{}, err
 	}
 
 	// A Result that has moved on since the entry was written is not dispatched.
 	// The entry is a record of what was true at commit time; replaying it against
 	// newer state would start a run the current state does not ask for.
 	if result.Version != entry.ResultVersion {
-		return fmt.Errorf("%w: result %v is at version %d, dispatch was written for %d",
+		return DispatchReceipt{}, fmt.Errorf("%w: result %v is at version %d, dispatch was written for %d",
 			ErrPermanentDispatch, entry.ResultUID, result.Version, entry.ResultVersion)
 	}
 
 	if _, err := p.scheduler.Schedule(ctx, result, scenario); err != nil {
-		return err
+		return DispatchReceipt{}, err
 	}
 
-	return nil
+	return DispatchReceipt{}, nil
 }

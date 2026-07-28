@@ -22,11 +22,13 @@ var ErrNoRunner = fmt.Errorf("result has no runner assigned")
 
 // Transport is everything the API server needs from the NATS backbone: it
 // publishes relayed dispatches, tells a registering worker where to collect
-// work, and still satisfies the legacy Scheduler the composition takes.
+// work, repairs the assets it owns, and still satisfies the legacy Scheduler the
+// composition takes.
 type Transport interface {
 	urth.Scheduler
 	urth.DispatchPublisher
 	urth.WorkerTransportProvider
+	urth.RunnerChannelReconciler
 }
 
 type scheduler struct {
@@ -86,7 +88,7 @@ func (s *scheduler) Schedule(ctx context.Context, result urth.Result, scenario u
 	entry := urth.NewDispatchOutboxEntry(result, time.Now())
 	entry.ScenarioName = scenario.Name
 
-	if err := s.PublishDispatch(ctx, entry); err != nil {
+	if _, err := s.PublishDispatch(ctx, entry); err != nil {
 		return urth.InvalidRunID, fmt.Errorf("can't schedule job for %q: %w", result.Name, err)
 	}
 

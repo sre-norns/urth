@@ -80,6 +80,93 @@ to publish it to. Those are parked rather than retried on the fast loop. Retirin
 them properly is the dead-letter workflow in
 [task 012](../../docs/review-backlog/tasks/012-dead-letter-workflow.md).
 
+## The reconciler
+
+The outbox makes a dispatch durable and the execution lease makes an abandoned
+run *detectable*. Neither, on its own, makes anything happen. The reconciler is
+what acts on them, and without it the two most common failures in this system are
+invisible:
+
+- a Worker that acknowledges its message and then dies leaves a `Result` in
+  `running` forever — it acked, so the broker will not redeliver, and it is gone,
+  so it will never report;
+- a job JetStream aged out at `--nats.max-job-age` leaves a `Result` in `pending`
+  forever — the outbox row says published, the `Result` says pending, and both
+  are telling the truth.
+
+To everything else in the system, both look exactly like work still in progress.
+
+A scan runs every `--reconcile-interval` and makes five passes:
+
+| Pass | Finds | Does |
+|---|---|---|
+| Abandoned leases | outbox rows leased by a relay that is gone | returns them to the pool |
+| Expired execution | `running` past `deadline` + upload grace | `Result` → `timeout` |
+| Pending dispatch | `pending` past the transport's own job expiry | re-enqueues a missing entry, or expires a lost one |
+| Stale dispatch | entries whose `Result` is terminal or deleted | withdraws the queued message, retires the row |
+| Runner channels | active `Runner`s | recreates a missing durable consumer |
+
+Things worth knowing:
+
+- **An expired `Result` is never reopened.** The attempt happened; it is history.
+  Retry, when there is a policy for it, creates a *new* `Result` — it does not
+  erase this one. The executor recorded at claim time survives the expiry, which
+  is the first thing anyone diagnosing it will want.
+- **An unpublished outbox row is left strictly alone.** It is the relay's work in
+  progress, and a broker that has been down for two hours is exactly the case
+  where both the backlog and the pending `Result`s are old. Inferring a lost
+  dispatch there would expire every run the relay is about to deliver.
+- **`--pending-dispatch-grace` is added to `--nats.max-job-age`**, not configured
+  independently, so a pending run is always given longer than the broker will
+  hold its message.
+- **Every replica reconciles by default.** Concurrent scans are settled by a
+  `reconcile_leases` row, and every `Result` transition is version-guarded on top
+  of that — two reconcilers reaching for one run produce one winner and one no-op.
+- **Workers never repair anything.** Restoring a Runner's consumer is the control
+  plane's job by design (ADR 0004): a Worker allowed to create its own would be
+  creating one that overlaps the real one, which a work-queue stream rejects.
+- **A retired row is not backlog.** It leaves the relay's view and stops counting
+  towards `DispatchOutbox.Stats`, so the alert on oldest-unpublished-age does not
+  stay lit for a dispatch that has been deliberately dropped.
+
+### Configuration
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--reconcile-enabled` / `--no-reconcile-enabled` | `true` | Run the reconciler in this process. |
+| `--reconcile-interval` | `1m` | How often a scan is attempted. This is the resolution at which a stuck run becomes visible. |
+| `--reconcile-lease` | `5m` | How long one scan holds the right to run. Must exceed a scan's duration. |
+| `--reconcile-batch-size` | `256` | How much one scan repairs. A backlog drains over several scans. |
+| `--pending-dispatch-grace` | `30m` | Added to `--nats.max-job-age` to decide when a published dispatch is presumed lost. |
+
+### Operating
+
+Each scan logs a summary when it repaired or failed anything, and stays quiet
+otherwise:
+
+```text
+reconciler "reconciler-l2Hq0HDK" repaired 3 in 33ms (running-expired=0
+  pending-expired=1 redispatched=0 retired=1 dropped=1 leases=0 channels=0
+  failures=0 oldest=6.002967577s)
+```
+
+`oldest` is the number to alert on: the age of the oldest `Result` found needing
+repair. It stays near zero while the reconciler keeps up, however much it is
+repairing. The other figure worth watching is *scan age* —
+`urth.Reconciler.Status()` reports when a scan last completed without failures,
+which is the only thing that distinguishes "nothing is wrong" from "nothing is
+scanning". Surfacing both to operators is
+[task 016](../../docs/review-backlog/tasks/016-runner-queue-operator-visibility.md).
+
+A dispatch dropped rather than delivered says so in the row:
+
+```sql
+SELECT event_uid, result_uid, retired_at, retired_reason
+  FROM dispatch_outbox
+ WHERE retired_at IS NOT NULL
+ ORDER BY retired_at DESC;
+```
+
 ### Transports during migration
 
 Both transports drain the same outbox, so the durability story is one story:

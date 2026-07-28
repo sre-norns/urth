@@ -129,6 +129,29 @@ happened — and the event UID is minted once at enqueue and reused on every
 retry, because it is the `Nats-Msg-Id` that suppresses the duplicate. See
 `cmd/api-server/README.md`.
 
+**Nothing repairs itself; the reconciler does it.** `pkg/urth/reconcile.go` runs
+in every api-server beside the relay and is what makes the execution lease and
+the outbox mean anything: an abandoned `running` run and a `pending` run whose
+message aged out are both invisible without it. Rules that are easy to break
+when touching it — an **unpublished** outbox row is the relay's, never the
+reconciler's (inferring a lost dispatch there expires runs the relay is about to
+deliver); an expired `Result` is never reopened, because a retry must create a
+new `Result`; `--pending-dispatch-grace` is *added to* `--nats.max-job-age`
+rather than set independently. Retired rows (`retired_at`) leave both the
+relay's claim query and `DispatchOutbox.Stats`.
+
+**Postgres compares `uuid` and `text` columns only with a cast.** `results.uid`
+is a `uuid` column; every copy of a resource ID stored on a non-manifest table —
+`dispatch_outbox.result_uid` — is `text`. Joining them directly fails the whole
+query with `operator does not exist: uuid = text`. Bound *parameters* are fine;
+it is column-to-column comparison that needs `CAST(results.uid AS TEXT)`.
+
+**JetStream does not report "no message here" consistently.**
+`Stream.DeleteMsg` on a sequence past the end of the stream returns a generic
+500 (`stream store EOF`), not `ErrMsgNotFound`. `natsq.DropDispatch` confirms
+absence with a `GetMsg` rather than matching the error's shape; matching alone
+would have the reconciler retry the same entry forever.
+
 **`file::memory:` gives every pooled connection its own SQLite database.** A row
 written on one connection and read on another silently is not there, which reads
 exactly like the store failing to persist. Use
@@ -138,9 +161,9 @@ maps `time.Time` to `timestamptz`, and naming the type forces it on SQLite too,
 where the driver cannot scan it. Verified against a live Postgres — do not
 "fix" it by adding the tags back.
 
-**Some tests need a real Postgres.** Result/dispatch atomicity and relay row
-leasing (`FOR UPDATE SKIP LOCKED`) are Postgres properties, so those tests skip
-themselves unless `URTH_TEST_POSTGRES_URL` is set. `make test/postgres` and
+**Some tests need a real Postgres.** Result/dispatch atomicity, relay row leasing
+(`FOR UPDATE SKIP LOCKED`) and every reconciler test are Postgres properties, so
+those tests skip themselves unless `URTH_TEST_POSTGRES_URL` is set. `make test/postgres` and
 `make audit/postgres` set it from `store-url`; CI provisions the database as a
 service and runs `audit/postgres`. A green `make audit` has not run them. A URL
 that is set but unreachable fails rather than skips, deliberately.

@@ -68,6 +68,24 @@ type DispatchOutboxEntry struct {
 	UpdatedAt   time.Time  `gorm:"not null"`
 	PublishedAt *time.Time `gorm:"index"`
 
+	// PublishedSeq addresses the message the transport accepted, when the
+	// transport has such a notion. It is what makes a dispatch withdrawable: a
+	// Result that reached a terminal state without ever claiming this message
+	// leaves it sitting in the queue, and removing exactly that message needs its
+	// address rather than its subject -- purging by subject would take out every
+	// other run queued for the same runner.
+	//
+	// Zero means "not addressable", which is the honest answer for the legacy
+	// asynq path and costs only the ability to withdraw a stale message early.
+	PublishedSeq uint64
+
+	// RetiredAt marks an entry that will never be published, because the Result
+	// it was written for no longer wants it. Retired rather than deleted: the
+	// backlog is the only place an operator can see that a dispatch was dropped
+	// and why, and a deleted row would also free its event UID for reuse.
+	RetiredAt     *time.Time `gorm:"index"`
+	RetiredReason string
+
 	// NotBefore holds a failed entry back so a broker outage is retried with
 	// backoff rather than spun on.
 	NotBefore time.Time `gorm:"not null;index"`
@@ -123,6 +141,18 @@ func NewDispatchOutboxEntry(result Result, now time.Time) DispatchOutboxEntry {
 	}
 }
 
+// DispatchReceipt is what a transport can say about a message it accepted.
+//
+// It exists so a publication is not a write-only act. Knowing only "the broker
+// took it" is enough to mark the row published, but not enough to take the
+// message back if the Result stops wanting it, and a dispatch that cannot be
+// withdrawn is one the reconciler can only wait out.
+type DispatchReceipt struct {
+	// Sequence addresses the accepted message within the transport. Zero means
+	// the transport does not name its messages in a way this side can address.
+	Sequence uint64
+}
+
 // DispatchPublisher hands one outbox entry to a transport.
 //
 // The interface is owned here, and implemented by the transport packages, so
@@ -133,7 +163,7 @@ func NewDispatchOutboxEntry(result Result, now time.Time) DispatchOutboxEntry {
 // message. Returning early would let the relay mark an entry published that the
 // broker may never deliver, which is the very failure the outbox exists to close.
 type DispatchPublisher interface {
-	PublishDispatch(ctx context.Context, entry DispatchOutboxEntry) error
+	PublishDispatch(ctx context.Context, entry DispatchOutboxEntry) (DispatchReceipt, error)
 }
 
 // DispatchOutbox is the relay's view of the outbox table.
@@ -142,8 +172,9 @@ type DispatchOutbox interface {
 	// by a live relay are skipped, not waited on.
 	Claim(ctx context.Context, relayID string, limit int, lease time.Duration) ([]DispatchOutboxEntry, error)
 
-	// MarkPublished records a successful publication and releases the lease.
-	MarkPublished(ctx context.Context, id uint, at time.Time) error
+	// MarkPublished records a successful publication and releases the lease. The
+	// receipt is stored so the message stays addressable after the fact.
+	MarkPublished(ctx context.Context, id uint, at time.Time, receipt DispatchReceipt) error
 
 	// MarkFailed records a failed attempt, releases the lease, and holds the
 	// entry back until notBefore.

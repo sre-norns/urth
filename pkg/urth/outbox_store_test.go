@@ -123,7 +123,7 @@ func TestOutboxClaimLeasesAndReleases(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, again)
 
-	require.NoError(t, outbox.MarkPublished(ctx, claimed[0].ID, time.Now()))
+	require.NoError(t, outbox.MarkPublished(ctx, claimed[0].ID, time.Now(), urth.DispatchReceipt{}))
 
 	// A published entry is never offered again.
 	after, err := outbox.Claim(ctx, "relay-a", 10, time.Minute)
@@ -195,7 +195,7 @@ func TestOutboxStatsReportsBacklogAge(t *testing.T) {
 	require.NoError(t, err)
 	require.InDelta(t, (2 * time.Hour).Seconds(), stats.OldestAge.Seconds(), 60)
 
-	require.NoError(t, outbox.MarkPublished(ctx, entry.ID, time.Now()))
+	require.NoError(t, outbox.MarkPublished(ctx, entry.ID, time.Now(), urth.DispatchReceipt{}))
 
 	drained, err := outbox.Stats(ctx, time.Now())
 	require.NoError(t, err)
@@ -252,7 +252,7 @@ func TestOutboxCompetingRelaysDoNotDoubleClaim(t *testing.T) {
 				mu.Unlock()
 
 				for _, entry := range batch {
-					require.NoError(t, outbox.MarkPublished(ctx, entry.ID, time.Now()))
+					require.NoError(t, outbox.MarkPublished(ctx, entry.ID, time.Now(), urth.DispatchReceipt{}))
 				}
 			}
 		}()
