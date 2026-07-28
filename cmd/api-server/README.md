@@ -207,6 +207,78 @@ Both transports drain the same outbox, so the durability story is one story:
   [task 015](../../docs/review-backlog/tasks/015-retire-asynq-transport.md)
   deletes that adapter rather than a second way of dispatching.
 
+## Dead letters
+
+A dispatch can stop making progress in four ways, and until a `DispatchFailure`
+records one, all four leave a `Result` pending forever with the only account of
+why in a worker's log:
+
+| Reason | Means | Reported by |
+|---|---|---|
+| `malformed-envelope` | the message could not be parsed | worker |
+| `misrouted-dispatch` | it named a different runner than the consumer that delivered it | worker |
+| `policy-refused` | the API permanently refused the claim (4xx) | worker |
+| `max-delivery-exhausted` | the broker stopped redelivering | control plane |
+
+Recording a failure and moving its `Result` to `errored` happen in one
+transaction. Either alone is worse than neither: a record without the transition
+leaves a run pending next to an explanation nobody is reading, and a transition
+without the record loses the reason. `errored` rather than `timeout` because
+nothing ran out of time — the dispatch was undeliverable.
+
+Things worth knowing:
+
+- **A worker reports before it terminates.** A terminated message is never
+  redelivered, so reporting afterwards means a crash in between destroys the only
+  evidence the dispatch existed. A report that cannot be made leaves the message
+  queued for another attempt. The exception is a report the API refuses as
+  malformed (4xx), which would be refused on every redelivery — those terminate
+  anyway and say so loudly.
+- **Only a pending run is stranded.** A `running` one was claimed through some
+  other delivery and is live work; a terminal one is history. The failure is still
+  recorded in both cases, because the delivery really did fail.
+- **Recording is idempotent by dispatch and reason.** A worker unsure whether its
+  report landed simply sends it again. A dispatch that failed two different ways
+  keeps two records, because those tell an operator two different things.
+- **The outbox row is left alone.** The reconciler's stale-dispatch sweep is what
+  withdraws the queued message once the `Result` is terminal, so this path does
+  not grow a second copy of that logic.
+- **`max-delivery-exhausted` is not guaranteed.** JetStream advisories are Core
+  NATS and at-most-once, so one arriving while nothing is listening is gone. Every
+  replica subscribes for that reason, and the reconciler remains the backstop: the
+  pending run is expired once its message outlives `--nats.max-job-age`. The
+  advisory buys a prompt, specific diagnosis rather than the guarantee.
+- **A retry creates a new `Result`.** The failed one is never reopened. The
+  execution snapshot is copied rather than re-read from the scenario, and
+  placement is inherited — moving the run to another runner would be a scheduling
+  decision. The link is recorded in both directions:
+  `DispatchFailureStatus.retryResultName` forward, `urth/result.retry-of` back.
+
+### Operating
+
+Both operator surfaces show unresolved failures by default:
+
+```sh
+urthctl get dead-letters              # unresolved
+urthctl get dead-letters --all -o wide
+urthctl retry <name>                  # creates a new run, names it
+urthctl resolve <name>                # closes it without re-running
+```
+
+The Web UI has the same at `/dead-letters`. Everything is a label query:
+
+```sh
+urthctl get dead-letters -l 'urth/dispatch-failure.reason = max-delivery-exhausted'
+urthctl get dead-letters -l 'urth/runner.name = example-runner'
+```
+
+The figure to alert on is the count of unresolved failures, and in particular any
+`max-delivery-exhausted`: workers are being handed work they cannot claim.
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--advisories-enabled` / `--no-advisories-enabled` | `true` | Record dispatches the broker has stopped redelivering. |
+
 ## The execution snapshot
 
 A `Result` is one execution attempt, so it stores what that attempt was asked to
