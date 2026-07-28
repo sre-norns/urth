@@ -84,9 +84,8 @@ func (s *scheduler) Close() error {
 // method is the same publication expressed against a Result the caller already
 // holds, and is kept so that a direct dispatch -- a test, an operator tool --
 // produces exactly the message the relay would.
-func (s *scheduler) Schedule(ctx context.Context, result urth.Result, scenario urth.Scenario) (urth.RunID, error) {
+func (s *scheduler) Schedule(ctx context.Context, result urth.Result) (urth.RunID, error) {
 	entry := urth.NewDispatchOutboxEntry(result, time.Now())
-	entry.ScenarioName = scenario.Name
 
 	if _, err := s.PublishDispatch(ctx, entry); err != nil {
 		return urth.InvalidRunID, fmt.Errorf("can't schedule job for %q: %w", result.Name, err)

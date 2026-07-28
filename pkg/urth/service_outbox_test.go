@@ -71,9 +71,14 @@ func seedScenario(t *testing.T, store *dbstore.DBStore) manifest.ResourceName {
 		ObjectMeta: manifest.ObjectMeta{Name: "test-scenario"},
 		Spec: urth.ScenarioSpec{
 			IsActive: true,
+			// A spec the registered http prober actually accepts. The prober
+			// packages are linked into this test binary (see execution_test.go)
+			// exactly as they are into the API server, so a stored prob is
+			// decoded strictly against its registered type rather than falling
+			// back to an untyped map.
 			Prob: prob.Manifest{
 				Kind: "http",
-				Spec: map[string]any{"url": "http://example.com"},
+				Spec: map[string]any{"target": "http://example.com"},
 			},
 		},
 	}

@@ -285,19 +285,24 @@ func (r *DispatchRelay) Run(ctx context.Context) error {
 // SchedulerDispatchPublisher adapts a legacy urth.Scheduler to the outbox.
 //
 // The asynq transport publishes the whole job -- prob kind, spec, and script --
-// so it needs the Result and Scenario, not just the dispatch identity. Rather
-// than keep that transport on the pre-outbox code path until task 015 retires
-// it, this adapter rehydrates both from the store at publication time. The
-// result is that both transports share one durability story, and removing asynq
-// later removes this type rather than a second way of dispatching.
+// so it needs the Result itself, not just the dispatch identity. Rather than keep
+// that transport on the pre-outbox code path until task 015 retires it, this
+// adapter rehydrates the Result from the store at publication time. Both
+// transports then share one durability story, and removing asynq later removes
+// this type rather than a second way of dispatching.
 type SchedulerDispatchPublisher struct {
 	scheduler Scheduler
 	results   ResultLoader
 }
 
-// ResultLoader reads the resources a legacy dispatch needs.
+// ResultLoader reads the Result a dispatch is for.
+//
+// It loads the Result and stops there. The Scenario used to be loaded beside it,
+// and a dispatch was refused when that scenario had been deleted -- which made a
+// run already committed to happen depend on a resource it no longer needs. The
+// Result's execution snapshot is the whole job.
 type ResultLoader interface {
-	LoadForDispatch(ctx context.Context, entry DispatchOutboxEntry) (Result, Scenario, error)
+	LoadForDispatch(ctx context.Context, entry DispatchOutboxEntry) (Result, error)
 }
 
 // NewSchedulerDispatchPublisher wraps a Scheduler as a DispatchPublisher.
@@ -312,7 +317,7 @@ func NewSchedulerDispatchPublisher(scheduler Scheduler, results ResultLoader) *S
 // worse than admitting there is none. Retiring a stale asynq task belongs to
 // task 015, which removes this path rather than extending it.
 func (p *SchedulerDispatchPublisher) PublishDispatch(ctx context.Context, entry DispatchOutboxEntry) (DispatchReceipt, error) {
-	result, scenario, err := p.results.LoadForDispatch(ctx, entry)
+	result, err := p.results.LoadForDispatch(ctx, entry)
 	if err != nil {
 		return DispatchReceipt{}, err
 	}
@@ -325,7 +330,7 @@ func (p *SchedulerDispatchPublisher) PublishDispatch(ctx context.Context, entry 
 			ErrPermanentDispatch, entry.ResultUID, result.Version, entry.ResultVersion)
 	}
 
-	if _, err := p.scheduler.Schedule(ctx, result, scenario); err != nil {
+	if _, err := p.scheduler.Schedule(ctx, result); err != nil {
 		return DispatchReceipt{}, err
 	}
 

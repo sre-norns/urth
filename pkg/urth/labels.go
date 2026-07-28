@@ -82,6 +82,14 @@ const (
 	LabelResultJobState = LabelsPrefix + "result.state"
 	LabelResultStatus   = LabelsPrefix + "result.result"
 
+	// LabelResultUnschedulable says why a run was refused rather than executed,
+	// as a slug an operator can select on. A run that can never be executed has
+	// to be findable as a class -- "every run stranded by X" is a fleet-wide
+	// question, and a message buried in a server log answers it for nobody.
+	//
+	// Values are label-grammar slugs, not sentences. See ReasonNoExecutionSnapshot.
+	LabelResultUnschedulable = LabelsPrefix + "result.unschedulable"
+
 	LabelResultMessageID = "run.messageId"
 
 	// Well-known artifact labels:
@@ -102,4 +110,15 @@ const (
 	// are known to be free of credentials from everything else. Unclassified
 	// artifacts count as unsafe, so this is `true` for them.
 	LabelArtifactMayContainSecrets = LabelsPrefix + "artifact.may-contain-secrets"
+)
+
+// Reasons recorded in LabelResultUnschedulable.
+const (
+	// ReasonNoExecutionSnapshot marks a run that predates ExecutionSnapshot and
+	// so has no record of what it was created to execute.
+	//
+	// The remedy is to trigger the scenario again: the run cannot be repaired,
+	// because reconstructing it from the scenario as it stands now would be a
+	// guess at what was asked for, dressed up as history.
+	ReasonNoExecutionSnapshot = "missing-execution-snapshot"
 )

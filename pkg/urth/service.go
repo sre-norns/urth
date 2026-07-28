@@ -574,13 +574,24 @@ func (m *resultsAPIImpl) Create(ctx context.Context, newEntry manifest.ResourceM
 		return Result{}, bark.ErrForbidden
 	}
 
-	// Check if a scenario has a prob section, otherwise it can't be scheduled
-	if entry.Spec.Scenario.Spec.Prob.Kind == "" || entry.Spec.Scenario.Spec.Prob.Spec == nil {
+	// Take the execution snapshot here, from the scenario as it is at this
+	// instant, and never look at the scenario again for this run. A Result is one
+	// execution attempt: editing the scenario while this run sits in a queue must
+	// not change what the run does, and deleting the scenario must not make a
+	// scheduled run unrunnable. Both were true while the claim path reloaded the
+	// scenario by UID, and neither left any trace in the Result's history.
+	snapshot := NewExecutionSnapshot(entry.Spec.Scenario)
+
+	// Validated before it is persisted, so that a stored pending Result is always
+	// executable. Discovering it is not costs a dispatch, a worker's attention and
+	// an execution lease before anyone notices.
+	if err := snapshot.Validate(); err != nil {
+		log.Printf("refusing to schedule a run of %q: %v", entry.Spec.Scenario.Name, err)
 		return Result{}, bark.ErrForbidden
 	}
 
-	// Should we override of just trust the value passed in?
-	entry.Spec.ProbKind = entry.Spec.Scenario.Spec.Prob.Kind
+	entry.Spec.Execution = snapshot
+	entry.Spec.ProbKind = snapshot.Prob.Kind
 
 	// Ensure initial status is set to pending
 	entry.Status = ResultStatus{
@@ -588,15 +599,18 @@ func (m *resultsAPIImpl) Create(ctx context.Context, newEntry manifest.ResourceM
 		Result: prob.RunNotFinished,
 	}
 
-	// Ensure labels are set correctly
+	// Labels describe the snapshot, not the scenario as it may later become.
+	// These are the run's audit trail: `urth/scenario.version` has to name the
+	// revision this run actually executes, or the history says a run of v3 that
+	// in fact ran v2.
 	entry.Labels = manifest.MergeLabels(
 		// scenario.Labels,
 		entry.Labels,
 		manifest.Labels{
-			LabelScenarioName:    string(entry.Spec.Scenario.Name),
-			LabelScenarioUID:     string(entry.Spec.Scenario.UID),
-			LabelScenarioVersion: entry.Spec.Scenario.Version.String(),
-			LabelScenarioKind:    string(entry.Spec.ProbKind),
+			LabelScenarioName:    string(snapshot.ScenarioName),
+			LabelScenarioUID:     string(snapshot.ScenarioUID),
+			LabelScenarioVersion: snapshot.ScenarioVersion.String(),
+			LabelScenarioKind:    string(snapshot.Prob.Kind),
 
 			LabelResultJobState: string(entry.Status.Status),
 			// LabelResultStatus: string(entry.Status.Result),
@@ -886,6 +900,20 @@ func (m *resultsAPIImpl) ClaimRun(ctx context.Context, resultUID manifest.Resour
 		return AuthJobResponse{}, claimObsolete("result claimed by another runner")
 	}
 
+	// Fail closed on a run that does not say what it is. Checked before the claim
+	// commits, so a Result that cannot be described is never moved to `running`
+	// and never has an execution lease spent on it.
+	//
+	// Filling the gap from the scenario as it stands now is the one thing that
+	// must not happen here: it would run whatever the scenario has become and
+	// record it as the run that was requested.
+	if entry.Spec.Execution.IsZero() {
+		log.Printf("run %q (%v) has no execution snapshot and cannot be claimed", entry.Name, entry.UID)
+		m.markUnschedulable(ctx, entry, ReasonNoExecutionSnapshot)
+
+		return AuthJobResponse{}, claimObsolete("result has no execution snapshot")
+	}
+
 	// The idempotent case: this worker already holds this run.
 	if entry.Status.Status == JobRunning {
 		if entry.Status.Executor.WorkerID == worker.UID && entry.Status.DispatchID == request.DispatchID {
@@ -984,23 +1012,55 @@ func (m *resultsAPIImpl) loadClaimant(ctx context.Context, claims WorkerSessionC
 	return worker, runner, nil
 }
 
+// markUnschedulable retires a pending run that can never be executed as it
+// stands, recording why in a label an operator can select on.
+//
+// Only a pending run is touched. A run already claimed has a lease, and the
+// reconciler is what ends it; overwriting it here would erase the executor
+// recorded against a run that may still be in flight.
+//
+// Failures are logged rather than returned. The caller is refusing the claim
+// either way, and turning a bookkeeping failure into a retryable claim error
+// would have the worker redeliver a dispatch that can never succeed.
+func (m *resultsAPIImpl) markUnschedulable(ctx context.Context, entry Result, reason string) {
+	if entry.Status.Status != JobPending {
+		return
+	}
+
+	now := time.Now()
+	entry.Spec.TimeEnded = &now
+	entry.Status.Status = JobErrored
+	entry.Status.Result = prob.RunFinishedError
+
+	labels := manifest.Labels{
+		LabelResultJobState: string(entry.Status.Status),
+		LabelResultStatus:   string(entry.Status.Result),
+	}
+	putLabel(labels, LabelResultUnschedulable, reason)
+	entry.Labels = manifest.MergeLabels(entry.Labels, labels)
+
+	if ok, err := m.store.Update(ctx, &entry, entry.UID, dbstore.WithVersion(entry.Version)); err != nil {
+		log.Printf("failed to mark run %q unschedulable (%v): %v", entry.Name, reason, err)
+	} else if !ok {
+		// Someone else moved the Result on. Whatever they did to it is newer
+		// than this decision, so it stands.
+		log.Printf("run %q changed while being marked unschedulable (%v)", entry.Name, reason)
+	}
+}
+
 // authorizeRun mints the run capability and assembles the claim response,
 // including the execution snapshot the worker needs in order to run anything.
-func (m *resultsAPIImpl) authorizeRun(ctx context.Context, entry Result, deadline time.Time) (AuthJobResponse, error) {
-	// Load the scenario explicitly. Result.Spec.Scenario is a lazy association
-	// and comes back zero-valued from GetByName, so reading the prob straight
-	// off it would hand the worker an empty execution snapshot and a run that
-	// fails for no visible reason.
-	scenario := entry.Spec.Scenario
-	if scenario.Spec.Prob.Kind == "" {
-		if ok, err := m.store.GetByUID(ctx, &scenario, entry.Spec.ScenarioID); err != nil {
-			return AuthJobResponse{}, claimUnavailable("load scenario", err)
-		} else if !ok {
-			// The run's scenario has been deleted out from under it. There is
-			// nothing left to execute, so the dispatch is obsolete rather than
-			// something to retry.
-			return AuthJobResponse{}, claimObsolete("scenario no longer exists")
-		}
+func (m *resultsAPIImpl) authorizeRun(_ context.Context, entry Result, deadline time.Time) (AuthJobResponse, error) {
+	// The stored snapshot, and nothing else. The scenario is deliberately not
+	// consulted: it is a mutable resource, and reloading it here -- which this
+	// used to do -- meant an edit or a deletion between scheduling and claiming
+	// changed or destroyed a run already committed to happen.
+	snapshot := entry.Spec.Execution
+	if snapshot.IsZero() {
+		// ClaimRun refuses these before committing a claim, so reaching here
+		// means a new caller of authorizeRun skipped that check. Fail rather
+		// than hand a worker an empty job.
+		return AuthJobResponse{}, claimObsolete("result has no execution snapshot")
 	}
 
 	now := time.Now()
@@ -1026,8 +1086,8 @@ func (m *resultsAPIImpl) authorizeRun(ctx context.Context, entry Result, deadlin
 			VersionedResourceID: entry.GetVersionedID(),
 		},
 		Token:    APIToken(signed),
-		Prob:     scenario.Spec.Prob,
-		Scenario: scenario.Name,
+		Prob:     snapshot.Prob,
+		Scenario: snapshot.ScenarioName,
 		Deadline: deadline,
 	}, nil
 }

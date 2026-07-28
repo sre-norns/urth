@@ -172,7 +172,53 @@ SELECT event_uid, result_uid, retired_at, retired_reason
 Both transports drain the same outbox, so the durability story is one story:
 
 - **NATS** publishes a dispatch envelope built from the row.
-- **Asynq** (legacy) needs the whole job, so an adapter reloads the `Result` and
-  `Scenario` at publication time and calls the existing scheduler. Retiring asynq
-  in [task 015](../../docs/review-backlog/tasks/015-retire-asynq-transport.md)
+- **Asynq** (legacy) needs the whole job, so an adapter reloads the `Result` at
+  publication time and calls the existing scheduler. It publishes the `Result`'s
+  execution snapshot, never the current `Scenario`. Retiring asynq in
+  [task 015](../../docs/review-backlog/tasks/015-retire-asynq-transport.md)
   deletes that adapter rather than a second way of dispatching.
+
+## The execution snapshot
+
+A `Result` is one execution attempt, so it stores what that attempt was asked to
+do: `ResultSpec.Execution` holds the scenario's UID, name, version, placement
+requirements, and the complete typed `prob.Manifest`, copied at the moment the
+run is created and never revisited.
+
+This is what makes a scheduled run immutable. Claim authorization used to reload
+the `Scenario` by UID, which had two consequences that no one could see from the
+`Result`:
+
+- editing a `Scenario` changed what an already-queued run executed, without
+  changing the `Result`'s version and without any trace in its history;
+- deleting a `Scenario` destroyed every run already committed to happen — the
+  claim answered "obsolete" and the dispatch was discarded.
+
+Both are now impossible: nothing on the claim path reads the `Scenario`.
+
+Things worth knowing:
+
+- **The snapshot is never serialized by the resource API.** A probe definition is
+  a script and may carry credentials, so it is disclosed only in the response to
+  an authenticated claim (`AuthJobResponse.Prob`). `GET /results` and
+  `GET /results/{id}` expose `probKind` and the `urth/scenario.*` labels, not the
+  script. There is deliberately no operator endpoint that returns it yet; adding
+  one needs the operator authentication of
+  [task 005](../../docs/review-backlog/tasks/005-secure-runner-enrollment.md).
+- **The labels describe the snapshot.** `urth/scenario.version` on a `Result`
+  names the revision that run actually executes, so "which runs used the bad
+  script" stays a label query after the scenario has moved on.
+- **A run with no snapshot fails closed.** Rows written before this column
+  existed read back as NULL. Such a run is refused at claim, its dispatch is
+  acknowledged rather than redelivered forever, and the `Result` becomes
+  `errored` and labelled `urth/result.unschedulable=missing-execution-snapshot`.
+  It is never repaired from the current `Scenario`: that would run something
+  nobody asked for and record it as history. The remedy is to trigger the
+  scenario again.
+
+```sql
+-- Runs stranded by a missing snapshot.
+SELECT uid, name, created_at
+  FROM results
+ WHERE labels::json ->> 'urth/result.unschedulable' = 'missing-execution-snapshot';
+```

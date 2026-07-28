@@ -234,7 +234,7 @@ type stubScheduler struct {
 
 func (s *stubScheduler) Close() error { return nil }
 
-func (s *stubScheduler) Schedule(_ context.Context, result urth.Result, _ urth.Scenario) (urth.RunID, error) {
+func (s *stubScheduler) Schedule(_ context.Context, result urth.Result) (urth.RunID, error) {
 	if s.err != nil {
 		return urth.InvalidRunID, s.err
 	}
@@ -244,13 +244,12 @@ func (s *stubScheduler) Schedule(_ context.Context, result urth.Result, _ urth.S
 }
 
 type stubLoader struct {
-	result   urth.Result
-	scenario urth.Scenario
-	err      error
+	result urth.Result
+	err    error
 }
 
-func (l *stubLoader) LoadForDispatch(context.Context, urth.DispatchOutboxEntry) (urth.Result, urth.Scenario, error) {
-	return l.result, l.scenario, l.err
+func (l *stubLoader) LoadForDispatch(context.Context, urth.DispatchOutboxEntry) (urth.Result, error) {
+	return l.result, l.err
 }
 
 // The legacy transport is reached through the same outbox, so that both
