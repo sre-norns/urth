@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"reflect"
 	"time"
 
 	"github.com/alecthomas/kong"
 	_ "github.com/joho/godotenv/autoload"
+	"github.com/sre-norns/urth/pkg/controllers"
 	"github.com/sre-norns/urth/pkg/natsq"
 	"github.com/sre-norns/urth/pkg/redqueue"
 	"github.com/sre-norns/urth/pkg/urth"
@@ -518,30 +520,22 @@ var appCli struct {
 	SessionTTL     time.Duration `help:"How long an issued worker session remains valid" default:"1h"`
 	MaxRunDuration time.Duration `help:"Maximum time a worker may hold a run capability" default:"30m"`
 
-	// Relay settings. The relay runs inside every API server replica by default:
-	// ADR 0004 allows it as a separate process, but a deployment where nobody
-	// remembered to start one is a deployment where every run sits pending, so
-	// the safe default is that any process that can create a Result can also
-	// dispatch it. Competing relays are expected and handled by the row lease.
-	RelayEnabled      bool          `help:"Run the dispatch outbox relay in this process" default:"true" negatable:""`
-	RelayPollInterval time.Duration `help:"How often the dispatch relay polls the outbox when idle" default:"250ms"`
-	RelayBatchSize    int           `help:"How many outbox entries the relay leases per poll" default:"32"`
-	RelayLease        time.Duration `help:"How long a relay's claim on an outbox entry survives" default:"30s"`
+	// Control loops are configured by the package that composes them, so that a
+	// command hosting them elsewhere offers the same flags rather than a second
+	// set that drifted. See ADR 0006.
+	Controllers controllers.Config `embed:""`
+}
 
-	// Reconciler settings. Runs in every replica for the same reason the relay
-	// does -- a deployment where nobody started one is a deployment where an
-	// abandoned run stays `running` forever -- and competing scans are settled by
-	// a lease row plus the version guard on every transition.
-	ReconcileEnabled   bool          `help:"Run the dispatch/execution reconciler in this process" default:"true" negatable:""`
-	ReconcileInterval  time.Duration `help:"How often the reconciler scans for drift between Results and the transport" default:"1m"`
-	ReconcileLease     time.Duration `help:"How long one reconciler holds the right to scan" default:"5m"`
-	ReconcileBatchSize int           `help:"How many inconsistencies one reconciler scan repairs" default:"256"`
+// listenAddress reproduces gin's own address resolution, which router.Run() used
+// to do for us. Serving through an http.Server is what makes a graceful shutdown
+// possible, and that is the one thing router.Run() cannot do -- but an operator
+// setting PORT should not discover that it stopped being read.
+func listenAddress() string {
+	if port := os.Getenv("PORT"); port != "" {
+		return ":" + port
+	}
 
-	// PendingDispatchGrace is added to the transport's own message expiry to
-	// decide when a published dispatch is presumed lost. Expiring a pending run
-	// while its message is still claimable would terminate live work, so the
-	// margin is deliberately generous.
-	PendingDispatchGrace time.Duration `help:"How long past the transport's job expiry a pending run waits before it is expired" default:"30m"`
+	return ":8080"
 }
 
 func main() {
@@ -549,8 +543,8 @@ func main() {
 		kong.Name("urthd"),
 		kong.Description("Urth API service"),
 	)
-	// FIXME: Find a way to pass custom context to Gin
-	// ctx := grace.NewSignalHandlingContext()
+
+	ctx := grace.NewSignalHandlingContext()
 
 	dial, err := appCli.Dialector()
 	grace.SuccessRequired(err, "Failed to create datasource connector (config issue)")
@@ -563,15 +557,15 @@ func main() {
 	grace.SuccessRequired(err, "failed to connect the datastore")
 
 	// Migrate the schema (TODO: should be limited to dev env only)
-	grace.SuccessRequired(db.AutoMigrate(
+	models := []any{
 		&urth.WorkerInstance{},
 		&urth.Runner{},
 		&urth.Scenario{},
 		&urth.Result{},
 		&urth.Artifact{},
-		&urth.DispatchOutboxEntry{},
-		&urth.ReconcileLease{},
-	), "DB schema migration failed")
+	}
+	models = append(models, controllers.Models()...)
+	grace.SuccessRequired(db.AutoMigrate(models...), "DB schema migration failed")
 
 	// Init service
 	store, err := dbstore.NewDBStore(db, dbstore.ManifestModel)
@@ -631,49 +625,72 @@ func main() {
 	}
 	defer scheduler.Close()
 
-	if appCli.RelayEnabled {
-		relayCtx, stopRelay := context.WithCancel(context.Background())
-		defer stopRelay()
+	// Control loops run beside the API by default. Supervising them through a
+	// manager is what makes that acceptable: a panic in a repair pass is
+	// recovered and the loop restarted rather than taking the whole API server
+	// down with it, and both loops stop with the process instead of being
+	// hard-killed mid-transaction. See ADR 0006.
+	//
+	// Loop failures never propagate here. A server that stops accepting Results
+	// because NATS is unwell is strictly worse than one that keeps recording them
+	// for the relay to publish when NATS returns.
+	controllerManager := controllers.NewManager()
+	_, err = controllers.Register(controllerManager, appCli.Controllers, controllers.Dependencies{
+		DB:        db,
+		Store:     store,
+		Publisher: publisher,
+		Channels:  channels,
+		MaxJobAge: appCli.NATS.MaxJobAge,
+	})
+	grace.SuccessRequired(err, "failed to compose the control loops")
 
-		relay := urth.NewDispatchRelay(urth.NewDispatchOutbox(db), publisher,
-			urth.WithRelayPollInterval(appCli.RelayPollInterval),
-			urth.WithRelayBatchSize(appCli.RelayBatchSize),
-			urth.WithRelayLease(appCli.RelayLease),
-		)
+	controllerManager.Start(ctx)
 
-		go func() {
-			// Run only returns on cancellation; broker failures are retried
-			// against the outbox rather than taking the API server down with
-			// them. A server that stops accepting Results because NATS is
-			// unwell is strictly worse than one that keeps recording them for
-			// the relay to publish when NATS returns.
-			_ = relay.Run(relayCtx)
-		}()
-	}
-
-	if appCli.ReconcileEnabled {
-		reconcileCtx, stopReconciler := context.WithCancel(context.Background())
-		defer stopReconciler()
-
-		reconciler := urth.NewReconciler(urth.NewReconcileStore(db, store),
-			urth.WithReconcileInterval(appCli.ReconcileInterval),
-			urth.WithReconcileLease(appCli.ReconcileLease),
-			urth.WithReconcileBatchSize(appCli.ReconcileBatchSize),
-			// Derived from the transport's own expiry rather than configured
-			// independently: a pending run must be given longer than the broker
-			// will hold its message, or the reconciler expires runs that are
-			// still sitting in a queue waiting to be claimed.
-			urth.WithPendingDispatchTimeout(appCli.NATS.MaxJobAge+appCli.PendingDispatchGrace),
-			urth.WithRunnerChannels(channels),
-		)
-
-		go func() {
-			_ = reconciler.Run(reconcileCtx)
-		}()
+	if names := controllerManager.Names(); len(names) > 0 {
+		log.Printf("control loops running in this process: %v", names)
+	} else {
+		// Worth saying out loud: every loop disabled on every replica is a
+		// deployment where nothing repairs anything, and the symptom is runs that
+		// simply never move.
+		log.Print("no control loops are running in this process")
 	}
 
 	api := urth.NewService(store, scheduler, serviceOptions...)
 	router := apiRoutes(api, natsConn)
 
-	grace.FatalOnError(router.Run()) // listen and serve on 0.0.0.0:8080
+	server := &http.Server{
+		Addr:              listenAddress(),
+		Handler:           router,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+
+	serverStopped := make(chan error, 1)
+	go func() {
+		log.Printf("listening on %s", server.Addr)
+		serverStopped <- server.ListenAndServe()
+	}()
+
+	select {
+	case err := <-serverStopped:
+		// The listener failed on its own -- a port already held by an earlier
+		// api-server is the usual reason -- so there is nothing to shut down
+		// gracefully.
+		grace.FatalOnError(err)
+	case <-ctx.Done():
+		log.Print("shutting down")
+
+		// Requests are drained before the loops are waited on, because an
+		// in-flight claim is exactly the kind of work a scan should observe
+		// finished rather than abandoned.
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), appCli.Controllers.ShutdownTimeout)
+		defer cancel()
+
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			log.Printf("http server did not shut down cleanly: %v", err)
+		}
+
+		if err := controllerManager.Wait(appCli.Controllers.ShutdownTimeout); err != nil {
+			log.Printf("control loops did not stop cleanly: %v", err)
+		}
+	}
 }

@@ -176,3 +176,17 @@ git diff --check
     on both operator surfaces is task 016.
   - Retired rows are the substrate the dead-letter workflow (task 012) needs;
     presentation and operator retry are still that task's.
+
+- **Reviewed afterwards, in [ADR 0006](../../adr/0006-control-loop-placement.md):**
+  running the reconciler in every api-server replica was settled by this task's
+  implementation rather than by an accepted decision — ADR 0004 assigns the
+  reconciler no home. The review kept the placement and its default, and recorded
+  what the co-location owes in exchange: loop composition moved to
+  `pkg/controllers`, both loops are supervised so a panic in a pass cannot take
+  the API server down, both now participate in shutdown, and liveness is alerted
+  on from the lease row rather than from any process's own status.
+
+  It also relocated one decision this task made. The policy recorded above — a
+  pending Result whose dispatch outlived job expiry is expired, not republished —
+  is a statement about run lifetime, and ADR 0006 §7 names retry policy as its
+  future owner. The choice stands; the reconciler is not where it lives.

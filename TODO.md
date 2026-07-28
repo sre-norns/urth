@@ -40,6 +40,16 @@ looks deceptively like passing.
    Until that design lands, treat manual triggering as the supported path and
    build everything else against it. The scheduler removes the need to press the
    button; it should not change what the button does.
+
+   **Two things that design pass now inherits**, from
+   [ADR 0006](docs/adr/0006-control-loop-placement.md): it is the named trigger
+   for extracting the control loops into their own process -- the scheduler needs
+   a host, and that host is the controller-manager the relay and reconciler would
+   move into (they are already composed in `pkg/controllers` for this). And it
+   owns retry policy, including the decision task 003 had to make in passing: a
+   pending run whose dispatch outlived job expiry is expired rather than
+   republished. §7 draws the boundary -- the reconciler terminates attempts, the
+   scheduler decides whether another one happens.
 3. **Fix SQLite, or stop offering it.** `--store.url` defaults to a backend that
    cannot start. Either fix `idx_name` upstream in wyrd (`index:idx_name` ->
    `index`, letting gorm name it per table) or change the default to make the
