@@ -8,6 +8,10 @@ Read [`CONTEXT.md`](CONTEXT.md) before claiming a task. Accepted ADRs remain the
 architectural authority; this backlog describes the work needed to make the
 current implementation satisfy them.
 
+Tasks 001–016 came out of that review. Later numbers may be work found while
+executing it, which belongs in the same tracker and same format even where it
+sits outside the NATS workstreams; such a task says so in its Workstream field.
+
 ## Agent Workflow
 
 1. Choose a `ready` task whose dependencies are `done`.
@@ -46,6 +50,7 @@ Status values:
 | 014 | P2 | ready | [Make Runner placement capacity-aware](tasks/014-capacity-aware-runner-placement.md) | — | 008 |
 | 015 | P1 | blocked | [Drain Asynq and retire the legacy job model](tasks/015-retire-asynq-transport.md) | 001–013 | all runtime tasks |
 | 016 | P1 | blocked | [Surface Runner queue state to operators](tasks/016-runner-queue-operator-visibility.md) | 012, 013 | 012, 013, 014 |
+| 017 | P1 | ready | [Apply prober config defaults on every authoring path](tasks/017-apply-prober-config-defaults.md) | — | 015 |
 
 Priority meanings:
 

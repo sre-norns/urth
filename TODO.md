@@ -53,16 +53,22 @@ looks deceptively like passing.
 
 ### Carrying known debt
 
-- **Prober defaults are applied on the YAML path only.** The blackbox_exporter
-  config types (`http`, `tcp`, `dns`, `icmp`, `grpc`) implement `UnmarshalYAML`
-  but not `UnmarshalJSON`, so a manifest applied by `urthctl` gets blackbox's
-  defaults while a scenario posted as JSON by the UI gets zero values. In
-  practice a UI-authored probe resolved ip6 only and failed on `localhost`.
-  Worked around by seeding `IPProtocolFallback` in the UI's spec templates
-  (`website/src/utils/probSpec.js`), which duplicates server knowledge in the
-  client and should not survive. **The fix is for the API server to apply prober
-  defaults when a scenario is created or updated** -- it now links the prober
-  packages, so it can.
+- **Prober defaults are lost on every authoring path.** Now
+  [task 017](docs/review-backlog/tasks/017-apply-prober-config-defaults.md),
+  which carries the evidence and the fix; this is a pointer, not a second copy.
+
+  **Correction to the earlier note here**, which said `urthctl`'s YAML path
+  applied blackbox's defaults and only the UI's JSON path lost them. It does not.
+  Defaults come only from a YAML decode *and only when the prober's config
+  sub-block is present and non-empty* -- `yaml.v3` skips a custom unmarshaler for
+  a null node, and every prober example in this repo has that block commented
+  out. So the UI's `IPProtocolFallback` seeding in
+  `website/src/utils/probSpec.js` was masking one symptom of a wider problem.
+
+  A probe stored this way runs ip6-only and fails to resolve `localhost` or even
+  `127.0.0.1`, reporting `failed` -- indistinguishable from the target being
+  down. Sidestepped in practice by the `rest` prober
+  (`examples/scenario.rest.httpbin.yml`), which uses no blackbox config types.
 
 - `Active / Disabled / All` in the scenarios header are dead links
   (`href="#"`). They look like filters and are not.
