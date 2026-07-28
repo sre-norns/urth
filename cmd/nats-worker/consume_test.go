@@ -44,6 +44,29 @@ func (m *fakeMsg) InProgress() error           { return nil }
 func (m *fakeMsg) Term() error                 { m.termed = true; return nil }
 func (m *fakeMsg) TermWithReason(string) error { m.termed = true; return nil }
 
+// reportedOK is a dispatchReporter that records the failure and allows the
+// message to be removed, standing in for a control plane that accepted a report.
+func reportedOK(recorded *urth.DispatchFailureReason) dispatchReporter {
+	return func(reason urth.DispatchFailureReason, _ string) bool {
+		if recorded != nil {
+			*recorded = reason
+		}
+
+		return true
+	}
+}
+
+// reportFailed stands in for a control plane that could not be reached.
+func reportFailed(reason *urth.DispatchFailureReason) dispatchReporter {
+	return func(r urth.DispatchFailureReason, _ string) bool {
+		if reason != nil {
+			*reason = r
+		}
+
+		return false
+	}
+}
+
 // TestApplyDisposition proves each claim outcome maps to exactly one queue action,
 // and that a claim interrupted by shutdown leaves the message untouched for
 // redelivery -- the outcome that did not exist in the prototype, where every
@@ -67,7 +90,7 @@ func TestApplyDisposition(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			msg := &fakeMsg{}
-			execute := applyDisposition(msg, tc.outcome, manifest.ResourceID("run-1"))
+			execute := applyDisposition(msg, tc.outcome, manifest.ResourceID("run-1"), reportedOK(nil))
 
 			if execute != tc.wantExecute {
 				t.Errorf("execute = %v, want %v", execute, tc.wantExecute)
@@ -89,9 +112,75 @@ func TestApplyDisposition(t *testing.T) {
 // struggling API server is not immediately hammered with the same claim.
 func TestApplyDispositionRetryDelays(t *testing.T) {
 	msg := &fakeMsg{}
-	applyDisposition(msg, claimRetry, manifest.ResourceID("run-1"))
+	applyDisposition(msg, claimRetry, manifest.ResourceID("run-1"), reportedOK(nil))
 	if msg.nakedDelay <= 0 {
 		t.Fatalf("retry should NAK with a positive delay, got %v", msg.nakedDelay)
+	}
+}
+
+// TestPermanentRefusalIsReportedBeforeTermination proves the ordering the
+// dead-letter path depends on: the failure is recorded, and only then is the
+// message removed. A terminated message is not redelivered, so a report made
+// afterwards would be a report that a crash could lose entirely.
+func TestPermanentRefusalIsReportedBeforeTermination(t *testing.T) {
+	msg := &fakeMsg{}
+	var reported urth.DispatchFailureReason
+
+	applyDisposition(msg, claimTerminal, manifest.ResourceID("run-1"), reportedOK(&reported))
+
+	if reported != urth.ReasonPolicyRefused {
+		t.Errorf("reported reason = %q, want %q", reported, urth.ReasonPolicyRefused)
+	}
+	if !msg.termed {
+		t.Error("a reported permanent refusal should terminate the message")
+	}
+}
+
+// TestUnreportedRefusalKeepsTheMessage is the regression that matters most here.
+// If the control plane cannot be told why a dispatch is dead, terminating anyway
+// destroys the only evidence it ever existed -- JetStream will not redeliver a
+// terminated message and the Result stays pending with nothing to explain it.
+func TestUnreportedRefusalKeepsTheMessage(t *testing.T) {
+	msg := &fakeMsg{}
+
+	applyDisposition(msg, claimTerminal, manifest.ResourceID("run-1"), reportFailed(nil))
+
+	if msg.termed {
+		t.Error("a dispatch failure that could not be reported must not be terminated")
+	}
+	if !msg.naked {
+		t.Error("an unreported failure should be left for redelivery")
+	}
+	if msg.nakedDelay <= 0 {
+		t.Errorf("redelivery should be delayed, got %v", msg.nakedDelay)
+	}
+}
+
+// TestPermanentReportRefusalClassification locks the rule that decides whether an
+// unrecorded failure spins forever or is dropped: only a 4xx means the report
+// will never be accepted. A 5xx or a transport error is the control plane being
+// briefly unwell, and must not be read as a verdict on the message.
+func TestPermanentReportRefusalClassification(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"bad request is permanent", apiError(http.StatusBadRequest), true},
+		{"forbidden is permanent", apiError(http.StatusForbidden), true},
+		{"conflict is permanent", apiError(http.StatusConflict), true},
+		{"service unavailable is transient", apiError(http.StatusServiceUnavailable), false},
+		{"internal error is transient", apiError(http.StatusInternalServerError), false},
+		{"opaque transport error is transient", errors.New("connection reset by peer"), false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := permanentReportRefusal(tc.err); got != tc.want {
+				t.Fatalf("permanentReportRefusal(%v) = %v, want %v (status %d)",
+					tc.err, got, tc.want, httpStatusOf(tc.err))
+			}
+		})
 	}
 }
 
