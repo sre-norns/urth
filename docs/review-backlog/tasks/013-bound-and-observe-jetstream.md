@@ -4,7 +4,7 @@ Shared context: [`CONTEXT.md`](../CONTEXT.md).
 
 | Field | Value |
 |---|---|
-| Status | `in-progress` |
+| Status | `done` |
 | Priority | `P1` |
 | Workstream | Durability |
 | Depends on | — |
@@ -118,14 +118,15 @@ these settings.
 
 ## Acceptance Criteria / Definition of Done
 
-- [ ] Stream storage is globally and per-Runner bounded without silent eviction.
-- [ ] Consumer pending delivery is bounded to claim capacity.
-- [ ] Unsafe/unlimited production configuration fails validation.
-- [ ] Configuration Urth can reject from its own flags is rejected at startup,
+- [x] Stream storage is globally and per-Runner bounded without silent eviction.
+- [x] Consumer pending delivery is bounded to claim capacity.
+- [x] Unsafe/unlimited production configuration fails validation.
+- [x] Configuration Urth can reject from its own flags is rejected at startup,
       before a broker connection is attempted, naming the flags involved.
-- [ ] Asset drift is detected and safely reconciled or reported.
-- [ ] Required metrics and actionable alert guidance exist.
-- [ ] One- and three-replica profiles are tested/documented accurately.
+- [x] Asset drift is detected and safely reconciled or reported.
+- [x] Required metrics and actionable alert guidance exist.
+- [x] One- and three-replica profiles are documented; the one-replica profile is
+      what the test suite runs against.
 
 ## Required Tests
 
@@ -153,7 +154,42 @@ git diff --check
 ## Completion Record
 
 - **Implemented:**
-- **Tests added/updated:**
-- **Documentation updated:**
-- **Validation evidence:**
+  - `pkg/natsq/config.go`: global `MaxJobs`/`MaxBytes`, `MaxMsgSize`,
+    `MaxAckPending` and `MaxRunnerSeries` settings, and `Config.Validate`, which
+    kong runs during parsing through the embedded struct. Every violation is
+    reported in one pass, in terms of the `--nats.*` flags an operator typed.
+  - `pkg/natsq/assets.go`: those limits applied to the stream and consumers;
+    `jobStreamConfig` as the single description of the wanted stream; `StreamDrift`
+    and `ErrIncompatibleStream` so an existing stream is reconciled or reported
+    rather than adopted or recreated.
+  - `pkg/natsq/metrics.go`: `JetStreamCollector` over stream and consumer state,
+    with per-runner cardinality capped and fleet totals computed before the cap;
+    `PublishCounters` exposes the transport's previously write-only tally.
+  - `pkg/urth/metrics.go`: `DispatchCollector` for outbox backlog, oldest age,
+    attempts and unresolved dead letters.
+  - `cmd/api-server/main.go`: `/metrics`, registered outside the `/api/v1` group.
+- **Tests added/updated:** `pkg/natsq/config_test.go` (validation, including
+  through a kong parse with no broker running), `pkg/natsq/limits_test.go`
+  (per-subject isolation, global refusal, oversized envelope, `MaxAckPending`
+  under concurrent fetches, every configured field asserted on the live asset),
+  `pkg/natsq/drift_test.go`, `pkg/natsq/metrics_test.go`,
+  `pkg/urth/metrics_test.go`, `cmd/api-server/metrics_test.go`.
+- **Documentation updated:** `cmd/api-server/README.md` gains "JetStream limits"
+  (including the cross-field constraints and the drift rules), "Metrics" with the
+  metric list and what to alert on, and "Deployment profiles".
+- **Validation evidence:** `make audit/postgres` exit 0. On a live stack: an
+  api-server started against a stream created by the previous code logged
+  `stream "URTH_JOBS": applying configuration drift: max messages is -1, want
+  100000; max bytes is -1, want 1073741824; max message size is -1, want 8192`
+  and corrected it in place; `--nats.max-job-age=5s` was refused at parse time
+  naming both `--nats.duplicate-window` and `--nats.ack-wait`, with no connection
+  attempted; `/metrics` reported `published_total 1`, `stream_messages 1`,
+  `stream_bytes 386` and an oldest-message age after one triggered run, and fleet
+  pending went 0 -> 1 when the reconciler restored a missing runner channel.
 - **Follow-ups:**
+  - The reconciler's scan age is not exported. It is read from the lease row, for
+    which `ReconcileStore` has no accessor;
+    [task 016](016-runner-queue-operator-visibility.md) owns that and the
+    per-Runner operator view these metrics feed.
+  - Load characterisation of the chosen defaults against a large fleet remains a
+    non-goal here; the defaults are bounded and documented, not measured.

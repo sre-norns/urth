@@ -46,10 +46,10 @@ Status values:
 | 010 | P1 | ready | [Synchronously acknowledge claimed dispatches](tasks/010-synchronous-jetstream-ack.md) | — | 001, 003, 011 |
 | 011 | P1 | blocked | [Exercise the NATS Worker end to end and at crash points](tasks/011-nats-worker-failure-integration-tests.md) | 001–010 | all runtime tasks |
 | 012 | P1 | done | [Implement an operational dead-letter workflow](tasks/012-dead-letter-workflow.md) | 003 (done) | 002, 003, 013 |
-| 013 | P1 | in-progress | [Bound and observe JetStream assets](tasks/013-bound-and-observe-jetstream.md) | — | 004, 012 |
+| 013 | P1 | done | [Bound and observe JetStream assets](tasks/013-bound-and-observe-jetstream.md) | — | 004, 012 |
 | 014 | P2 | ready | [Make Runner placement capacity-aware](tasks/014-capacity-aware-runner-placement.md) | — | 008 |
 | 015 | P1 | blocked | [Drain Asynq and retire the legacy job model](tasks/015-retire-asynq-transport.md) | 001–013 | all runtime tasks |
-| 016 | P1 | blocked | [Surface Runner queue state to operators](tasks/016-runner-queue-operator-visibility.md) | 012 (done), 013 | 012, 013, 014 |
+| 016 | P1 | ready | [Surface Runner queue state to operators](tasks/016-runner-queue-operator-visibility.md) | 012 (done), 013 (done) | 012, 013, 014 |
 | 017 | P1 | ready | [Apply prober config defaults on every authoring path](tasks/017-apply-prober-config-defaults.md) | — | 015 |
 | 018 | P1 | done | [Fail unplaceable runs instead of queueing them forever](tasks/018-fail-unplaceable-runs.md) | 002, 003, 012 | 014, 016 |
 | 019 | P1 | ready | [Serve the live run log stream instead of refusing it](tasks/019-serve-run-log-stream.md) | — | — |

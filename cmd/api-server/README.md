@@ -384,3 +384,167 @@ SELECT uid, name, created_at
   FROM results
  WHERE labels::json ->> 'urth/result.unschedulable' = 'missing-execution-snapshot';
 ```
+
+## JetStream limits
+
+Every limit on `URTH_JOBS` is set explicitly. Nothing is left to a JetStream
+default, because most of those defaults are "unlimited" — a stream that grows
+until the volume fills is not a limit anybody chose, it is one nobody wrote down.
+`natsq.Config.Validate` refuses a zero rather than passing it through, so the
+decision has to be made.
+
+| Flag | Default | Bounds |
+|---|---|---|
+| `--nats.max-jobs` | `100000` | Queued jobs across the whole fleet. |
+| `--nats.max-bytes` | `1GiB` | What the stream may occupy — the unit the disk actually runs out of. |
+| `--nats.max-jobs-per-runner` | `1024` | One runner's share, so an offline runner cannot consume the stream. |
+| `--nats.max-msg-size` | `8KiB` | One dispatch envelope. |
+| `--nats.max-job-age` | `1h` | How long a job may sit unclaimed. |
+| `--nats.duplicate-window` | `30m` | How long a republished dispatch is suppressed. |
+| `--nats.ack-wait` | `30s` | The claim handshake, *not* probe execution. |
+| `--nats.max-deliver` | `5` | Redeliveries before the dead-letter path. |
+| `--nats.max-ack-pending` | `64` | Claim handshakes one runner may hold at once. |
+| `--nats.max-runner-series` | `100` | Runners reported as individual metric series. |
+| `--nats.replicas` | `1` | 3 in production. |
+
+Both bounds are needed and neither is sufficient: the per-runner limit stops one
+offline runner from filling the stream, and does nothing about a fleet of runners
+each inside its own share adding up to the whole volume.
+
+Reaching any of them **refuses the publication**. `DiscardNew` and
+`DiscardNewPerSubject` are what make that true; JetStream's default,
+`DiscardOld`, would evict the oldest unclaimed job to admit a new one and report
+success to both publishers. The outbox row stays unpublished and retryable, so
+the work is not lost — it is queued in Postgres instead, where
+`urth_dispatch_outbox_pending` shows it.
+
+The envelope size deserves its own note. A dispatch carries identity and nothing
+else: the probe definition is disclosed only in the response to an authenticated
+claim, by [ADR 0004](../../docs/adr/0004-nats-communication-backbone.md). A
+message anywhere near 8 KiB means something is riding on the queue that should
+not be, and refusing it is better than storing it.
+
+`MaxAckPending` reserves **claim handshakes, not probe runs**: a worker
+acknowledges as soon as its claim commits and then executes under the `Result`'s
+own lease. Set too low, a pool of workers pulls in lockstep; too high, a runner
+reserves work it cannot claim inside `--nats.ack-wait`, every reservation times
+out, and the redelivery storm reads as a broker fault when it is a configuration
+one.
+
+`InactiveThreshold` is deliberately **not** set on consumers. It deletes a
+consumer nobody has pulled from, and that consumer *is* the runner's queue —
+expiring it because a runner's workers are offline would discard exactly the work
+they are coming back for.
+
+### Cross-field constraints
+
+These are checked by `natsq.Config.Validate`, which kong runs during flag
+parsing. Invalid configuration therefore fails **before a broker connection is
+attempted**: "is my configuration valid" and "is my broker up" are different
+questions and should not share an error. Every violation is reported in one pass,
+so tuning several related durations does not mean rediscovering the next
+constraint on the next start.
+
+- `--nats.duplicate-window` ≤ `--nats.max-job-age`. JetStream refuses a duplicate
+  window longer than the stream's maximum age. Lowering the job age without
+  lowering the window used to fail startup with `duplicates window can not be
+  larger then max age`, which names nothing an operator can change.
+- `--nats.ack-wait` ≤ `--nats.max-job-age`, or a claim outlives the job it is for.
+- `--nats.max-jobs-per-runner` ≤ `--nats.max-jobs`, or the stream stops accepting
+  long before any single runner reaches its share.
+- `--nats.replicas` ∈ {1, 3, 5}.
+
+### Existing assets
+
+Assets are provisioned on every start, which is how a limit change reaches the
+broker. It is also how a stream that is *not* Urth's — an older deployment's, a
+hand-made one, a restore taken under different settings — would be quietly
+adopted, so the existing stream is inspected first:
+
+- differences JetStream can apply are applied, and logged as
+  `stream "URTH_JOBS": applying configuration drift: …`;
+- a **retention or storage** policy it cannot is refused with
+  `existing stream cannot be reconciled in place`. Resolving those means deleting
+  the stream and every job queued in it, which is an operator's decision, not a
+  process's at startup.
+
+There is deliberately no equivalent check for consumers: a work-queue stream
+refuses any acknowledgement policy but explicit, so that difference cannot arise,
+and the subject filter — the field a deployment that keyed consumers on runner
+*names* would have wrong — is updated in place without disturbing the queued
+messages. Guarding it would block the repair.
+
+## Metrics
+
+`GET /metrics`, in Prometheus exposition format. Registered outside `/api/v1`
+because bark's content negotiation on that group answers 406 to any Accept header
+it does not recognise — the same trap that makes the live run log stream
+unreachable from a browser
+([task 019](../../docs/review-backlog/tasks/019-serve-run-log-stream.md)).
+
+| Metric | Meaning |
+|---|---|
+| `urth_jetstream_stream_messages` / `_bytes` | What is queued now. |
+| `urth_jetstream_stream_max_messages` / `_max_bytes` | The configured limits, so "how full" is a ratio. |
+| `urth_jetstream_stream_oldest_message_age_seconds` | Age of the oldest queued job. |
+| `urth_jetstream_pending_messages` | Jobs queued across every runner. Exact at any fleet size. |
+| `urth_jetstream_ack_pending_messages` | Claim handshakes outstanding. |
+| `urth_jetstream_redelivered_messages` | Jobs handed out again after a failed handshake. |
+| `urth_jetstream_runner_*{runner}` | The same three, per runner, capped — see below. |
+| `urth_jetstream_runners_unreported` | Runners omitted by the cardinality cap. |
+| `urth_jetstream_published_total` / `_publish_failures_total` | This process's publication tally. |
+| `urth_dispatch_outbox_pending` / `_failing` | Committed dispatches not yet published. |
+| `urth_dispatch_outbox_oldest_age_seconds` | Age of the oldest unpublished dispatch. |
+| `urth_dispatch_outbox_max_attempts` | Worst attempt count in the backlog. |
+| `urth_dispatch_dead_letters_unresolved` | Dead letters nobody has dealt with. |
+| `urth_*_scrape_failures_total` | Scrapes that could not read the broker or the database. |
+
+Runner UID is an unbounded label — a deployment creating a runner per tenant, per
+branch or per test run writes a series per runner into Prometheus and keeps it
+forever — so past `--nats.max-runner-series` only the busiest runners get their
+own series, chosen by pending work and then by name so the choice is
+deterministic. The fleet totals are summed *before* the cap, so "is anything
+queued" is always exact; only "for which of these two hundred runners" degrades.
+
+### What to alert on
+
+- **`urth_dispatch_outbox_oldest_age_seconds` above a minute or two.** The best
+  single signal: it sits near zero while the relay keeps up, whatever the
+  throughput, and grows the moment publication stops. Raised backlog with an
+  empty stream is the relay; the same backlog with a full stream is the fleet.
+- **`urth_jetstream_stream_messages / urth_jetstream_stream_max_messages` above
+  ~80%**, and the same for bytes. Past the limit, publications are refused.
+- **`urth_jetstream_stream_oldest_message_age_seconds` approaching
+  `--nats.max-job-age`.** Jobs are about to expire unclaimed.
+- **`urth_jetstream_redelivered_messages` sustained above zero.** Workers are
+  being handed work they cannot claim; check `--nats.ack-wait` and worker health
+  before blaming the broker.
+- **`urth_dispatch_dead_letters_unresolved` above zero**, and any
+  `max-delivery-exhausted` among them.
+- **`urth_*_scrape_failures_total` increasing.** The metrics are lying by
+  omission; fix that before trusting the rest.
+- **`urth_dispatch_outbox_pending` flat and non-zero** while the stream is empty
+  means no relay is running.
+
+## Deployment profiles
+
+| | Development | Production |
+|---|---|---|
+| `--nats.replicas` | `1` | `3` |
+| NATS storage | container filesystem | persistent volumes, one per server |
+| Servers | one, `-js` | three, clustered across failure domains |
+| TLS | off | required, both client and route connections |
+| Auth | none | credentials file per participant (`--nats.creds-file`) |
+| Postgres | container | managed or replicated, with backups |
+
+A single non-replicated NATS server is fine for local development and tests, and
+is what `make run-nats-podman` starts. It is **not** highly available and should
+not be described as such: it holds every queued job on one disk, and losing that
+disk loses the jobs that had been accepted but not yet claimed. Three replicas on
+persistent volumes is the production shape ADR 0004 §11 requires.
+
+Urth does not yet issue NATS identities — ADR 0004 leaves the choice between Auth
+Callout and minted NKey/JWT open ([task
+004](../../docs/review-backlog/tasks/004-runner-scoped-nats-credentials.md)) — so
+until then `--nats.creds-file` points at credentials an operator provisioned, and
+the same file is handed to workers through the registration response.
