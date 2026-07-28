@@ -50,13 +50,22 @@ func startNATS(t *testing.T) *nats.Conn {
 	return conn
 }
 
+// testConfig is a valid configuration with the limits pulled down to sizes a
+// test can reach. It must satisfy Config.Validate: a test running against a
+// combination the api-server would refuse to start with proves nothing about
+// the shipped system.
 func testConfig() natsq.Config {
 	return natsq.Config{
 		Replicas:         1,
+		MaxJobs:          64,
+		MaxBytes:         1 << 20,
 		MaxJobsPerRunner: 16,
+		MaxMsgSize:       8 << 10,
+		DuplicateWindow:  time.Minute,
 		MaxJobAge:        time.Hour,
 		AckWait:          500 * time.Millisecond,
 		MaxDeliver:       5,
+		MaxAckPending:    8,
 	}
 }
 

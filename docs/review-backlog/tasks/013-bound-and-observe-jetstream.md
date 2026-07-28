@@ -4,12 +4,12 @@ Shared context: [`CONTEXT.md`](../CONTEXT.md).
 
 | Field | Value |
 |---|---|
-| Status | `ready` |
+| Status | `in-progress` |
 | Priority | `P1` |
 | Workstream | Durability |
 | Depends on | — |
 | Likely conflicts | 004, 012 |
-| Owner | Unclaimed |
+| Owner | Ivan Ryabov (`feat/bound-jetstream-assets`) |
 
 ## Why This Matters
 
