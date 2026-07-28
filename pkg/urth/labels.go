@@ -132,4 +132,22 @@ const (
 	// because reconstructing it from the scenario as it stands now would be a
 	// guess at what was asked for, dressed up as history.
 	ReasonNoExecutionSnapshot = "missing-execution-snapshot"
+
+	// ReasonNoEligibleRunner marks a run that no active runner could take,
+	// because the scenario's requirements matched none of them.
+	//
+	// It is deliberately not a dead-letter record. A selector that matches
+	// nothing is an ordinary operational state -- a runner was decommissioned, a
+	// scenario was written ahead of the fleet that will serve it -- and a
+	// scheduled scenario in that state would file one dead letter per tick. The
+	// run itself carries the fact, so "everything that could not be placed" stays
+	// a label query over runs.
+	ReasonNoEligibleRunner = "no-eligible-runner"
+
+	// ReasonInvalidRequirements marks a run whose scenario carries a selector
+	// that does not parse, so placement could not even be attempted.
+	//
+	// Separated from ReasonNoEligibleRunner because the remedy is different: no
+	// number of runners fixes it, the scenario has to be edited.
+	ReasonInvalidRequirements = "invalid-requirements"
 )

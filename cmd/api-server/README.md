@@ -209,8 +209,8 @@ Both transports drain the same outbox, so the durability story is one story:
 
 ## Dead letters
 
-A dispatch can stop making progress in four ways, and until a `DispatchFailure`
-records one, all four leave a `Result` pending forever with the only account of
+A dispatch can stop making progress in five ways, and until a `DispatchFailure`
+records one, all five leave a `Result` pending forever with the only account of
 why in a worker's log:
 
 | Reason | Means | Reported by |
@@ -219,6 +219,7 @@ why in a worker's log:
 | `misrouted-dispatch` | it named a different runner than the consumer that delivered it | worker |
 | `policy-refused` | the API permanently refused the claim (4xx) | worker |
 | `max-delivery-exhausted` | the broker stopped redelivering | control plane |
+| `undeliverable-dispatch` | the relay could never publish the message at all | control plane |
 
 Recording a failure and moving its `Result` to `errored` happen in one
 transaction. Either alone is worse than neither: a record without the transition
@@ -253,6 +254,66 @@ Things worth knowing:
   placement is inherited — moving the run to another runner would be a scheduling
   decision. The link is recorded in both directions:
   `DispatchFailureStatus.retryResultName` forward, `urth/result.retry-of` back.
+- **A run nothing could take is not a dead letter.** See below.
+
+## Runs that were never placed
+
+A run of a scenario whose requirements match no *active* runner is created
+already terminal: `errored`, with `urth/result.unschedulable=no-eligible-runner`
+and no outbox row. The same happens, with `invalid-requirements`, when the
+scenario's selector does not parse — which the scenario API now refuses on the
+way in, so it should only be reachable by a record written before that check.
+
+It is deliberately **not** a `DispatchFailure`. A selector matching nothing is an
+ordinary state of a fleet being changed — a runner decommissioned, a scenario
+written ahead of the runners that will serve it — and once a scenario is
+scheduled every minute, dead-lettering it would file a record per tick and bury
+the failures that do need a human. The run itself carries the fact, so this stays
+a label query:
+
+```sh
+urthctl get results <scenario> -l 'urth/result.unschedulable = no-eligible-runner'
+# fleet-wide, since `get results` is scoped to one scenario:
+curl -sG localhost:8080/api/v1/results \
+  --data-urlencode 'labels=urth/result.unschedulable = no-eligible-runner'
+```
+
+`POST /scenarios/{id}/results` still returns 201 with that terminal run rather
+than a 4xx. A scheduled trigger has no caller to hand a refusal to, and the
+record that a run was wanted and could not happen is the thing worth keeping.
+
+Clients ask *before* offering to trigger one:
+
+```sh
+curl -s localhost:8080/api/v1/scenarios/<name>/placement
+{"requirements":"os=linux","matchingRunners":2,"eligibleRunners":1,
+ "registeredWorkers":3,"readyWorkers":2,"schedulable":true}
+```
+
+`eligibleRunners` is what decides `schedulable`; the worker counts are advisory.
+A dispatch to an eligible runner with no workers connected waits in that runner's
+queue rather than failing, which is the durable-channel behaviour
+[ADR 0003](../../docs/adr/0003-runner-worker-model.md) requires — so the Web UI
+warns about it and still offers the run.
+
+### The relay's backstop
+
+The same condition can be reached from the other side: an outbox row written
+before this check, or one whose runner was deleted between placement and
+publication. A `urth.PermanentDispatchSink` settles those instead of retrying
+them forever:
+
+- a dispatch with no runner assigned strands its run with
+  `no-eligible-runner`, and files nothing; and
+- every other permanent failure — an envelope this build cannot encode, a row
+  from a newer schema, a `Result` that has moved on — becomes an
+  `undeliverable-dispatch` dead letter, which strands the run in the same
+  transaction.
+
+Either way the outbox row is left to the reconciler's stale-dispatch sweep, which
+retires it once the `Result` is terminal. Without the sink — a relay assembled
+without one — such an entry is retried on `PermanentDispatchBackoff` (1 hour)
+for as long as it exists, which is what left runs pending indefinitely.
 
 ### Operating
 

@@ -16,6 +16,9 @@ export const LabelResult = {
   Version: `${PREFIX}result.version`,
   State: `${PREFIX}result.state`,
   Result: `${PREFIX}result.result`,
+  // Why a run was recorded rather than executed. Present only on a run that
+  // never ran; see utils/placement.js for the slugs it carries.
+  Unschedulable: `${PREFIX}result.unschedulable`,
 }
 
 export const LabelRunner = {

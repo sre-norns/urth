@@ -1,4 +1,4 @@
-import React, {useCallback} from 'react'
+import React, {useCallback, useEffect} from 'react'
 import PropTypes from 'prop-types'
 import styled from '@emotion/styled'
 import {Tooltip} from 'react-tooltip'
@@ -12,8 +12,10 @@ import {statusToColor} from '../utils/status-color.js'
 import Button from '../components/Button.js'
 import Link from '../components/Link.js'
 import runScenario from '../actions/runScenario.js'
+import fetchScenarioPlacement from '../actions/fetchScenarioPlacement.js'
 import ObjectCapsules from '../components/ObjectCapsules.jsx'
 import StatusHistory from '../components/StatusHistory.jsx'
+import {unschedulableHint} from '../utils/placement.js'
 
 const TopContainer = styled.div`
   display: flex;
@@ -101,14 +103,33 @@ const Scenario = ({data, odd, onCapsuleClick}) => {
   const statusColor = hasStatus ? statusToColor(status.results[0].status) : 'neutral'
 
   const executable = !!prob?.kind
-  const playDisabled = !(active && executable)
-  const stopDisabled = !(active && executable)
 
   const scenarioActions = useSelector((s) => s.scenarioActions)
   const {fetching, response, error} = scenarioActions[name] || {}
 
   const runSchedule = scheduleBreakdown(schedule, status)
   const dispatch = useDispatch()
+
+  // Where this scenario would be placed, asked per row. A scenario that is
+  // already unrunnable is not asked about: the control is disabled either way,
+  // and a list page should not spend a request per row to say so twice.
+  const placement = useSelector((s) => s.scenarioPlacement?.[name])
+
+  useEffect(() => {
+    if (active && executable) {
+      dispatch(fetchScenarioPlacement(name))
+    }
+  }, [name, active, executable])
+
+  // Advisory until it arrives: guessing "unschedulable" from a missing answer
+  // would disable every row on first paint. The server remains the authority --
+  // a run triggered anyway is recorded terminal rather than queued forever.
+  const preview = placement?.response
+  const placeable = !preview || preview.schedulable
+  const playDisabled = !(active && executable && placeable)
+  const stopDisabled = !(active && executable)
+
+  const playHint = !placeable ? unschedulableHint(preview) : undefined
 
   const requestRun = useCallback((event) => {
     event.preventDefault()
@@ -155,9 +176,13 @@ const Scenario = ({data, odd, onCapsuleClick}) => {
           </TextDiv>
         </BodyContainer>
         <ActionsContainer>
-          <PlayButton color="contrast" disabled={playDisabled || fetching} onClick={requestRun}>
-            <i className="fi fi-play"></i>
-          </PlayButton>
+          {/* The title sits on the wrapper rather than the button: a disabled
+              button fires no pointer events, so its own tooltip never shows. */}
+          <span title={playHint}>
+            <PlayButton color="contrast" disabled={playDisabled || fetching} onClick={requestRun}>
+              <i className="fi fi-play"></i>
+            </PlayButton>
+          </span>
           <StopButton color={stopDisabled ? 'contrast' : 'error'} disabled={stopDisabled}>
             <i className="fi fi-stop"></i>
           </StopButton>

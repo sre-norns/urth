@@ -17,7 +17,8 @@ import TextSpan, {TextDiv} from '../components/TextSpan.js'
 import {statusToColor} from '../utils/status-color.js'
 import {formatDuration, formatRelative, formatTimestamp} from '../utils/time.js'
 import {runDurationMs, runFinishedAt, runStartedAt} from '../utils/runStats.js'
-import {LabelArtifact, LabelRunner, LabelScenario, LabelWorker} from '../utils/labels.js'
+import {LabelArtifact, LabelResult, LabelRunner, LabelScenario, LabelWorker} from '../utils/labels.js'
+import {unschedulableMessage} from '../utils/placement.js'
 
 const PageContainer = styled.div`
   width: 100%;
@@ -108,6 +109,10 @@ const RunDetail = ({scenarioId, runId}) => {
   const scenarioName = scenarioId || result.labels?.[LabelScenario.Name] || null
   const started = runStartedAt(result)
   const finished = runFinishedAt(result)
+  // A run that never executed says `errored` and nothing else. The label is the
+  // only record of why, so it is worth a sentence: without it the page shows a
+  // failure with no logs, no artifacts and no explanation.
+  const notScheduled = unschedulableMessage(result.labels?.[LabelResult.Unschedulable])
   const isRunning = result.status?.status === 'running' || result.status?.status === 'pending'
 
   // Logs first: they are what an operator opens when a run went wrong.
@@ -138,23 +143,36 @@ const RunDetail = ({scenarioId, runId}) => {
             color={statusToColor(result.status)}
             detail={result.status?.result ? `job ${result.status.status}` : null}
           />
+          {/* A run that was never scheduled has no start of its own: the timing
+              helpers fall back to when the resource was created, which would
+              report a probe that never ran as having started and taken 0ms. */}
           <StatTile
             caption="Started"
-            value={started ? formatRelative(started) : '—'}
-            detail={started ? formatTimestamp(started) : null}
+            value={notScheduled ? '—' : started ? formatRelative(started) : '—'}
+            detail={notScheduled ? 'never started' : started ? formatTimestamp(started) : null}
           />
           <StatTile
             caption="Duration"
-            value={formatDuration(runDurationMs(result))}
-            detail={finished ? `finished ${formatRelative(finished)}` : 'not finished'}
+            value={notScheduled ? '—' : formatDuration(runDurationMs(result))}
+            detail={notScheduled ? 'never ran' : finished ? `finished ${formatRelative(finished)}` : 'not finished'}
           />
           <StatTile caption="Type" value={result.spec?.probKind || '—'} />
+          {/* Linked, because "which runner ran this" is rarely the last
+              question -- what that runner is doing now usually follows. The
+              route keys on the runner's name, which is what both sources of
+              executor identity carry. */}
           <StatTile
             caption="Runner"
-            value={executor.runner || '—'}
+            value={executor.runner ? <Link href={`/runners/${executor.runner}`}>{executor.runner}</Link> : '—'}
             detail={executor.worker ? `worker ${executor.worker}` : null}
           />
         </StatsRow>
+
+        {notScheduled && (
+          <TextDiv size="small" level={3} color="warning" style={{marginTop: '0.75rem'}}>
+            {notScheduled}
+          </TextDiv>
+        )}
       </Panel>
 
       <LiveRunLog runId={result.name} scenarioName={scenarioName} isRunning={isRunning} />

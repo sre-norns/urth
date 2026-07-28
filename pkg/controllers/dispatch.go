@@ -115,6 +115,10 @@ func Register(manager *Manager, cfg Config, deps Dependencies) (Dispatch, error)
 			urth.WithRelayPollInterval(cfg.RelayPollInterval),
 			urth.WithRelayBatchSize(cfg.RelayBatchSize),
 			urth.WithRelayLease(cfg.RelayLease),
+			// Not optional in a real deployment: without it an entry the
+			// transport can never accept is retried for as long as it exists,
+			// and the run it was written for stays pending forever.
+			urth.WithUndeliverableDispatches(urth.NewUndeliverableRecorder(deps.Store)),
 		)
 
 		if err := manager.Add("dispatch-relay", dispatch.Relay); err != nil {

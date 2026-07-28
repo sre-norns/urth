@@ -891,6 +891,28 @@ func (c *scenariosAPIClient) UpdateScript(ctx context.Context, id manifest.Versi
 	return bark.CreatedResponse{}, false, nil
 }
 
+// Placement implements ScenarioAPI.
+func (c *scenariosAPIClient) Placement(ctx context.Context, id manifest.ResourceName) (result PlacementPreview, exists bool, err error) {
+	targetAPI := urlForPath(c.baseURL, fmt.Sprintf("v1/scenarios/%v/placement", id), nil)
+
+	resp, err := c.get(ctx, targetAPI)
+	if err != nil {
+		return result, false, err
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return result, true, json.NewDecoder(resp.Body).Decode(&result)
+	case http.StatusNotFound:
+		// A scenario that is not there is not an error for a caller asking
+		// whether it could run.
+		return result, false, nil
+	default:
+		return result, false, readAPIError(resp)
+	}
+}
+
 // --------
 // Labels API
 // --------

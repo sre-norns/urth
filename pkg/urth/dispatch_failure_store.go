@@ -107,7 +107,17 @@ func recordDispatchFailure(ctx context.Context, store dbstore.TransactionalStore
 // 003 already built do the withdrawal, rather than this path growing a second,
 // subtly different copy of it.
 func strandRun(tx dbstore.StoreTransaction, spec DispatchFailureSpec) error {
-	if spec.ResultUID == "" {
+	return strandRunTx(tx, spec.ResultUID, spec.ResultVersion, spec.Reason.String())
+}
+
+// strandRunTx is the transition itself, without the dead-letter record.
+//
+// Shared with the relay's backstop, which strands a run whose dispatch was never
+// placed and files no record for it. The guards are what make it safe to call
+// from either: only a pending run of the expected version is touched, and the
+// write is version-guarded.
+func strandRunTx(tx dbstore.StoreTransaction, resultUID manifest.ResourceID, resultVersion manifest.Version, reason string) error {
+	if resultUID == "" {
 		// A malformed envelope may not have yielded a run to strand. The record
 		// is still worth having: it says a message was undeliverable, which is a
 		// fault in its own right.
@@ -115,9 +125,9 @@ func strandRun(tx dbstore.StoreTransaction, spec DispatchFailureSpec) error {
 	}
 
 	var result Result
-	found, err := tx.GetByUID(&result, spec.ResultUID)
+	found, err := tx.GetByUID(&result, resultUID)
 	if err != nil {
-		return fmt.Errorf("failed to load result %v for a dispatch failure: %w", spec.ResultUID, err)
+		return fmt.Errorf("failed to load result %v for a dispatch failure: %w", resultUID, err)
 	}
 	if !found {
 		return nil
@@ -130,36 +140,41 @@ func strandRun(tx dbstore.StoreTransaction, spec DispatchFailureSpec) error {
 	// A dispatch for a superseded version is not evidence about the run as it
 	// now stands. The current version has its own dispatch, and stranding the
 	// run on the strength of an old message would kill work that is still live.
-	if spec.ResultVersion != 0 && spec.ResultVersion != result.Version {
+	if resultVersion != 0 && resultVersion != result.Version {
 		return nil
 	}
 
 	version := result.Version
-	failRun(&result, spec.Reason, time.Now())
+	failRun(&result, reason, time.Now())
 
 	// Version-guarded like every other transition on this path: the race here is
 	// against a worker claiming the run through a redelivery that arrived while
 	// this report was in flight, and the claim must win.
 	updated, err := tx.Update(&result, result.UID, dbstore.WithVersion(version))
 	if err != nil {
-		return fmt.Errorf("failed to strand result %v: %w", spec.ResultUID, err)
+		return fmt.Errorf("failed to strand result %v: %w", resultUID, err)
 	}
 	if !updated {
 		// Lost to a concurrent transition. The failure record still commits: the
 		// dispatch did fail, whatever the run went on to do.
-		log.Printf("result %v moved on before a dispatch failure could strand it", spec.ResultUID)
+		log.Printf("result %v moved on before a dispatch failure could strand it", resultUID)
 	}
 
 	return nil
 }
 
-// failRun records a run stranded by a dead dispatch.
+// failRun records a run that will never execute.
 //
 // `errored` rather than `timeout`: nothing waited and nothing ran out of time.
-// The dispatch that was supposed to start this run is permanently undeliverable,
-// which is a different fact from an execution lease elapsing, and an operator
-// triaging by state should not have to read the detail to tell them apart.
-func failRun(result *Result, reason DispatchFailureReason, at time.Time) {
+// The dispatch that was supposed to start this run is permanently undeliverable
+// -- or was never made, because nothing could take it -- which is a different
+// fact from an execution lease elapsing, and an operator triaging by state
+// should not have to read the detail to tell them apart.
+//
+// The reason is a label-grammar slug, from the set documented at
+// LabelResultUnschedulable, and not a sentence: it is written to a label value,
+// where a requirement string or an error message would be rejected.
+func failRun(result *Result, reason string, at time.Time) {
 	result.Status.Status = JobErrored
 	result.Status.Result = prob.RunFinishedError
 	result.Spec.TimeEnded = &at
@@ -169,7 +184,7 @@ func failRun(result *Result, reason DispatchFailureReason, at time.Time) {
 		manifest.Labels{
 			LabelResultJobState:      string(result.Status.Status),
 			LabelResultStatus:        string(result.Status.Result),
-			LabelResultUnschedulable: reason.String(),
+			LabelResultUnschedulable: reason,
 		},
 	)
 }

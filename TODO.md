@@ -41,6 +41,18 @@ looks deceptively like passing.
    build everything else against it. The scheduler removes the need to press the
    button; it should not change what the button does.
 
+   **One thing it inherits from
+   [task 018](docs/review-backlog/tasks/018-fail-unplaceable-runs.md):** a run
+   that no active runner matches is now recorded terminal
+   (`urth/result.unschedulable=no-eligible-runner`) rather than left pending, and
+   deliberately files no dead letter -- a selector matching nothing is an
+   ordinary state of a fleet being changed. That is the right answer for a run
+   somebody asked for. A scheduler firing every minute against an unplaceable
+   scenario would produce a terminal run per tick, so it needs a policy for
+   backing off, or for marking the scenario itself as unschedulable, rather than
+   filling the run history. The placement preview
+   (`GET /scenarios/:id/placement`) is the check it would use.
+
    **Two things that design pass now inherits**, from
    [ADR 0006](docs/adr/0006-control-loop-placement.md): it is the named trigger
    for extracting the control loops into their own process -- the scheduler needs
@@ -211,6 +223,23 @@ looks deceptively like passing.
 [] Retention and access control should act on `urth/artifact.data-class`: secret-bearing
    artifacts want a shorter default expiry and restricted download.
 [] `examples/README.md` references `run.scenario.json`, which does not exist.
+[X] A run that no active runner matches is terminal on creation rather than pending
+   forever, and the relay settles a dispatch it can never publish instead of retrying
+   it hourly. `GET /scenarios/:id/placement` is the preflight the UI gates "Run now"
+   on. See [task 018](docs/review-backlog/tasks/018-fail-unplaceable-runs.md).
+[] **`notin` means two different things depending on where it is evaluated.** With the
+   label *absent*, `wyrd`'s Go matcher (`manifest.Requirement.Matches`) matches — the
+   Kubernetes rule — while its SQL translation (`NOT IN` over a JSON path) yields NULL
+   and excludes. Urth uses both: placement is a store query, worker admission at
+   registration is `Matches`. Consequence, and the reason this was found: the shipped
+   `examples/runner.yaml` cannot satisfy `examples/scenario.rest.httpbin.yml`'s
+   `envX notin (dev,testing)`, because the runner has no `envX` label — which is what
+   made task 018's runs unplaceable. Pick one rule, document it, make both evaluators
+   obey it. See [task 020](docs/review-backlog/tasks/020-settle-notin-selector-semantics.md).
+[] Live run logs return 406 in a browser: `EventSource` sends
+   `Accept: text/event-stream` and `bark.ContentTypeAPI()` on the `/api/v1` group
+   refuses it before the handler runs. See
+   [task 019](docs/review-backlog/tasks/019-serve-run-log-stream.md).
 [] SQLite backend is broken: AutoMigrate fails with `index idx_name already exists`.
    `wyrd`'s `manifest.ResourceMeta.Name` carries a hardcoded `gorm:"index:idx_name"`, and
    every model embeds it; index names are schema-global in SQLite so the second

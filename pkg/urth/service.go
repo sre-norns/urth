@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"reflect"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -96,6 +95,16 @@ type ScenarioAPI interface {
 	ManageableResourceAPI
 
 	UpdateScript(ctx context.Context, id manifest.VersionedResourceID, entry prob.Manifest) (bark.CreatedResponse, bool, error)
+
+	// Placement reports where a run of this scenario would go if one were
+	// created now, without creating one.
+	//
+	// It answers the question a client has to ask before offering to trigger a
+	// run: a scenario whose requirements match no active runner produces a run
+	// that is terminal the moment it exists, and finding that out by making one
+	// is a poor way to learn that a fleet has changed. Reports false if no such
+	// scenario exists.
+	Placement(ctx context.Context, id manifest.ResourceName) (PlacementPreview, bool, error)
 }
 
 type RunResultAPI interface {
@@ -292,7 +301,8 @@ func (s *serviceImpl) Workers() WorkersAPI {
 
 func (s *serviceImpl) Scenarios() ScenarioAPI {
 	return &scenarioAPIImpl{
-		store: s.store,
+		store:     s.store,
+		placement: placement{store: s.store},
 	}
 }
 
@@ -301,9 +311,7 @@ func (s *serviceImpl) Results(scenarioName manifest.ResourceName) RunResultAPI {
 		store:      s.store,
 		scenarioID: scenarioName,
 		scheduler:  s.scheduler,
-		workersAPI: &runnersAPIImpl{
-			store: s.store,
-		},
+		placement:  placement{store: s.store},
 
 		resultsSigningKey: s.keys.Run,
 		keys:              s.keys,
@@ -343,7 +351,8 @@ func (s *serviceImpl) Labels(k manifest.Kind) LabelsAPI {
 // / Scenarios API
 // ------------------------------
 type scenarioAPIImpl struct {
-	store dbstore.TransactionalStore
+	store     dbstore.TransactionalStore
+	placement placement
 }
 
 func (m *scenarioAPIImpl) List(ctx context.Context, query manifest.SearchQuery) (results []manifest.ResourceManifest, total int64, err error) {
@@ -398,8 +407,27 @@ func (m *scenarioAPIImpl) CreateOrUpdate(ctx context.Context, newEntry manifest.
 }
 
 func (m *scenarioAPIImpl) create(ctx context.Context, newEntry Scenario) (Scenario, error) {
+	if err := validateRequirements(newEntry.Spec.Requirements); err != nil {
+		return newEntry, err
+	}
+
 	err := m.store.Create(ctx, &newEntry)
 	return newEntry, err
+}
+
+// validateRequirements refuses a scenario whose placement selector cannot be
+// parsed, the way runnersAPIImpl.create already refuses a runner's.
+//
+// Stored, such a scenario can never place a run: every run of it is created
+// terminal with ReasonInvalidRequirements, which is a poor way to find out at
+// the point the selector was typed. Checking here keeps that reason a migration
+// condition rather than a routine one.
+func validateRequirements(requirements manifest.LabelSelector) error {
+	if _, err := selectorFor(requirements); err != nil {
+		return fmt.Errorf("scenario's requirements are invalid: %w", err)
+	}
+
+	return nil
 }
 
 func (m *scenarioAPIImpl) update(ctx context.Context, id manifest.VersionedResourceID, entry Scenario) (Scenario, error) {
@@ -415,6 +443,10 @@ func (m *scenarioAPIImpl) update(ctx context.Context, id manifest.VersionedResou
 	// Identity check
 	if result.Name != entry.Name {
 		return entry, bark.ErrResourceNotFound
+	}
+
+	if err := validateRequirements(entry.Spec.Requirements); err != nil {
+		return result, err
 	}
 
 	result.Spec = entry.Spec
@@ -462,6 +494,24 @@ func (m *scenarioAPIImpl) Delete(ctx context.Context, id manifest.VersionedResou
 	return m.store.Delete(ctx, &Scenario{}, id.ID, id.Version)
 }
 
+// Placement implements ScenarioAPI.
+//
+// The preview is computed from the scenario's current requirements, not from any
+// snapshot: it answers "what would happen if I triggered a run now", and a run
+// triggered now takes its snapshot from the same place.
+func (m *scenarioAPIImpl) Placement(ctx context.Context, id manifest.ResourceName) (PlacementPreview, bool, error) {
+	var scenario Scenario
+	if exists, err := m.store.GetByName(ctx, &scenario, id); err != nil {
+		return PlacementPreview{}, false, err
+	} else if !exists {
+		return PlacementPreview{}, false, nil
+	}
+
+	preview, err := m.placement.Preview(ctx, scenario.Spec.Requirements)
+
+	return preview, true, err
+}
+
 func (m *scenarioAPIImpl) UpdateScript(ctx context.Context, id manifest.VersionedResourceID, prob prob.Manifest) (bark.CreatedResponse, bool, error) {
 	var result Scenario
 	if ok, err := m.store.GetByUID(ctx, &result, id.ID, dbstore.WithVersion(id.Version)); !ok || err != nil {
@@ -484,72 +534,12 @@ type resultsAPIImpl struct {
 	store      *dbstore.DBStore
 	scenarioID manifest.ResourceName
 	scheduler  Scheduler
-	workersAPI *runnersAPIImpl
+	placement  placement
 
 	resultsSigningKey []byte
 
 	keys           SigningKeys
 	maxRunDuration time.Duration
-}
-
-// placeRun selects the runner a run should be dispatched to.
-//
-// Placement is where a scenario's requirements finally mean something. The
-// prototype parsed the selector, listed the runners it matched, logged how many
-// there were, and then threw the list away -- every job went to one shared
-// queue and any worker could take it, so a scenario that declared it needed a
-// runner inside a particular network had no way of getting one.
-//
-// Reports false when nothing matches rather than failing. A transport that does
-// not route per runner -- the asynq prototype -- can still dispatch such a run,
-// and it is the routing transport's business to object. See natsq.ErrNoRunner.
-func (m *resultsAPIImpl) placeRun(ctx context.Context, runResult Result) (Runner, bool, error) {
-	if m.workersAPI == nil {
-		return Runner{}, false, nil
-	}
-
-	requirement := runResult.Spec.Scenario.Spec.Requirements.AsLabels()
-	selector, err := manifest.ParseSelector(requirement)
-	if err != nil {
-		return Runner{}, false, fmt.Errorf("failed to parse scenario requirements: %w", err)
-	}
-
-	candidates, total, err := m.workersAPI.List(ctx, manifest.SearchQuery{Selector: selector})
-	if err != nil {
-		return Runner{}, false, fmt.Errorf("failed to list runners to schedule a scenario: %w", err)
-	}
-
-	// Only an active runner is a candidate: dispatching to a disabled one would
-	// queue work that, by the claim rules, no worker of that runner may take.
-	var eligible []Runner
-	for _, candidate := range candidates {
-		runner, err := NewRunner(candidate)
-		if err != nil {
-			continue
-		}
-		if runner.Spec.IsActive {
-			eligible = append(eligible, runner)
-		}
-	}
-
-	if len(eligible) == 0 {
-		log.Printf("no active runner matches requirements %q for scenario %q (%d considered)",
-			requirement, runResult.Spec.Scenario.Name, total)
-		return Runner{}, false, nil
-	}
-
-	// Deterministic selection by UID. Least-loaded or round-robin placement
-	// wants queue depth per runner, which belongs to the scheduler service that
-	// does not exist yet; picking stably means a scenario's runs land on one
-	// runner instead of scattering, which is easier to reason about in the
-	// meantime.
-	sort.Slice(eligible, func(i, j int) bool { return eligible[i].UID < eligible[j].UID })
-	selected := eligible[0]
-
-	log.Printf("placed run of %q on runner %q (%d of %d eligible)",
-		runResult.Spec.Scenario.Name, selected.Name, len(eligible), total)
-
-	return selected, true, nil
 }
 
 func (m *resultsAPIImpl) List(ctx context.Context, searchQuery manifest.SearchQuery) (results []Result, total int64, err error) {
@@ -656,15 +646,33 @@ func (m *resultsAPIImpl) Create(ctx context.Context, newEntry manifest.ResourceM
 	// channel it was dispatched to from the moment it exists. ADR 0003 binds a
 	// scheduled Result to a Runner and leaves worker identity empty until a
 	// claim, which is exactly the shape of ExecutorRef here.
-	if runner, placed, err := m.placeRun(ctx, entry); err != nil {
+	decision, err := m.placement.Place(ctx, snapshot.Requirements, snapshot.ScenarioName)
+	if err != nil {
 		return Result{}, err
-	} else if placed {
-		entry.Status.Executor.RunnerID = runner.UID
-		entry.Status.Executor.RunnerName = runner.Name
+	}
+
+	switch {
+	case decision.Placed:
+		entry.Status.Executor.RunnerID = decision.Runner.UID
+		entry.Status.Executor.RunnerName = decision.Runner.Name
 		entry.Labels = manifest.MergeLabels(entry.Labels, manifest.Labels{
-			LabelRunnerName: string(runner.Name),
-			LabelRunnerUID:  string(runner.UID),
+			LabelRunnerName: string(decision.Runner.Name),
+			LabelRunnerUID:  string(decision.Runner.UID),
 		})
+	default:
+		// A run nothing can take is terminal here, before it is written. It used
+		// to be stored `pending` with a dispatch no routing transport would
+		// accept, which the relay then retried hourly forever: the run never
+		// moved and nothing but a log line said why. Nothing downstream can
+		// repair that either -- the reconciler leaves an unpublished outbox row
+		// to the relay by design -- so the decision belongs here, where the
+		// reason is known.
+		//
+		// Terminal rather than refused: a scheduled trigger has no caller to hand
+		// an error to, and the record that a run was wanted and could not happen
+		// is the thing an operator needs. It is deliberately not a dead-letter
+		// record; see ReasonNoEligibleRunner.
+		failRun(&entry, decision.Reason, time.Now())
 	}
 
 	// TODO: Validate that request is from an authentic worker that is allowed to take jobs!
@@ -712,9 +720,14 @@ func (m *resultsAPIImpl) createWithDispatch(ctx context.Context, entry *Result) 
 //
 // A run of an inactive scenario is recorded but never dispatched, and a service
 // assembled without a scheduler -- as several tests are -- has nothing to relay
-// entries to, so writing them would only accumulate rows nobody drains.
+// entries to, so writing them would only accumulate rows nobody drains. Nor is a
+// run that already failed placement dispatched: it is terminal before it is
+// written, and an entry for it would be a job with nowhere to go.
 func (m *resultsAPIImpl) shouldDispatch(entry Result) bool {
-	return m.scheduler != nil && entry.Spec.Scenario.Name != "" && entry.Spec.Scenario.Spec.IsActive
+	return m.scheduler != nil &&
+		entry.Status.Status == JobPending &&
+		entry.Spec.Scenario.Name != "" &&
+		entry.Spec.Scenario.Spec.IsActive
 }
 
 // executorRef builds the record of who is executing a run, from the worker that
