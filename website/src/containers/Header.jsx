@@ -78,6 +78,9 @@ const Header = () => {
             <NavLink href="/runners" activePattern="/runners/*?">
               Runners
             </NavLink>
+            <NavLink href="/dead-letters" activePattern="/dead-letters/*?">
+              Dead letters
+            </NavLink>
             <NavLink href="#" onClick={onNonClick} disabled active>
               Dashboards
             </NavLink>
@@ -113,6 +116,15 @@ const Header = () => {
               <NavRowContainer size="medium">
                 <NavRow center>
                   <SearchTextInput placeholder="Search runners by name or label" />
+                </NavRow>
+              </NavRowContainer>
+            )}
+          </Route>
+          <Route path="/dead-letters">
+            {() => (
+              <NavRowContainer size="medium">
+                <NavRow center>
+                  <SearchTextInput placeholder="Search dead letters, e.g. urth/dispatch-failure.reason = policy-refused" />
                 </NavRow>
               </NavRowContainer>
             )}
