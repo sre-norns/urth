@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/sre-norns/urth/pkg/prob"
@@ -206,9 +207,15 @@ func retryDispatchFailure(ctx context.Context, store dbstore.TransactionalStore,
 		return failure, Result{}, false, fmt.Errorf("%w: the stranded run carries no execution snapshot", ErrDispatchFailureNotRetryable)
 	}
 
+	// Lowercased, because a resource name must be a DNS subdomain and
+	// NewRandToken's alphabet is mixed case. Creating a Result through the
+	// service does this; building one here does not, and the row stores happily
+	// -- the refusal surfaces only when a client reads it back.
+	name := manifest.ResourceName(strings.ToLower(string(NewRandToken(16))))
+
 	retry := Result{
 		ObjectMeta: manifest.ObjectMeta{
-			Name:   manifest.ResourceName(NewRandToken(16)),
+			Name:   name,
 			Labels: retryLabels(original, failure),
 		},
 		Spec: ResultSpec{

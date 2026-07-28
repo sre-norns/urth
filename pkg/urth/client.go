@@ -928,9 +928,29 @@ type dispatchFailuresAPIClient struct {
 }
 
 // List all dead-lettered dispatches matching the query.
+//
+// The server lists manifests, like every other resource, so these are converted
+// rather than decoded straight into the model -- which would silently produce
+// empty names and labels, since a manifest keeps both under `metadata`.
 func (c *dispatchFailuresAPIClient) List(ctx context.Context, searchQuery manifest.SearchQuery) ([]DispatchFailure, int64, error) {
 	targetAPI := urlForPath(c.baseURL, "v1/dispatch-failures", searchToQuery(searchQuery))
-	return listResources[DispatchFailure](ctx, &c.RestAPIClient, targetAPI)
+
+	resources, total, err := c.listResources(ctx, targetAPI)
+	if err != nil {
+		return nil, total, err
+	}
+
+	failures := make([]DispatchFailure, 0, len(resources))
+	for _, resource := range resources {
+		failure, err := NewDispatchFailure(resource)
+		if err != nil {
+			return nil, total, err
+		}
+
+		failures = append(failures, failure)
+	}
+
+	return failures, total, nil
 }
 
 // Get a single dead-lettered dispatch by name.

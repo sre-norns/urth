@@ -142,6 +142,17 @@ func abortDispatchReport(ctx *gin.Context, err error) {
 	bark.AbortWithError(ctx, response.Code, response)
 }
 
+// dispatchFailureManifests renders a listing in the shape every other resource
+// list uses.
+func dispatchFailureManifests(failures []urth.DispatchFailure) []manifest.ResourceManifest {
+	manifests := make([]manifest.ResourceManifest, 0, len(failures))
+	for _, failure := range failures {
+		manifests = append(manifests, failure.ToManifest())
+	}
+
+	return manifests
+}
+
 // statusForResourceError maps an operator action's failure to a status.
 func statusForResourceError(err error) int {
 	switch {
@@ -340,13 +351,18 @@ func apiRoutes(srv urth.Service, natsConn *nats.Conn) *gin.Engine {
 		// open like any other resource; the write paths are asymmetric on
 		// purpose -- reporting is a worker talking about work it was handed,
 		// while retrying and resolving are operator actions.
+		// Listed as manifests rather than as the model, so an entry has its name
+		// and labels under `metadata` exactly as every other resource does.
+		// Serializing the model directly is what makes a `Result` come back flat
+		// and forces the UI to special-case it; there is no reason to grow a
+		// second resource with that shape.
 		v1.GET("/dispatch-failures", bark.SearchableAPI(paginationLimit), func(ctx *gin.Context) {
-			bark.WithContext[urth.DispatchFailure](ctx).List(
-				srv.DispatchFailures().List(ctx.Request.Context(), bark.RequireSearchQuery(ctx)))
+			failures, total, err := srv.DispatchFailures().List(ctx.Request.Context(), bark.RequireSearchQuery(ctx))
+			bark.Manifest(ctx).List(dispatchFailureManifests(failures), total, err)
 		})
 		v1.GET("/dispatch-failures/:id", bark.ResourceAPI(), func(ctx *gin.Context) {
-			bark.WithContext[urth.DispatchFailure](ctx).Found(
-				srv.DispatchFailures().Get(ctx.Request.Context(), bark.RequireResourceName(ctx)))
+			failure, found, err := srv.DispatchFailures().Get(ctx.Request.Context(), bark.RequireResourceName(ctx))
+			bark.Manifest(ctx).Found(failure.ToManifest(), found, err)
 		})
 
 		// A worker reporting a dispatch it cannot make progress on. Bearer

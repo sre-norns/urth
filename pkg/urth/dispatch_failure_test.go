@@ -263,6 +263,13 @@ func TestRetryCreatesANewRunAndDispatch(t *testing.T) {
 	// Placement is inherited rather than recomputed.
 	require.Equal(t, run.Status.Executor.RunnerID, retry.Status.Executor.RunnerID)
 
+	// A resource name must be a DNS subdomain, and NewRandToken's alphabet is
+	// mixed case. Building a Result directly rather than through the service
+	// skips the lowercasing the create path does -- and the row stores happily,
+	// so the refusal surfaces only when a client reads it back. Asserted here
+	// because the live stack is where this was found, not the suite.
+	require.NoError(t, retry.ObjectMeta.Validate(), "a retry's generated name must be a valid resource name")
+
 	// The relation is traceable in both directions.
 	require.Equal(t, retry.UID, failure.Status.RetryResultUID)
 	require.Equal(t, retry.Name, failure.Status.RetryResultName)
