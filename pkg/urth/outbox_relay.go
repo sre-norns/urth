@@ -44,11 +44,13 @@ const (
 
 	// PermanentDispatchBackoff is how long an unpublishable entry is held back.
 	//
-	// Long, but not infinite. The failure is usually "this run was never placed
-	// on a runner", and a runner appearing later does not revive this Result --
-	// task 012 owns the dead-letter path that will retire such entries properly.
-	// Until then a long backoff keeps them from crowding out live work while
-	// leaving them visible in the backlog rather than silently discarded.
+	// With a PermanentDispatchSink configured this is a short-lived state: the
+	// sink settles the run, and the reconciler's stale-dispatch sweep retires the
+	// row on its next scan. The backoff still applies in that window, so an entry
+	// that can never be published is not re-attempted on every poll until the
+	// sweep reaches it -- and it remains the whole story for a relay assembled
+	// without a sink, where a long hold at least keeps such entries from crowding
+	// out live work.
 	PermanentDispatchBackoff = 1 * time.Hour
 )
 
@@ -63,6 +65,11 @@ const (
 type DispatchRelay struct {
 	outbox    DispatchOutbox
 	publisher DispatchPublisher
+
+	// undeliverable settles entries that can never be published. Optional: a
+	// relay without one keeps retrying them on the permanent backoff, which is
+	// what every caller did before the sink existed.
+	undeliverable PermanentDispatchSink
 
 	relayID            string
 	pollInterval       time.Duration
@@ -110,6 +117,12 @@ func WithRelayBackoff(initial, max time.Duration) RelayOption {
 // WithRelayPublishTimeout bounds one publication attempt.
 func WithRelayPublishTimeout(value time.Duration) RelayOption {
 	return func(r *DispatchRelay) { r.publishTimeout = value }
+}
+
+// WithUndeliverableDispatches gives the relay somewhere to settle an entry that
+// can never be published, instead of retrying it for as long as it exists.
+func WithUndeliverableDispatches(sink PermanentDispatchSink) RelayOption {
+	return func(r *DispatchRelay) { r.undeliverable = sink }
 }
 
 // NewDispatchRelay builds a relay over an outbox and a transport publisher.
@@ -214,6 +227,30 @@ func (r *DispatchRelay) publish(ctx context.Context, entry DispatchOutboxEntry) 
 // recordFailure schedules the entry's next attempt.
 func (r *DispatchRelay) recordFailure(ctx context.Context, entry DispatchOutboxEntry, cause error) error {
 	backoff := r.backoffFor(entry, cause)
+
+	// A dispatch that can never be published is not a retry-schedule problem, and
+	// treating it as one is what left runs pending forever: the entry was held
+	// back an hour, tried again, and failed the same way, while the Result it was
+	// written for said a run was still coming. Settling it here is the only place
+	// that can be done -- the reconciler leaves an unpublished row alone by
+	// design, because inferring a lost dispatch there would expire live work.
+	//
+	// The row itself is left to the reconciler's stale-dispatch sweep, which
+	// already retires an entry whose Result has gone terminal, rather than
+	// growing a second copy of that logic here. The backoff below still applies
+	// in the meantime.
+	if r.undeliverable != nil && errors.Is(cause, ErrPermanentDispatch) {
+		settleCtx, cancel := r.bookkeeping(ctx)
+		defer cancel()
+
+		if err := r.undeliverable.RecordUndeliverable(settleCtx, entry, cause); err != nil {
+			// Logged rather than returned: the publication failure is the thing
+			// the caller asked about, and a sink that could not write leaves the
+			// entry exactly as it was -- to be settled on the next attempt.
+			log.Printf("failed to settle undeliverable dispatch %v for result %v: %v",
+				entry.EventUID, entry.ResultUID, err)
+		}
+	}
 
 	log.Printf("failed to relay dispatch %v for result %v (attempt %d, retry in %v): %v",
 		entry.EventUID, entry.ResultUID, entry.Attempts, backoff, cause)

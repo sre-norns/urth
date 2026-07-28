@@ -17,6 +17,19 @@ import (
 // would otherwise be retried forever and bury the retryable entries behind it.
 var ErrPermanentDispatch = errors.New("dispatch cannot be published")
 
+// ErrDispatchUnplaced marks the one permanent failure that is not an exception:
+// the Result has no runner, so there is no channel to publish it on.
+//
+// It is separated from the rest because it is handled differently. Every other
+// permanent failure is a fault -- an envelope this build cannot encode, a row
+// from a newer schema -- and becomes a dead-letter record an operator must look
+// at. This one usually means a scenario's requirements match no runner, which is
+// an ordinary state of a fleet being changed, and is recorded on the run alone.
+//
+// Declared here rather than in a transport package so that pkg/urth can
+// recognise the condition without importing a broker; the transports wrap it.
+var ErrDispatchUnplaced = errors.New("result has no runner assigned")
+
 // DispatchOutboxEntry is the durable record that a Result needs dispatching.
 //
 // It exists because committing a Result to Postgres and publishing its dispatch

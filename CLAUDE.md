@@ -129,6 +129,20 @@ happened — and the event UID is minted once at enqueue and reused on every
 retry, because it is the `Nats-Msg-Id` that suppresses the duplicate. See
 `cmd/api-server/README.md`.
 
+**A run that cannot be placed is terminal, not pending.** If no *active* runner
+matches the scenario's requirements, `Create` writes the `Result` already
+`errored` with `urth/result.unschedulable=no-eligible-runner` and **no outbox
+row** — the POST still returns 201, because a future scheduler has no caller to
+hand a refusal to. It is deliberately not a dead letter: a selector matching
+nothing is ordinary (a runner was decommissioned), and a per-minute scenario
+would file one record per tick. The relay is the backstop for rows written
+before this check — `urth.ErrDispatchUnplaced` strands the run and files
+nothing, while any other `ErrPermanentDispatch` becomes an
+`undeliverable-dispatch` dead letter; both leave the row to the reconciler's
+stale-dispatch sweep. Eligible runners with *no workers* is **not** unschedulable:
+that dispatch waits in the queue. `GET /scenarios/:id/placement` is the preflight
+the UI gates "Run now" on.
+
 **A scheduled run does not read its Scenario again.** `ResultSpec.Execution` is
 an `ExecutionSnapshot` — scenario UID/name/version, requirements, and the whole
 typed `prob.Manifest` — copied when the run is created. Claim authorization uses

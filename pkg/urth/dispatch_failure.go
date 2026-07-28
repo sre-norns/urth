@@ -44,6 +44,17 @@ const (
 	// does not remove a work-queue message for this, so without a record the
 	// dispatch simply stops moving and nothing says why.
 	ReasonMaxDeliveryExhausted DispatchFailureReason = "max-delivery-exhausted"
+
+	// ReasonUndeliverableDispatch: the relay could never publish the message at
+	// all -- an envelope this build cannot encode, a row from a schema it does
+	// not know, a Result that has moved on since the row was written. The
+	// message never reached the broker, so no worker can report this; the relay
+	// is the only component that sees it.
+	//
+	// A dispatch with no runner assigned is deliberately *not* filed here. That
+	// is placement finding nothing rather than a fault, and it is recorded on the
+	// run alone; see ReasonNoEligibleRunner and PermanentDispatchSink.
+	ReasonUndeliverableDispatch DispatchFailureReason = "undeliverable-dispatch"
 )
 
 // DispatchFailureReasons lists every recognised category.
@@ -53,6 +64,7 @@ func DispatchFailureReasons() []DispatchFailureReason {
 		ReasonMisroutedDispatch,
 		ReasonPolicyRefused,
 		ReasonMaxDeliveryExhausted,
+		ReasonUndeliverableDispatch,
 	}
 }
 

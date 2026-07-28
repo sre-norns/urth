@@ -474,6 +474,14 @@ func apiRoutes(srv urth.Service, natsConn *nats.Conn) *gin.Engine {
 			bark.Manifest(ctx).Deleted(srv.Scenarios().Delete(ctx.Request.Context(), bark.RequireVersionedResource(ctx)))
 		})
 
+		// Where a run of this scenario would go, without creating one. Read
+		// before offering to trigger a run: a scenario whose requirements match
+		// no active runner produces a run that is terminal the moment it exists.
+		v1.GET("/scenarios/:id/placement", bark.ResourceAPI(), func(ctx *gin.Context) {
+			preview, exists, err := srv.Scenarios().Placement(ctx.Request.Context(), bark.RequireResourceName(ctx))
+			bark.MaybeGotOne(ctx, preview, exists, err)
+		})
+
 		v1.GET("/scenarios/:id/script", bark.ResourceAPI(), func(ctx *gin.Context) {
 			resource, exists, err := srv.Scenarios().Get(ctx.Request.Context(), bark.RequireResourceName(ctx))
 			if err != nil {

@@ -51,6 +51,7 @@ Status values:
 | 015 | P1 | blocked | [Drain Asynq and retire the legacy job model](tasks/015-retire-asynq-transport.md) | 001–013 | all runtime tasks |
 | 016 | P1 | blocked | [Surface Runner queue state to operators](tasks/016-runner-queue-operator-visibility.md) | 012 (done), 013 | 012, 013, 014 |
 | 017 | P1 | ready | [Apply prober config defaults on every authoring path](tasks/017-apply-prober-config-defaults.md) | — | 015 |
+| 018 | P1 | done | [Fail unplaceable runs instead of queueing them forever](tasks/018-fail-unplaceable-runs.md) | 002, 003, 012 | 014, 016 |
 
 Priority meanings:
 

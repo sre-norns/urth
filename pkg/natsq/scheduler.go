@@ -16,9 +16,14 @@ import (
 // ErrNoRunner reports that a Result reached dispatch without a runner assigned.
 //
 // The runner UID is the job's subject, so there is nowhere to publish a Result
-// that has not been placed. This is a scheduling bug rather than a transport
+// that has not been placed. This is a placement outcome rather than a transport
 // failure, and is worth a distinct error so it reads as one.
-var ErrNoRunner = fmt.Errorf("result has no runner assigned")
+//
+// It is the domain's own sentinel rather than a private one: the relay decides
+// what to do about a permanently undeliverable dispatch, and "nothing could take
+// this run" is the case it must not treat as a fault. Kept under this name
+// because the transport is where a caller meets it.
+var ErrNoRunner = urth.ErrDispatchUnplaced
 
 // Transport is everything the API server needs from the NATS backbone: it
 // publishes relayed dispatches, tells a registering worker where to collect

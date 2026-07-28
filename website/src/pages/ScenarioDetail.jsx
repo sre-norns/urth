@@ -4,6 +4,7 @@ import styled from '@emotion/styled'
 import {useDispatch, useSelector} from 'react-redux'
 import fetchScenario from '../actions/fetchScenario.js'
 import fetchScenarioResults from '../actions/fetchScenarioResults.js'
+import fetchScenarioPlacement from '../actions/fetchScenarioPlacement.js'
 import runScenario from '../actions/runScenario.js'
 import Panel from '../components/Panel.js'
 import Button from '../components/Button.js'
@@ -18,6 +19,7 @@ import TextSpan, {TextDiv} from '../components/TextSpan.js'
 import {routed} from '../utils/routing.jsx'
 import {statusToColor} from '../utils/status-color.js'
 import {formatDuration, formatPercent, formatRelative, formatTimestamp} from '../utils/time.js'
+import {unschedulableHint} from '../utils/placement.js'
 import {PERIODS, Period, filterByPeriod, periodQuery, summariseRuns} from '../utils/runStats.js'
 
 const PageContainer = styled.div`
@@ -94,11 +96,13 @@ const ScenarioDetail = ({scenarioId}) => {
 
   const {id, fetching, error, response: scenario} = useSelector((s) => s.scenario)
   const results = useSelector((s) => s.scenarioResults[scenarioId]) || {}
+  const placement = useSelector((s) => s.scenarioPlacement?.[scenarioId]) || {}
   const scenarioActions = useSelector((s) => s.scenarioActions)
   const pendingRun = scenarioActions[scenarioId]?.fetching
 
   useEffect(() => {
     dispatch(fetchScenario(scenarioId))
+    dispatch(fetchScenarioPlacement(scenarioId))
   }, [scenarioId])
 
   // The window is applied by the server, so changing the period re-reads the
@@ -135,7 +139,15 @@ const ScenarioDetail = ({scenarioId}) => {
   const {metadata, spec, status} = scenario
   const lastRunStatus = status?.results?.[0]?.status
   const executable = Boolean(spec?.prob?.kind)
-  const runnable = Boolean(spec?.active) && executable
+
+  // Placement is advisory until it has been read: while the preview is in
+  // flight, or if it failed, the button stays available and the server decides.
+  // Guessing "unschedulable" from a missing answer would take the button away
+  // from a scenario that is perfectly able to run.
+  const preview = placement.response
+  const placeable = !preview || preview.schedulable
+  const runnable = Boolean(spec?.active) && executable && placeable
+  const idleRunners = Boolean(preview?.schedulable) && !preview.readyWorkers
 
   return (
     <PageContainer>
@@ -172,11 +184,36 @@ const ScenarioDetail = ({scenarioId}) => {
             value={spec?.active ? 'active' : 'disabled'}
             color={spec?.active ? 'success' : 'neutral'}
           />
+          {preview && (
+            <StatTile
+              caption="Capacity"
+              value={`${preview.eligibleRunners} / ${preview.readyWorkers}`}
+              detail="eligible runners / ready workers"
+              color={preview.schedulable ? (idleRunners ? 'warning' : 'success') : 'error'}
+            />
+          )}
         </StatsRow>
 
         {!executable && (
           <TextDiv size="small" level={3} color="warning" style={{marginTop: '0.75rem'}}>
             This scenario has no prob defined, so it cannot be run.
+          </TextDiv>
+        )}
+
+        {/* Why the button is unavailable, in the same words the run would have
+            carried had one been created. */}
+        {preview && !preview.schedulable && (
+          <TextDiv size="small" level={3} color="error" style={{marginTop: '0.75rem'}}>
+            {unschedulableHint(preview)}
+          </TextDiv>
+        )}
+
+        {/* Not a refusal: the dispatch is durable and waits in the runner's
+            queue, so the run is offered and simply will not start yet. */}
+        {idleRunners && (
+          <TextDiv size="small" level={3} color="warning" style={{marginTop: '0.75rem'}}>
+            No workers are connected to the matching {preview.eligibleRunners === 1 ? 'runner' : 'runners'}; a run will
+            queue until one connects.
           </TextDiv>
         )}
       </Panel>

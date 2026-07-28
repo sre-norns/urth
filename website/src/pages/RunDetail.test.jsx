@@ -3,7 +3,7 @@ import {describe, it, expect, vi} from 'vitest'
 import {screen} from '@testing-library/react'
 import {renderWithProviders} from '../test/render.jsx'
 import RunDetail from './RunDetail.jsx'
-import {LabelArtifact, LabelRunner, LabelWorker} from '../utils/labels.js'
+import {LabelArtifact, LabelResult, LabelRunner, LabelWorker} from '../utils/labels.js'
 
 vi.mock('../actions/fetchRun.js', () => ({default: () => () => {}}))
 vi.mock('../actions/fetchRunArtifacts.js', () => ({default: () => () => {}}))
@@ -85,6 +85,33 @@ describe('RunDetail', () => {
     expect(screen.queryByText('artifact-runner')).not.toBeInTheDocument()
   })
 
+  // "Which runner ran this, and what else is going on there" is one question.
+  // The name is what an operator has; the runner page is what they want next.
+  it('links the runner that executed the run to its page', () => {
+    render(stateWith([artifact('log', 'redacted')]))
+
+    expect(screen.getByText('example-runner').closest('a')).toHaveAttribute('href', '/runners/example-runner')
+  })
+
+  // The fallback identity is a label, not a foreign key, but it is still the
+  // runner's name -- so it links too.
+  it('links the runner recovered from artifact labels', () => {
+    const legacy = {...run, status: {...run.status, executor: undefined}}
+
+    render(stateWith([artifact('log', 'redacted')], {fetching: false, response: legacy}))
+
+    expect(screen.getByText('artifact-runner').closest('a')).toHaveAttribute('href', '/runners/artifact-runner')
+  })
+
+  // Nothing to link to, and a link to nowhere is worse than plain text.
+  it('does not link the runner field when nothing recorded who ran it', () => {
+    const legacy = {...run, status: {...run.status, executor: undefined}}
+
+    const {container} = render(stateWith([], {fetching: false, response: legacy}))
+
+    expect(container.querySelector('a[href^="/runners/"]')).toBeNull()
+  })
+
   // Runs written before the server recorded an executor still have to render.
   // Their identity is recoverable from the labels of the artifacts the worker
   // uploaded, which is where this was read from previously.
@@ -164,6 +191,24 @@ describe('RunDetail', () => {
 
     expect(screen.getByText('kbjk96thvzcuiass')).toBeInTheDocument()
     expect(screen.queryByText(/← /)).not.toBeInTheDocument()
+  })
+
+  // A run that never executed has no logs, no artifacts and no worker: without
+  // the label spelled out, the page shows a failure and no reason for it.
+  it('explains a run that was never scheduled', () => {
+    const unschedulable = {
+      ...run,
+      labels: {[LabelResult.Unschedulable]: 'no-eligible-runner'},
+      status: {status: 'errored', result: 'errored'},
+    }
+
+    renderStandalone(stateWith([], {fetching: false, response: unschedulable}))
+
+    expect(screen.getByText(/No active runner matched/)).toBeInTheDocument()
+    // And it does not claim to have started: the timing helpers fall back to
+    // the resource's creation time, which would report a 0ms probe run.
+    expect(screen.getByText('never started')).toBeInTheDocument()
+    expect(screen.getByText('never ran')).toBeInTheDocument()
   })
 
   it('reserves a place for network and trace detail', () => {

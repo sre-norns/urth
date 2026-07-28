@@ -5,6 +5,11 @@ import userEvent from '@testing-library/user-event'
 import {renderWithProviders} from '../test/render.jsx'
 import Scenario from './Scenario.jsx'
 
+// The list item asks the server where each scenario would be placed. Left alone
+// that thunk would reach the network, fail, and overwrite the state each test is
+// trying to render.
+vi.mock('../actions/fetchScenarioPlacement.js', () => ({default: () => () => {}}))
+
 const scenario = ({results = [], active = true, schedule = '@5minutes', prob = {kind: 'http'}} = {}) => ({
   kind: 'scenarios',
   metadata: {
@@ -74,6 +79,61 @@ describe('Scenario list item', () => {
 
   it('enables the run control for an active scenario with a prob', () => {
     const {container} = renderWithProviders(<Scenario data={scenario()} />)
+
+    expect(container.querySelectorAll('button')[0]).not.toBeDisabled()
+  })
+
+  // The same gate as the scenario page. Triggering here produced a run that was
+  // terminal the moment it existed -- the server refuses it correctly, but the
+  // list should not be the one place that still offers it.
+  it('disables the run control when no runner can take the scenario', () => {
+    const {container} = renderWithProviders(<Scenario data={scenario()} />, {
+      preloadedState: {
+        scenarioPlacement: {
+          'checkout-probe': {
+            fetching: false,
+            response: {
+              requirements: 'os=linux',
+              matchingRunners: 0,
+              eligibleRunners: 0,
+              registeredWorkers: 0,
+              readyWorkers: 0,
+              schedulable: false,
+              reason: 'no-eligible-runner',
+            },
+          },
+        },
+      },
+    })
+
+    expect(container.querySelectorAll('button')[0]).toBeDisabled()
+    // Why, without spending a line of the row on it.
+    expect(screen.getByTitle(/No runner matches os=linux/)).toBeInTheDocument()
+  })
+
+  // A runner with no workers still queues the dispatch, so the run stays on
+  // offer -- the same rule the scenario page follows.
+  it('still offers a run when the matching runner has no workers', () => {
+    const {container} = renderWithProviders(<Scenario data={scenario()} />, {
+      preloadedState: {
+        scenarioPlacement: {
+          'checkout-probe': {
+            fetching: false,
+            response: {eligibleRunners: 1, matchingRunners: 1, readyWorkers: 0, schedulable: true},
+          },
+        },
+      },
+    })
+
+    expect(container.querySelectorAll('button')[0]).not.toBeDisabled()
+  })
+
+  // Until the preview arrives the server remains the authority; guessing would
+  // disable every row on first paint.
+  it('offers the run while the placement preview is still loading', () => {
+    const {container} = renderWithProviders(<Scenario data={scenario()} />, {
+      preloadedState: {scenarioPlacement: {'checkout-probe': {fetching: true}}},
+    })
 
     expect(container.querySelectorAll('button')[0]).not.toBeDisabled()
   })
