@@ -13,8 +13,11 @@ spec:
     matchLabels:
       os: "linux"
     matchSelector:
-      - { key: "env", operator: "NotIn",  values: ["dev", "testing"] }
+      - { key: "envX", operator: "NotIn",  values: ["dev", "testing"] }
   prob:
-    kind: http
+    kind: rest
     spec:
-      script: "http://localhost:8080/api/v1/version"
+      script: |
+        # @name Get HTTPBin
+        GET https://httpbin.org/get
+        Accept: application/json

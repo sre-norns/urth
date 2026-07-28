@@ -136,6 +136,16 @@ looks deceptively like passing.
    durable offline queues, redelivery, and backpressure itself. gRPC may still be worth it
    for request/response API calls; it is not the job transport.
 [X] Add .HTTP/.REST file runner into its own package
+[X] `.http` parser: request separators, headers, bodies, `@name`, and `@var`/`{{var}}`
+   substitution. Response handlers (`> {% ... %}`) are recognised and skipped; see
+   `pkg/http-parser/README.md` for what is deliberately rejected rather than ignored.
+[] `.http` parser: response assertions. A script's `> {% client.test(...) %}` block is
+   currently discarded, so a scenario that relies on one to decide pass/fail silently
+   passes on any response the prober itself accepts. Either run them (a JS engine in the
+   runner) or express the assertions in the prob spec.
+[] `.http` parser: variables supplied from outside the script, so one scenario can be
+   pointed at staging and production. Needs a `variables` field on the rest prob spec.
+[] `.http` parser: dynamic variables (`{{$uuid}}`, `{{$timestamp}}`) — rejected today.
 [X] Worker should check puppeteer availability and add labels it available
 [X] Workers should be annotated with the type of puppeteer available: JS or Python and versions
 [x] Web Request runner: integrate WEB listener to produce HTTP log + HAR file as artifacts

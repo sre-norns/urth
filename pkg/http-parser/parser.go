@@ -1,51 +1,518 @@
+// Package httpparser reads `.http` / `.rest` scripts — the format IntelliJ's
+// HTTP Client uses — and produces the sequence of requests they describe.
+//
+// Only the *shape of the request* is parsed. A script's response handlers
+// (`> {% ... %}`) are JavaScript assertions run by the IDE; they are recognised
+// so they cannot be mistaken for a request body, and then discarded. Verifying
+// a response is the prober's job, not this parser's.
 package httpparser
 
 import (
 	"bufio"
+	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/textproto"
 	"net/url"
+	"regexp"
 	"strings"
 )
 
+// Parse errors. Each is wrapped in a message naming the line it was found on.
+var (
+	// ErrMalformedRequestLine reports a line in request-line position that is
+	// not `[METHOD] target [HTTP/version]`.
+	ErrMalformedRequestLine = errors.New("malformed request line")
+
+	// ErrMalformedHeader reports a header line that is not `Name: value`.
+	ErrMalformedHeader = errors.New("malformed header")
+
+	// ErrNoTargetHost reports a request whose target names only a path, with no
+	// `Host` header to say which server the path is on.
+	ErrNoTargetHost = errors.New("request has no target host")
+
+	// ErrUndefinedVariable reports a `{{name}}` reference with no matching
+	// `@name = value` declaration earlier in the script.
+	ErrUndefinedVariable = errors.New("undefined variable")
+
+	// ErrUnsupported reports script syntax this parser deliberately does not
+	// implement, rather than letting it change the request silently.
+	ErrUnsupported = errors.New("unsupported script syntax")
+)
+
+// TestRequest is a single request read out of a script.
 type TestRequest struct {
 	*http.Request
 
-	// TODO: Add "expectation"
-	// TODO: Add variables
-	// TODO: add body
+	// Name is what the script calls this request: the value of a `# @name`
+	// directive, or failing that the title on its `###` separator. It exists to
+	// make run logs readable and is empty when the script names nothing.
+	Name string
 }
 
-func parseURL(uri string) (*url.URL, error) {
-	if !strings.Contains(uri, "://") && !strings.HasPrefix(uri, "//") {
-		uri = "//" + uri
+// maxScriptLine bounds a single line of a script. The default bufio.Scanner
+// limit of 64KiB is too small for a body holding an encoded payload, which
+// arrives as one very long line.
+const maxScriptLine = 1 << 20
+
+// Markers that open and close an inline response handler.
+const (
+	handlerBlockStart = "{%"
+	handlerBlockEnd   = "%}"
+)
+
+// requestSeparator opens a new request. Text following it titles that request.
+const requestSeparator = "###"
+
+// variableReference matches `{{ name }}` in a target, header value or body.
+var variableReference = regexp.MustCompile(`\{\{([^{}]*)\}\}`)
+
+// parseState is which part of a request the next line belongs to. A script is
+// a sequence of blocks, each running request line -> headers -> body, and only
+// ever moving forward until a `###` separator starts the next block.
+type parseState int
+
+const (
+	stateRequestLine parseState = iota
+	stateHeaders
+	stateBody
+)
+
+type requestParser struct {
+	requests []TestRequest
+
+	// variables are script scoped: `@name = value` declares one, and it is
+	// visible to every request declared after it.
+	variables map[string]string
+
+	lineNo int
+	state  parseState
+
+	// inHandler is set while skipping the body of a `> {% ... %}` block.
+	inHandler bool
+
+	// The request being accumulated.
+	requestLineNo int
+	name          string
+	method        string
+	target        string
+	protoVersion  string
+	headers       http.Header
+	hostHeader    string
+	body          []string
+}
+
+func newRequestParser() *requestParser {
+	parser := &requestParser{
+		variables: make(map[string]string),
+	}
+	parser.reset()
+
+	return parser
+}
+
+// errorf annotates a parse failure with the line it was found on. Scripts are
+// embedded in scenario YAML where an editor cannot point at the fault, so the
+// line number has to travel in the message.
+func (p *requestParser) errorf(line int, cause error, format string, args ...any) error {
+	return fmt.Errorf("line %d: %w: %s", line, cause, fmt.Sprintf(format, args...))
+}
+
+func (p *requestParser) reset() {
+	p.state = stateRequestLine
+	p.requestLineNo = 0
+	p.name = ""
+	p.method = ""
+	p.target = ""
+	p.protoVersion = ""
+	p.hostHeader = ""
+	p.headers = make(http.Header)
+	p.body = nil
+}
+
+// expand substitutes `{{name}}` references with the variables declared so far.
+//
+// An unresolved reference is an error rather than a value passed through
+// verbatim: `{{base_url}}/users` would otherwise become a request to a host
+// literally named `{{base_url}}`, and the probe would report a DNS failure
+// instead of the typo that caused it.
+func (p *requestParser) expand(line int, text string) (string, error) {
+	var failure error
+
+	expanded := variableReference.ReplaceAllStringFunc(text, func(match string) string {
+		name := strings.TrimSpace(match[2 : len(match)-2])
+
+		if value, known := p.variables[name]; known {
+			return value
+		}
+
+		if failure == nil {
+			if strings.HasPrefix(name, "$") {
+				// `{{$uuid}}`, `{{$timestamp}}` and friends are generated by the
+				// IDE at send time. Naming them specifically saves the reader
+				// hunting for a declaration that was never meant to exist.
+				failure = p.errorf(line, ErrUnsupported, "dynamic variable %q is not implemented; declare a value with `@%s = ...` instead", name, name)
+			} else {
+				failure = p.errorf(line, ErrUndefinedVariable, "%q is not declared; add `@%s = <value>` before this request", name, name)
+			}
+		}
+
+		return match
+	})
+
+	if failure != nil {
+		return "", failure
 	}
 
-	url, err := url.Parse(uri)
+	return expanded, nil
+}
+
+// targetURL resolves the request line's target and the `Host` header into the
+// URL to send to.
+func (p *requestParser) targetURL() (*url.URL, error) {
+	raw := p.target
+	if !strings.Contains(raw, "://") && !strings.HasPrefix(raw, "/") {
+		// A target that is neither absolute nor rooted opens with an authority
+		// (`go.dev/test`); `//` is what makes url.Parse read it as one rather
+		// than as a path.
+		raw = "//" + raw
+	}
+
+	targetURL, err := url.Parse(raw)
 	if err != nil {
-		return nil, err
+		return nil, p.errorf(p.requestLineNo, ErrMalformedRequestLine, "failed to parse target URL %q: %v", p.target, err)
 	}
 
-	if url.Scheme == "" {
-		url.Scheme = "http"
-		if !strings.HasSuffix(url.Host, ":80") && !strings.HasSuffix(url.Host, ":http") {
-			url.Scheme = "https"
+	if targetURL.Host == "" {
+		// `POST /users` + `Host: example.com` is the request exactly as it goes
+		// on the wire, and the header is the only thing naming the server.
+		if p.hostHeader == "" {
+			return nil, p.errorf(p.requestLineNo, ErrNoTargetHost, "target %q names no host and the request has no `Host` header", p.target)
+		}
+		targetURL.Host = p.hostHeader
+	}
+
+	if targetURL.Scheme == "" {
+		// Nothing in the script says which scheme to use. Assume the encrypted
+		// one, unless the target asks for the cleartext port by number.
+		targetURL.Scheme = "https"
+		if targetURL.Port() == "80" {
+			targetURL.Scheme = "http"
 		}
 	}
 
-	return url, nil
+	return targetURL, nil
 }
 
-type requestParser struct {
-	_requests []TestRequest
+func (p *requestParser) onFinishRequest() error {
+	defer p.reset()
 
-	method       string
-	path         string
-	protoVersion string
-	headers      map[string]string
+	// Nothing was read since the last separator: an empty block, a run of
+	// comments, or the trailing `###` that scripts often end on. A block cannot
+	// hold headers or a body without a request line, so a missing target here
+	// means the block held nothing at all.
+	if p.target == "" {
+		return nil
+	}
 
-	// TODO: Body
+	targetURL, err := p.targetURL()
+	if err != nil {
+		return err
+	}
+
+	method := p.method
+	if method == "" {
+		method = http.MethodGet
+	}
+
+	// A nil io.Reader and a nil *bytes.Reader are not the same thing to
+	// http.NewRequest: the latter sets a non-nil Body that reads as empty.
+	var body io.Reader
+	if content := strings.Join(trimBlankLines(p.body), "\n"); content != "" {
+		// bytes.Reader is what gives the request a GetBody, so it survives a
+		// redirect or a retry.
+		body = bytes.NewReader([]byte(content))
+	}
+
+	request, err := http.NewRequest(method, targetURL.String(), body)
+	if err != nil {
+		return p.errorf(p.requestLineNo, ErrMalformedRequestLine, "%v", err)
+	}
+
+	if p.protoVersion != "" {
+		major, minor, ok := http.ParseHTTPVersion(p.protoVersion)
+		if !ok {
+			return p.errorf(p.requestLineNo, ErrMalformedRequestLine, "unrecognised protocol version %q", p.protoVersion)
+		}
+		request.Proto, request.ProtoMajor, request.ProtoMinor = p.protoVersion, major, minor
+	}
+
+	for name, values := range p.headers {
+		for _, value := range values {
+			request.Header.Add(name, value)
+		}
+	}
+
+	// A `Host` header is applied to the request rather than kept in Header: Go
+	// ignores Header["Host"] when writing a request and sends Request.Host, so
+	// leaving it in the map would silently drop it. When the target already
+	// names a host the header still means something — dial here, ask for that
+	// name — which is how a specific instance behind a load balancer is probed.
+	if p.hostHeader != "" && p.hostHeader != targetURL.Host {
+		request.Host = p.hostHeader
+	}
+
+	p.requests = append(p.requests, TestRequest{
+		Request: request,
+		Name:    p.name,
+	})
+
+	return nil
+}
+
+func (p *requestParser) onSeparator(line string) error {
+	if err := p.onFinishRequest(); err != nil {
+		return err
+	}
+
+	// `### Fetch the user profile` titles the request that follows it. Set
+	// after onFinishRequest, which resets the block being accumulated.
+	p.name = strings.TrimSpace(strings.TrimLeft(line, "#"))
+
+	return nil
+}
+
+// onComment handles a whole-line comment. Comments carry the directives that
+// describe a request, so they are read rather than skipped.
+func (p *requestParser) onComment(text string) {
+	directive, value, _ := strings.Cut(text, " ")
+	if directive != "@name" {
+		// Everything else — `@no-redirect`, `@timeout`, `@no-cookie-jar` — tells
+		// the IDE how to *run* a request rather than what the request is, and is
+		// ignored rather than rejected so a script written for the IDE still
+		// parses here.
+		return
+	}
+
+	// Both `# @name Foo` and `# @name = Foo` are written in the wild.
+	p.name = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(value), "="))
+}
+
+func (p *requestParser) onVariable(line string) error {
+	if p.state != stateRequestLine {
+		return p.errorf(p.lineNo, ErrMalformedHeader, "variable declaration inside a request; `@name = value` must appear before the request line")
+	}
+
+	name, value, isAssignment := strings.Cut(strings.TrimPrefix(line, "@"), "=")
+	name = strings.TrimSpace(name)
+	if !isAssignment || name == "" {
+		return p.errorf(p.lineNo, ErrMalformedRequestLine, "expected a variable declaration `@name = value`, got %q", line)
+	}
+
+	expanded, err := p.expand(p.lineNo, strings.TrimSpace(value))
+	if err != nil {
+		return err
+	}
+
+	p.variables[name] = expanded
+
+	return nil
+}
+
+func (p *requestParser) onRequestLine(line string) error {
+	fields := strings.Fields(line)
+	p.requestLineNo = p.lineNo
+
+	switch {
+	case len(fields) == 1:
+		// Short form: a bare URL, with the method implied.
+		p.target = fields[0]
+	case len(fields) > 3:
+		return p.errorf(p.lineNo, ErrMalformedRequestLine, "expected `[METHOD] target [HTTP/version]`, got %d fields in %q", len(fields), line)
+	default:
+		// A method is a bare token. Anything holding a `:` is a header that has
+		// turned up before the request line it belongs to, which is worth saying
+		// out loud — the alternative is a confusing complaint about the URL.
+		if !isMethodToken(fields[0]) {
+			return p.errorf(p.lineNo, ErrMalformedRequestLine, "%q is not a request method; a header before the request line?", fields[0])
+		}
+
+		p.method = fields[0]
+		p.target = fields[1]
+		if len(fields) == 3 {
+			p.protoVersion = fields[2]
+		}
+	}
+
+	expanded, err := p.expand(p.lineNo, p.target)
+	if err != nil {
+		return err
+	}
+
+	p.target = expanded
+	p.state = stateHeaders
+
+	return nil
+}
+
+func (p *requestParser) onHeaderLine(line string) error {
+	name, value, isHeader := strings.Cut(line, ":")
+	name = strings.TrimSpace(name)
+	if !isHeader || name == "" {
+		return p.errorf(p.lineNo, ErrMalformedHeader, "expected `Name: value`, got %q", line)
+	}
+
+	expanded, err := p.expand(p.lineNo, strings.TrimSpace(value))
+	if err != nil {
+		return err
+	}
+
+	// Held aside rather than added: Host is part of the request's identity, not
+	// of its header map. See onFinishRequest.
+	if textproto.CanonicalMIMEHeaderKey(name) == "Host" {
+		p.hostHeader = expanded
+		return nil
+	}
+
+	p.headers.Add(name, expanded)
+
+	return nil
+}
+
+// onBodyLine handles a line once the blank line after the headers has been
+// seen. Body lines are kept verbatim — indentation and `#` alike — because at
+// this point they are payload, and a parser that edits a payload is a parser
+// that makes a probe test something other than what the script says.
+func (p *requestParser) onBodyLine(line string) error {
+	trimmed := strings.TrimSpace(line)
+
+	switch {
+	case strings.HasPrefix(trimmed, requestSeparator):
+		return p.onSeparator(trimmed)
+
+	case isResponseHandler(trimmed):
+		// An inline handler runs until its closing marker; a one-line form
+		// (`> ./handler.js`, `>> ./out.json`) is done with already.
+		p.inHandler = strings.Contains(trimmed, handlerBlockStart) && !strings.Contains(trimmed, handlerBlockEnd)
+		return nil
+
+	case isExternalBodyReference(trimmed):
+		// `< ./body.json` reads the body from a file next to the script. A
+		// probe script is a string in a scenario manifest with no directory
+		// around it, so there is nothing to resolve the path against. Rejecting
+		// it is the honest answer; ignoring the line would send an empty body
+		// and report a failure that has nothing to do with the service.
+		return p.errorf(p.lineNo, ErrUnsupported, "request body from an external file (%q); inline the body instead", trimmed)
+	}
+
+	expanded, err := p.expand(p.lineNo, line)
+	if err != nil {
+		return err
+	}
+
+	p.body = append(p.body, expanded)
+
+	return nil
+}
+
+func (p *requestParser) onLine(raw string) error {
+	p.lineNo++
+	line := strings.TrimSuffix(raw, "\r")
+
+	// A response handler is JavaScript that checks the response. Skipping it
+	// wholesale is what keeps it from being read as a request body.
+	if p.inHandler {
+		if strings.Contains(line, handlerBlockEnd) {
+			p.inHandler = false
+		}
+		return nil
+	}
+
+	if p.state == stateBody {
+		return p.onBodyLine(line)
+	}
+
+	// Outside a body, leading whitespace carries no meaning: scripts are
+	// routinely indented to sit inside a YAML block scalar.
+	line = strings.TrimSpace(line)
+
+	if strings.HasPrefix(line, requestSeparator) {
+		return p.onSeparator(line)
+	}
+
+	if line == "" {
+		// Exactly one blank line separates headers from body. Before the
+		// request line, blanks are just spacing.
+		if p.state == stateHeaders {
+			if p.isShortForm() {
+				return p.onFinishRequest()
+			}
+			p.state = stateBody
+		}
+		return nil
+	}
+
+	if comment, isComment := cutCommentMarker(line); isComment {
+		p.onComment(comment)
+		return nil
+	}
+
+	content := stripTrailingComment(line)
+	if content == "" {
+		return nil
+	}
+
+	if strings.HasPrefix(content, "@") {
+		return p.onVariable(content)
+	}
+
+	if p.state == stateRequestLine {
+		return p.onRequestLine(content)
+	}
+
+	// A lone URL where a header was expected: the script is listing endpoints
+	// one per line rather than opening each with `###`.
+	if startsShortFormRequest(content) {
+		if err := p.onFinishRequest(); err != nil {
+			return err
+		}
+
+		return p.onRequestLine(content)
+	}
+
+	return p.onHeaderLine(content)
+}
+
+// isShortForm reports whether the request being read is nothing but a URL.
+//
+// Such a request ends at the end of its line, so that a script can list
+// endpoints one per line with blank lines between them. Giving it a method or a
+// header is what says a body may follow — otherwise the first blank line in
+// a list of URLs would swallow the rest of the script as one request's payload.
+func (p *requestParser) isShortForm() bool {
+	return p.method == "" && p.hostHeader == "" && len(p.headers) == 0
+}
+
+// startsShortFormRequest reports whether a line read in header position is a
+// bare URL rather than a header.
+//
+// A header name is a bare token, so a `/` in it settles the question; the `.`
+// of a hostname does too, since no header in use has a dotted name. `http` and
+// `https` have to be named because `http://host/path` does parse as a header
+// called `http` — just not one anybody has ever sent.
+func startsShortFormRequest(line string) bool {
+	if len(strings.Fields(line)) != 1 {
+		return false
+	}
+
+	name, _, isHeader := strings.Cut(line, ":")
+	if !isHeader {
+		return true
+	}
+
+	return strings.ContainsAny(name, "./") || strings.EqualFold(name, "http") || strings.EqualFold(name, "https")
 }
 
 func (p *requestParser) Requests() ([]TestRequest, error) {
@@ -53,93 +520,109 @@ func (p *requestParser) Requests() ([]TestRequest, error) {
 		return nil, err
 	}
 
-	return p._requests, nil
+	return p.requests, nil
 }
 
-func (p *requestParser) reset() error {
-	p.method = ""
-	p.path = ""
-	p.protoVersion = ""
-	p.headers = make(map[string]string)
-
-	return nil
-}
-
-func (p *requestParser) onFinishRequest() error {
-	if p.path == "" {
-		return p.reset()
+// isMethodToken reports whether a field can be an HTTP method. Custom verbs are
+// allowed — the IDE sends whatever the script names, and so do we — but a
+// method never holds a `:`, which is what tells a request line from a header.
+func isMethodToken(field string) bool {
+	if field == "" {
+		return false
 	}
 
-	targetURL, err := parseURL(p.path)
-	if err != nil {
-		return fmt.Errorf("failed to parse target URL: %w", err)
-	}
-
-	if p.method == "" {
-		p.method = "GET"
-	}
-
-	result, err := http.NewRequest(p.method, targetURL.String(), nil)
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	if p.protoVersion != "" {
-		result.Proto = p.protoVersion
-	}
-
-	if result.Header == nil {
-		result.Header = make(http.Header)
-	}
-
-	for k, v := range p.headers {
-		result.Header.Add(k, v)
-	}
-
-	p._requests = append(p._requests, TestRequest{
-		Request: result,
-	})
-
-	return p.reset()
-}
-
-func (p *requestParser) onLine(line string) error {
-	parts := strings.Split(string(line), "#") // Split out content from a trailing line comments: <content> # comment
-	action := strings.TrimSpace(parts[0])
-	if action == "" {
-		// Line with no leading part, need to check if there is a comment block:
-		if len(parts) > 1 && strings.HasPrefix(parts[1], "###") {
-			return p.onFinishRequest()
+	for _, r := range field {
+		switch {
+		case r >= 'A' && r <= 'Z', r >= 'a' && r <= 'z', r == '-', r == '_':
+		default:
+			return false
 		}
-		return nil
 	}
 
-	actionComponents := strings.Split(string(parts[0]), " ")
-	for i, component := range actionComponents {
-		actionComponents[i] = strings.TrimSpace(component)
-	}
-
-	// If there is a single word - that's url for short request form
-	if len(actionComponents) == 1 {
-		p.path = parts[0]
-		return nil
-	}
-
-	// if strings.HasSuffix(actionComponents[0], ":") || strings.Contains(p.path, " ") { // not Header but verb?
-	// }
-
-	// if strings.HasPrefix(action, "#") {
-	// 	return nil
-	// }
-
-	return nil
+	return true
 }
 
-func Parse(script io.Reader) ([]TestRequest, error) {
-	parser := requestParser{}
-	scanner := bufio.NewScanner(script)
+// cutCommentMarker returns the text of a whole-line comment.
+func cutCommentMarker(line string) (string, bool) {
+	for _, marker := range []string{"//", "#"} {
+		if text, found := strings.CutPrefix(line, marker); found {
+			return strings.TrimSpace(text), true
+		}
+	}
 
-	// http.ReadRequest
+	return "", false
+}
+
+// stripTrailingComment removes a trailing `#` comment from a request line or a
+// header.
+//
+// The IDE's format only recognises a comment that starts a line. This parser is
+// more permissive because scripts here live inside scenario YAML, where
+// annotating a line in place is the natural thing to reach for. Requiring
+// whitespace before the `#` is what keeps a URL fragment (`/app#/route`) whole.
+func stripTrailingComment(line string) string {
+	for i := 1; i < len(line); i++ {
+		if line[i] == '#' && (line[i-1] == ' ' || line[i-1] == '\t') {
+			return strings.TrimSpace(line[:i])
+		}
+	}
+
+	return line
+}
+
+// isResponseHandler reports whether a body line opens a response handler
+// (`> {% ... %}`, `> ./handler.js`) or redirects the response to a file
+// (`>> ./out.json`, `>>! ./out.json`).
+//
+// The separating space matters: it is what distinguishes these from a body that
+// happens to start with `>`.
+func isResponseHandler(line string) bool {
+	rest, found := strings.CutPrefix(line, ">")
+	if !found {
+		return false
+	}
+
+	rest = strings.TrimLeft(rest, ">!")
+
+	return rest == "" || strings.HasPrefix(rest, " ") || strings.HasPrefix(rest, "\t") || strings.HasPrefix(rest, handlerBlockStart)
+}
+
+// isExternalBodyReference reports whether a body line reads the request body
+// from a file: `< ./body.json`, or `<@utf-8 ./body.json` with an encoding.
+func isExternalBodyReference(line string) bool {
+	rest, found := strings.CutPrefix(line, "<")
+	if !found {
+		return false
+	}
+
+	// `<@` only ever introduces a file reference, whereas a bare `<` also opens
+	// an XML body — hence the required space in that case.
+	return strings.HasPrefix(rest, "@") || strings.HasPrefix(rest, " ") || strings.HasPrefix(rest, "\t")
+}
+
+// trimBlankLines drops the blank lines framing a body. The blank line that ends
+// the headers is not part of the payload, and neither is the spacing a script
+// leaves before its next `###`.
+func trimBlankLines(lines []string) []string {
+	first, last := 0, len(lines)
+
+	for first < last && strings.TrimSpace(lines[first]) == "" {
+		first++
+	}
+	for last > first && strings.TrimSpace(lines[last-1]) == "" {
+		last--
+	}
+
+	return lines[first:last]
+}
+
+// Parse reads a `.http` script and returns the requests it describes, in the
+// order the script lists them.
+func Parse(script io.Reader) ([]TestRequest, error) {
+	parser := newRequestParser()
+
+	scanner := bufio.NewScanner(script)
+	scanner.Buffer(nil, maxScriptLine)
 
 	for scanner.Scan() {
 		if err := parser.onLine(scanner.Text()); err != nil {
