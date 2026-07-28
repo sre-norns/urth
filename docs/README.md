@@ -16,6 +16,7 @@ changes, add a new ADR that supersedes the old one instead of rewriting the old 
 | [0003](./adr/0003-runner-worker-model.md) | Accepted | Schedule jobs to logical Runner channels and execute them on physical Worker processes. |
 | [0004](./adr/0004-nats-communication-backbone.md) | Accepted | Use NATS and JetStream for durable Runner jobs, resource events, and internal communication without making messaging the source of truth. |
 | [0005](./adr/0005-local-scenario-execution.md) | Accepted | Keep local CLI execution separate from managed Results, Runner placement, and Worker authority. |
+| [0006](./adr/0006-control-loop-placement.md) | Accepted | Run control loops in every API server replica by default, composed from `pkg/controllers` so extraction to a separate process stays a configuration change. |
 
 ## Implementation review backlog
 
