@@ -36,7 +36,7 @@ Status values:
 | 004 | P0 | ready | [Issue Runner-scoped NATS credentials](tasks/004-runner-scoped-nats-credentials.md) | — | 005, 009, 011, 013 |
 | 005 | P0 | ready | [Secure Runner enrollment issuance and rotation](tasks/005-secure-runner-enrollment.md) | — | 004, 006, 009 |
 | 006 | P0 | ready | [Harden run capabilities and reporting authorization](tasks/006-harden-run-capabilities.md) | — | 005, 007, 008, 011 |
-| 007 | P0 | ready | [Snapshot immutable execution input on Result](tasks/007-snapshot-result-execution-input.md) | — | 002, 006, 008, 011 |
+| 007 | P0 | done | [Snapshot immutable execution input on Result](tasks/007-snapshot-result-execution-input.md) | — | 002, 006, 008, 011 |
 | 008 | P0 | ready | [Complete the Runner channel policy contract](tasks/008-runner-channel-policy.md) | — | 006, 007, 009, 014 |
 | 009 | P0 | blocked | [Add stable Worker identity and Runner blocklists](tasks/009-worker-identity-and-blocklist.md) | 005 | 004, 008 |
 | 010 | P1 | ready | [Synchronously acknowledge claimed dispatches](tasks/010-synchronous-jetstream-ack.md) | — | 001, 003, 011 |

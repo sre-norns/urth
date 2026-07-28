@@ -135,9 +135,12 @@ func NewDispatchOutboxEntry(result Result, now time.Time) DispatchOutboxEntry {
 		EventUID:      DispatchEventUID(result.UID, result.Version),
 		ResultUID:     result.UID,
 		ResultVersion: result.Version,
-		ScenarioName:  result.Spec.Scenario.Name,
-		RunnerUID:     result.Status.Executor.RunnerID,
-		NotBefore:     now,
+		// From the execution snapshot rather than the Scenario association: the
+		// association is lazy and arrives zero-valued from most loads, and the
+		// snapshot names the scenario revision this dispatch is actually for.
+		ScenarioName: result.Spec.Execution.ScenarioName,
+		RunnerUID:    result.Status.Executor.RunnerID,
+		NotBefore:    now,
 	}
 }
 

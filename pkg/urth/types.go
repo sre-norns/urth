@@ -133,6 +133,17 @@ type ResultSpec struct {
 	// Note that since scenario can be updated, current value of Scenario.Spec.Prob.Kind - might be different
 	ProbKind prob.Kind `form:"probKind" json:"probKind,omitempty" yaml:"probKind,omitempty" xml:"probKind"`
 
+	// Execution is the immutable input this run was created to execute. See
+	// ExecutionSnapshot: it is captured from the Scenario when the run is
+	// scheduled and is the only thing a claim is authorised against.
+	//
+	// Hidden from every serialization the API produces. A probe definition may
+	// carry credentials, so it is disclosed only in the response to an
+	// authenticated claim (AuthJobResponse.Prob) -- listing runs must not hand
+	// out the scripts they run. The column is written and read by gorm, which
+	// does not consult these tags.
+	Execution ExecutionSnapshot `form:"-" json:"-" yaml:"-" xml:"-" gorm:"serializer:json"`
+
 	// Timestamp when a job has been picked-up by a worked
 	TimeStarted *time.Time `form:"start_time" json:"start_time,omitempty" yaml:"start_time,omitempty" xml:"start_time" gorm:"type:TIMESTAMPTZ NULL"`
 

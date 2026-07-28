@@ -51,15 +51,20 @@ func (s *asynqScheduler) Close() error {
 	return s.client.Close()
 }
 
-func (s *asynqScheduler) Schedule(ctx context.Context, result urth.Result, scenario urth.Scenario) (urth.RunID, error) {
-	if scenario.Spec.Prob.Spec == nil {
+func (s *asynqScheduler) Schedule(ctx context.Context, result urth.Result) (urth.RunID, error) {
+	// The job carries the run's execution snapshot, not the scenario as it stands
+	// now. This transport puts the whole prob in the queue message, so reading it
+	// from a live scenario meant an edit made between scheduling and publication
+	// silently changed what a queued run executed.
+	snapshot := result.Spec.Execution
+	if snapshot.Prob.Spec == nil {
 		return urth.InvalidRunID, fmt.Errorf("can't schedule job: %w", ErrInvalidJobSpec)
 	}
 
 	job := urth.Job{
 		ResultName:   result.Name,
-		ScenarioName: scenario.Name,
-		Prob:         scenario.Spec.Prob,
+		ScenarioName: snapshot.ScenarioName,
+		Prob:         snapshot.Prob,
 	}
 
 	task, err := MarshalJob(job)

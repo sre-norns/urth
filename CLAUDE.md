@@ -129,6 +129,17 @@ happened — and the event UID is minted once at enqueue and reused on every
 retry, because it is the `Nats-Msg-Id` that suppresses the duplicate. See
 `cmd/api-server/README.md`.
 
+**A scheduled run does not read its Scenario again.** `ResultSpec.Execution` is
+an `ExecutionSnapshot` — scenario UID/name/version, requirements, and the whole
+typed `prob.Manifest` — copied when the run is created. Claim authorization uses
+only that; nothing on the claim or dispatch path loads the `Scenario`, which is
+why editing one no longer changes a queued run and deleting one no longer kills
+it. The field is `json:"-" yaml:"-"`: a probe definition may carry credentials
+and is disclosed only in the claim response. A `Result` whose snapshot is NULL
+(written before the column) is refused at claim, marked `errored`, and labelled
+`urth/result.unschedulable=missing-execution-snapshot` — never back-filled from
+the current scenario. See `cmd/api-server/README.md`.
+
 **Nothing repairs itself; the reconciler does it.** `pkg/urth/reconcile.go` runs
 in every api-server beside the relay and is what makes the execution lease and
 the outbox mean anything: an abandoned `running` run and a `pending` run whose
@@ -151,6 +162,12 @@ it is column-to-column comparison that needs `CAST(results.uid AS TEXT)`.
 500 (`stream store EOF`), not `ErrMsgNotFound`. `natsq.DropDispatch` confirms
 absence with a `GetMsg` rather than matching the error's shape; matching alone
 would have the reconciler retry the same entry forever.
+
+**Prob specs in `pkg/urth` tests are decoded strictly.** `execution_test.go`
+links every prober into the test binary, as the api-server does, so a fixture
+prob is unmarshalled against its registered type rather than falling back to
+`map[string]any`. A made-up field (`{"url": …}` for the `http` kind) now fails
+with `unknown field` where it used to round-trip unnoticed.
 
 **`file::memory:` gives every pooled connection its own SQLite database.** A row
 written on one connection and read on another silently is not there, which reads
