@@ -286,6 +286,7 @@ func init() {
 	manifest.MustRegisterManifest(KindRunner, &RunnerSpec{}, &RunnerStatus{})
 	manifest.MustRegisterManifest(KindResult, &ResultSpec{}, &ResultStatus{})
 	manifest.MustRegisterManifest(KindScenario, &ScenarioSpec{}, &ScenarioStatus{})
+	manifest.MustRegisterManifest(KindDispatchFailure, &DispatchFailureSpec{}, &DispatchFailureStatus{})
 	manifest.MustRegisterKind(KindArtifact, &ArtifactSpec{})
 }
 

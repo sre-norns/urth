@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -52,6 +53,10 @@ var kindMap = map[string]manifest.Kind{
 	string(urth.KindScenario):       urth.KindScenario,
 	string(urth.KindResult):         urth.KindResult,
 	string(urth.KindArtifact):       urth.KindArtifact,
+	// Without this the label-search endpoints report an unknown kind for dead
+	// letters, so the one resource an operator most often filters by reason or
+	// runner would be the one kind they could not enumerate labels for.
+	string(urth.KindDispatchFailure): urth.KindDispatchFailure,
 }
 
 type KindRequest struct {
@@ -115,6 +120,38 @@ func abortClaim(ctx *gin.Context, resultUID manifest.ResourceID, err error) {
 	response := claimHTTPResponse(err)
 	log.Printf("claim for run %v refused (%d): %v", resultUID, response.Code, err)
 	bark.AbortWithError(ctx, response.Code, response)
+}
+
+// abortDispatchReport answers a refused dead-letter report.
+//
+// The status class carries the same meaning as it does on the claim path,
+// because the worker reads it the same way: 4xx means this report will never be
+// accepted and the message should be terminated anyway, while 5xx means try
+// again later and leave the message alone. Getting that backwards either spins
+// on an unreportable message forever or throws away the evidence.
+func abortDispatchReport(ctx *gin.Context, err error) {
+	if errors.Is(err, urth.ErrInvalidDispatchFailure) {
+		log.Printf("dispatch failure report refused as malformed: %v", err)
+		bark.AbortWithError(ctx, http.StatusBadRequest, err)
+
+		return
+	}
+
+	response := claimHTTPResponse(err)
+	log.Printf("dispatch failure report refused (%d): %v", response.Code, err)
+	bark.AbortWithError(ctx, response.Code, response)
+}
+
+// statusForResourceError maps an operator action's failure to a status.
+func statusForResourceError(err error) int {
+	switch {
+	case errors.Is(err, bark.ErrResourceNotFound):
+		return http.StatusNotFound
+	case errors.Is(err, bark.ErrForbidden):
+		return http.StatusForbidden
+	default:
+		return http.StatusInternalServerError
+	}
 }
 
 func apiRoutes(srv urth.Service, natsConn *nats.Conn) *gin.Engine {
@@ -296,6 +333,79 @@ func apiRoutes(srv urth.Service, natsConn *nats.Conn) *gin.Engine {
 		v1.GET("/results/:id", bark.ResourceAPI(), func(ctx *gin.Context) {
 			bark.WithContext[urth.Result](ctx).Found(srv.AllResults().Get(ctx.Request.Context(), bark.RequireResourceName(ctx)))
 		})
+		//------------
+		// Dispatch failures (dead letters)
+		//------------
+		// The operational answer to "why did this run never start". Reads are
+		// open like any other resource; the write paths are asymmetric on
+		// purpose -- reporting is a worker talking about work it was handed,
+		// while retrying and resolving are operator actions.
+		v1.GET("/dispatch-failures", bark.SearchableAPI(paginationLimit), func(ctx *gin.Context) {
+			bark.WithContext[urth.DispatchFailure](ctx).List(
+				srv.DispatchFailures().List(ctx.Request.Context(), bark.RequireSearchQuery(ctx)))
+		})
+		v1.GET("/dispatch-failures/:id", bark.ResourceAPI(), func(ctx *gin.Context) {
+			bark.WithContext[urth.DispatchFailure](ctx).Found(
+				srv.DispatchFailures().Get(ctx.Request.Context(), bark.RequireResourceName(ctx)))
+		})
+
+		// A worker reporting a dispatch it cannot make progress on. Bearer
+		// authenticated for the same reason the claim is: the report strands a
+		// run, and the identity behind it comes from the session rather than the
+		// body.
+		v1.POST("/dispatch-failures", bark.AuthBearerAPI(), func(ctx *gin.Context) {
+			var report urth.ReportDispatchFailureRequest
+			if err := ctx.ShouldBind(&report); err != nil {
+				bark.AbortWithError(ctx, http.StatusBadRequest, err)
+				return
+			}
+
+			session := urth.APIToken(bark.RequireBearerToken(ctx))
+			failure, err := srv.DispatchFailures().Report(ctx.Request.Context(), session, report)
+			if err != nil {
+				abortDispatchReport(ctx, err)
+				return
+			}
+
+			ctx.Header(bark.HTTPHeaderCacheControl, "no-store")
+			bark.Ok(ctx, failure.ToManifest())
+		})
+
+		v1.POST("/dispatch-failures/:id/retry", bark.ResourceAPI(), func(ctx *gin.Context) {
+			var request urth.RetryDispatchFailureRequest
+			// An empty body is the common case -- "retry this, with the
+			// defaults" -- so a body that will not bind is only an error when
+			// one was actually sent.
+			if ctx.Request.ContentLength > 0 {
+				if err := ctx.ShouldBind(&request); err != nil {
+					bark.AbortWithError(ctx, http.StatusBadRequest, err)
+					return
+				}
+			}
+
+			failure, retry, err := srv.DispatchFailures().Retry(ctx.Request.Context(),
+				bark.RequireResourceName(ctx), request)
+			if err != nil {
+				bark.AbortWithError(ctx, statusForResourceError(err), err)
+				return
+			}
+
+			bark.Ok(ctx, urth.RetryDispatchFailureResponse{
+				Failure: failure.ToManifest(),
+				Retry:   retry.ToManifest(),
+			})
+		})
+
+		v1.POST("/dispatch-failures/:id/resolve", bark.ResourceAPI(), func(ctx *gin.Context) {
+			failure, err := srv.DispatchFailures().Resolve(ctx.Request.Context(), bark.RequireResourceName(ctx))
+			if err != nil {
+				bark.AbortWithError(ctx, statusForResourceError(err), err)
+				return
+			}
+
+			bark.Ok(ctx, failure.ToManifest())
+		})
+
 		//------------
 		// Workers API
 		//------------
@@ -563,6 +673,7 @@ func main() {
 		&urth.Scenario{},
 		&urth.Result{},
 		&urth.Artifact{},
+		&urth.DispatchFailure{},
 	}
 	models = append(models, controllers.Models()...)
 	grace.SuccessRequired(db.AutoMigrate(models...), "DB schema migration failed")
