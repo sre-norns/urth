@@ -107,7 +107,7 @@ type Dispatch struct {
 // Nothing is started here: a command registers every loop it wants, then starts
 // the manager once, so that a failure while composing does not leave half a
 // control plane running.
-func Register(manager *Manager, cfg Config, deps Dependencies) Dispatch {
+func Register(manager *Manager, cfg Config, deps Dependencies) (Dispatch, error) {
 	var dispatch Dispatch
 
 	if cfg.RelayEnabled {
@@ -117,7 +117,9 @@ func Register(manager *Manager, cfg Config, deps Dependencies) Dispatch {
 			urth.WithRelayLease(cfg.RelayLease),
 		)
 
-		manager.Add("dispatch-relay", dispatch.Relay)
+		if err := manager.Add("dispatch-relay", dispatch.Relay); err != nil {
+			return dispatch, err
+		}
 	}
 
 	if cfg.ReconcileEnabled {
@@ -129,7 +131,9 @@ func Register(manager *Manager, cfg Config, deps Dependencies) Dispatch {
 			urth.WithRunnerChannels(deps.Channels),
 		)
 
-		manager.Add("dispatch-reconciler", dispatch.Reconciler)
+		if err := manager.Add("dispatch-reconciler", dispatch.Reconciler); err != nil {
+			return dispatch, err
+		}
 	}
 
 	if cfg.AdvisoriesEnabled && deps.Advisories != nil {
@@ -138,11 +142,14 @@ func Register(manager *Manager, cfg Config, deps Dependencies) Dispatch {
 		// advisory converges on one record. Which is just as well, because
 		// advisories are at-most-once and a single designated listener would be
 		// a single point at which they are missed.
+		if err := manager.Add("dispatch-advisories", deps.Advisories); err != nil {
+			return dispatch, err
+		}
+
 		dispatch.Advisories = true
-		manager.Add("dispatch-advisories", deps.Advisories)
 	}
 
-	return dispatch
+	return dispatch, nil
 }
 
 // Models are the tables the dispatch loops own, for a command's migration step.

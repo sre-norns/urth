@@ -212,8 +212,8 @@ func TestManagerReportsRegisteredLoops(t *testing.T) {
 	manager := fastManager()
 	require.Equal(t, 0, manager.Len())
 
-	manager.Add("dispatch-relay", controllers.LoopFunc(blockUntilDone))
-	manager.Add("dispatch-reconciler", controllers.LoopFunc(blockUntilDone))
+	require.NoError(t, manager.Add("dispatch-relay", controllers.LoopFunc(blockUntilDone)))
+	require.NoError(t, manager.Add("dispatch-reconciler", controllers.LoopFunc(blockUntilDone)))
 
 	require.Equal(t, 2, manager.Len())
 	require.Equal(t, []string{"dispatch-relay", "dispatch-reconciler"}, manager.Names())
@@ -228,8 +228,30 @@ func TestManagerRefusesALoopAddedAfterStart(t *testing.T) {
 	manager := fastManager()
 	manager.Start(ctx)
 
+	err := manager.Add("too-late", controllers.LoopFunc(blockUntilDone))
+	require.ErrorIs(t, err, controllers.ErrManagerStarted)
+	require.Equal(t, 0, manager.Len(), "a refused loop must not be registered")
+
+	cancel()
+	require.NoError(t, manager.Wait(5*time.Second))
+}
+
+// TestMustAddPanicsOnlyWhenAddWouldFail keeps the two entry points in step: the
+// panicking one is a wrapper over the same check, not a second rule.
+func TestMustAddPanicsOnlyWhenAddWouldFail(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	manager := fastManager()
+	require.NotPanics(t, func() {
+		manager.MustAdd("in-time", controllers.LoopFunc(blockUntilDone))
+	})
+	require.Equal(t, 1, manager.Len())
+
+	manager.Start(ctx)
+
 	require.Panics(t, func() {
-		manager.Add("too-late", controllers.LoopFunc(blockUntilDone))
+		manager.MustAdd("too-late", controllers.LoopFunc(blockUntilDone))
 	})
 
 	cancel()
