@@ -212,8 +212,13 @@ func retryDispatchFailure(ctx context.Context, store dbstore.TransactionalStore,
 			Labels: retryLabels(original, failure),
 		},
 		Spec: ResultSpec{
-			ProbKind:  original.Spec.ProbKind,
-			Execution: original.Spec.Execution,
+			// The scenario foreign key is carried over rather than left unset:
+			// it is a uuid column, and an empty one is not a null one. The
+			// association itself is deliberately not copied -- gorm would try to
+			// write it back, and the retry has no business updating a scenario.
+			ScenarioID: original.Spec.ScenarioID,
+			ProbKind:   original.Spec.ProbKind,
+			Execution:  original.Spec.Execution,
 		},
 		Status: ResultStatus{
 			Status: JobPending,

@@ -752,6 +752,10 @@ func main() {
 		Publisher: publisher,
 		Channels:  channels,
 		MaxJobAge: appCli.NATS.MaxJobAge,
+		// Reuses the log-streaming connection rather than opening a third: an
+		// advisory subscription is idle almost all the time, and the traffic it
+		// competes with is a browser tailing a run.
+		Advisories: controllers.AdvisoryWatcherFor(natsConn, urth.NewAdvisoryRecorder(db, store)),
 	})
 	controllerManager.Start(ctx)
 
