@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: scenarios
+metadata:
+  name: rest-self-prob
+  labels:
+    app: rest-prob
+    function: backend
+spec:
+  active: true
+  description: "REST prob running a .http script against Urth's own API"
+  schedule: "@5minutes"
+  prob:
+    kind: rest
+    timeout: 10s
+    spec:
+      # An IntelliJ-style `.http` script. See pkg/http-parser/README.md for the
+      # syntax this parser implements, and for what it deliberately rejects.
+      script: |
+        @base_url = http://localhost:8080/api/v1
+
+        ### Server version
+        # @name GetVersion
+        GET {{base_url}}/version
+        Accept: application/json
+
+        ### List scenarios matching a label
+        # @name ListScenarios
+        GET {{base_url}}/scenarios?labels=app+%3D+rest-prob
+        Accept: application/json
+
+        ### Trigger a run of this very scenario
+        # @name TriggerRun
+        POST {{base_url}}/scenarios/rest-self-prob/results
+        Content-Type: application/json
+
+        {
+          "apiVersion": "v1",
+          "kind": "results",
+          "metadata": {},
+          "spec": {}
+        }

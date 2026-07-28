@@ -58,7 +58,12 @@ curl -X POST 'http://localhost:8080/api/v1/runners'  \
 
 Create a scenario using manifest file:
 ```bash
-go run ./cmd/urthctl create ./examples/scenario.yml
+go run ./cmd/urthctl create ./examples/scenario.rest.httpbin.yml
+```
+
+Run a scenario locally, without registering it or waiting for its schedule:
+```bash
+go run ./cmd/urthctl run -f ./examples/scenario.rest.httpbin.yml
 ```
 Create a runner using manifest file:
 ```bash

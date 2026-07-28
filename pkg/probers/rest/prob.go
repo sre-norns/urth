@@ -224,7 +224,9 @@ func RunHTTPRequests(ctx context.Context, requests []httpparser.TestRequest, opt
 
 	for i, req := range requests {
 		id := fmt.Sprintf("%d", i)
-		logger.Info(fmt.Sprintf("HTTP Request %d/%d", i+1, len(requests)), "req", formatRequest(req.Request))
+		// The script's own name for a request, where it gave one: a run log that
+		// says which step failed is worth more than one that says "request 4".
+		logger.Info(fmt.Sprintf("HTTP Request %d/%d", i+1, len(requests)), "name", req.Name, "req", formatRequest(req.Request))
 
 		if err := harLogger.RecordRequest(id, req.Request); err != nil {
 			logger.Error("...failed to record request", "err", err)
