@@ -92,6 +92,17 @@ const (
 
 	LabelResultMessageID = "run.messageId"
 
+	// LabelRetryOfResult and LabelRetryOfFailure mark a run created by retrying a
+	// dead-lettered dispatch, naming the attempt it re-tries and the failure
+	// record that prompted it.
+	//
+	// A retry is a new Result -- the failed one is immutable history and is never
+	// reopened -- so the relation between the two exists only if something
+	// records it. These are the backward half; DispatchFailureStatus holds the
+	// forward half.
+	LabelRetryOfResult  = LabelsPrefix + "result.retry-of"
+	LabelRetryOfFailure = LabelsPrefix + "result.retry-of-failure"
+
 	// Well-known artifact labels:
 	LabelArtifactKind = LabelsPrefix + "artifact.kind"
 	LabelArtifactMime = LabelsPrefix + "artifact.mime"

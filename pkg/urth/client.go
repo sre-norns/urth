@@ -121,6 +121,12 @@ func (c *RestAPIClient) Artifacts() ArtifactAPI {
 	}
 }
 
+func (c *RestAPIClient) DispatchFailures() DispatchFailuresAPI {
+	return &dispatchFailuresAPIClient{
+		RestAPIClient: *c,
+	}
+}
+
 func (c *RestAPIClient) resourceAPICall(ctx context.Context, method string, targetAPI *url.URL, data []byte) (result manifest.ResourceManifest, created bool, err error) {
 	request, err := c.requestWithAuth(ctx, method, targetAPI, "", nil, bytes.NewReader(data))
 	if err != nil {
@@ -915,3 +921,135 @@ func (c *LabelsApiClient) List(ctx context.Context, searchQuery manifest.SearchQ
 	return responseObject.Data, err
 }
 */
+
+// dispatchFailuresAPIClient is the REST client for the dead-letter surface.
+type dispatchFailuresAPIClient struct {
+	RestAPIClient
+}
+
+// List all dead-lettered dispatches matching the query.
+//
+// The server lists manifests, like every other resource, so these are converted
+// rather than decoded straight into the model -- which would silently produce
+// empty names and labels, since a manifest keeps both under `metadata`.
+func (c *dispatchFailuresAPIClient) List(ctx context.Context, searchQuery manifest.SearchQuery) ([]DispatchFailure, int64, error) {
+	targetAPI := urlForPath(c.baseURL, "v1/dispatch-failures", searchToQuery(searchQuery))
+
+	resources, total, err := c.listResources(ctx, targetAPI)
+	if err != nil {
+		return nil, total, err
+	}
+
+	failures := make([]DispatchFailure, 0, len(resources))
+	for _, resource := range resources {
+		failure, err := NewDispatchFailure(resource)
+		if err != nil {
+			return nil, total, err
+		}
+
+		failures = append(failures, failure)
+	}
+
+	return failures, total, nil
+}
+
+// Get a single dead-lettered dispatch by name.
+func (c *dispatchFailuresAPIClient) Get(ctx context.Context, id manifest.ResourceName) (result DispatchFailure, exists bool, err error) {
+	var resource manifest.ResourceManifest
+	exists, err = c.getResource(ctx, fmt.Sprintf("v1/dispatch-failures/%v", id), &resource)
+	if !exists || err != nil {
+		return
+	}
+
+	result, err = NewDispatchFailure(resource)
+
+	return
+}
+
+// Report a dispatch this worker cannot make progress on.
+//
+// Authenticated with the worker's session, like a claim: the server takes the
+// reporter's identity from the credential and ignores anything the body says
+// about who is reporting.
+func (c *dispatchFailuresAPIClient) Report(ctx context.Context, session APIToken, request ReportDispatchFailureRequest) (result DispatchFailure, err error) {
+	data, err := json.Marshal(request)
+	if err != nil {
+		return result, err
+	}
+
+	targetAPI := urlForPath(c.baseURL, "v1/dispatch-failures", nil)
+	resp, err := c.postWithAuth(ctx, targetAPI, string(session), nil, bytes.NewReader(data))
+	if err != nil {
+		return result, err
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusOK, http.StatusAccepted, http.StatusCreated:
+		var resource manifest.ResourceManifest
+		if err := json.NewDecoder(resp.Body).Decode(&resource); err != nil {
+			return result, fmt.Errorf("RestApiClient response decoding error: %w", err)
+		}
+		return NewDispatchFailure(resource)
+	default:
+		return result, readAPIError(resp)
+	}
+}
+
+// Retry asks for a new run for a stranded dispatch.
+func (c *dispatchFailuresAPIClient) Retry(ctx context.Context, id manifest.ResourceName, request RetryDispatchFailureRequest) (DispatchFailure, Result, error) {
+	data, err := json.Marshal(request)
+	if err != nil {
+		return DispatchFailure{}, Result{}, err
+	}
+
+	targetAPI := urlForPath(c.baseURL, fmt.Sprintf("v1/dispatch-failures/%v/retry", id), nil)
+	resp, err := c.postWithAuth(ctx, targetAPI, "", nil, bytes.NewReader(data))
+	if err != nil {
+		return DispatchFailure{}, Result{}, err
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusOK, http.StatusAccepted, http.StatusCreated:
+		var response RetryDispatchFailureResponse
+		if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+			return DispatchFailure{}, Result{}, fmt.Errorf("RestApiClient response decoding error: %w", err)
+		}
+
+		failure, err := NewDispatchFailure(response.Failure)
+		if err != nil {
+			return DispatchFailure{}, Result{}, err
+		}
+
+		retry, err := NewResult(response.Retry)
+		if err != nil {
+			return failure, Result{}, err
+		}
+
+		return failure, retry, nil
+	default:
+		return DispatchFailure{}, Result{}, readAPIError(resp)
+	}
+}
+
+// Resolve closes a failure without retrying it.
+func (c *dispatchFailuresAPIClient) Resolve(ctx context.Context, id manifest.ResourceName) (result DispatchFailure, err error) {
+	targetAPI := urlForPath(c.baseURL, fmt.Sprintf("v1/dispatch-failures/%v/resolve", id), nil)
+	resp, err := c.postWithAuth(ctx, targetAPI, "", nil, bytes.NewReader(nil))
+	if err != nil {
+		return result, err
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusOK, http.StatusAccepted, http.StatusCreated:
+		var resource manifest.ResourceManifest
+		if err := json.NewDecoder(resp.Body).Decode(&resource); err != nil {
+			return result, fmt.Errorf("RestApiClient response decoding error: %w", err)
+		}
+		return NewDispatchFailure(resource)
+	default:
+		return result, readAPIError(resp)
+	}
+}

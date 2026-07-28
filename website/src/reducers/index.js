@@ -11,6 +11,7 @@ import runner from './runner.js'
 import workers from './workers.js'
 import results from './results.js'
 import probKinds from './probKinds.js'
+import deadLetters from './deadLetters.js'
 
 export default combineReducers({
   scenarios,
@@ -25,4 +26,5 @@ export default combineReducers({
   workers,
   results,
   probKinds,
+  deadLetters,
 })

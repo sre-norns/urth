@@ -2,6 +2,7 @@ package urth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -143,6 +144,30 @@ type ArtifactAPI interface {
 	GetContent(ctx context.Context, id manifest.ResourceName) (resource ArtifactSpec, exists bool, commError error)
 }
 
+// DispatchFailuresAPI is the operational dead-letter surface.
+//
+// Reads are open to operators like any other resource; the two writes are not
+// symmetrical. Reporting is done by workers with a session, about work they were
+// handed. Retrying and resolving are operator actions about work they own.
+type DispatchFailuresAPI interface {
+	ReadableResourceAPI[DispatchFailure]
+
+	// Report records a worker's account of a dispatch it could not make progress
+	// on. The worker's identity comes from its session, never its request body.
+	//
+	// It is idempotent by dispatch and reason, so a worker that could not tell
+	// whether its report landed may simply send it again -- which it will, since
+	// the alternative is terminating a message whose failure was never recorded.
+	Report(ctx context.Context, session APIToken, request ReportDispatchFailureRequest) (DispatchFailure, error)
+
+	// Retry creates a new run for a stranded dispatch. It never reopens the
+	// failed one.
+	Retry(ctx context.Context, id manifest.ResourceName, request RetryDispatchFailureRequest) (DispatchFailure, Result, error)
+
+	// Resolve closes a failure an operator has decided needs no retry.
+	Resolve(ctx context.Context, id manifest.ResourceName) (DispatchFailure, error)
+}
+
 type Service interface {
 	// GetLabels returns APIs to access names/labels/label values to power resource search
 	Labels(manifest.Kind) LabelsAPI
@@ -156,6 +181,9 @@ type Service interface {
 	AllResults() RunResultsAPI
 
 	Artifacts() ArtifactAPI
+
+	// DispatchFailures reads and acts on dead-lettered dispatches.
+	DispatchFailures() DispatchFailuresAPI
 }
 
 // ServiceOption configures optional service dependencies.
@@ -294,6 +322,13 @@ func (s *serviceImpl) Artifacts() ArtifactAPI {
 		store: s.store,
 
 		resultsSigningKey: s.keys.Run,
+	}
+}
+
+func (s *serviceImpl) DispatchFailures() DispatchFailuresAPI {
+	return &dispatchFailuresAPIImpl{
+		store: s.store,
+		keys:  s.keys,
 	}
 }
 
@@ -1814,6 +1849,8 @@ func kindToModel(kind manifest.Kind) (model any, found bool) {
 		return &Scenario{}, true
 	case KindArtifact:
 		return &Artifact{}, true
+	case KindDispatchFailure:
+		return &DispatchFailure{}, true
 	default:
 		return nil, false
 	}
@@ -1852,4 +1889,166 @@ func (m *labelsAPIImpl) ListLabelValues(ctx context.Context, label string, searc
 
 	result, err = m.store.FindLabelValues(ctx, model, label, searchQuery)
 	return
+}
+
+// ------------------------------
+// / Dispatch failures API
+// ------------------------------
+
+// dispatchFailuresAPIImpl is the operational dead-letter surface.
+type dispatchFailuresAPIImpl struct {
+	store *dbstore.DBStore
+	keys  SigningKeys
+}
+
+// List returns failures newest first. A dead-letter list is read to find what
+// just broke, so the same ordering as runs applies: most recent at the top.
+func (m *dispatchFailuresAPIImpl) List(ctx context.Context, searchQuery manifest.SearchQuery) (results []DispatchFailure, total int64, err error) {
+	total, err = m.store.Find(ctx, &results, searchQuery, dbstore.OrderByCreatedAt(dbstore.OrderDescending))
+	return
+}
+
+// Get finds one failure by name.
+func (m *dispatchFailuresAPIImpl) Get(ctx context.Context, id manifest.ResourceName) (result DispatchFailure, exists bool, err error) {
+	exists, err = m.store.GetByName(ctx, &result, id)
+	return
+}
+
+// Report records a worker's account of a dispatch it cannot make progress on.
+//
+// Authorised exactly like a claim, and for the same reason: a report strands a
+// run, so the authority to make one has to be the authority to have been given
+// the work. The worker and runner come from the session; the request body says
+// only what happened.
+func (m *dispatchFailuresAPIImpl) Report(ctx context.Context, session APIToken, request ReportDispatchFailureRequest) (DispatchFailure, error) {
+	claims, err := ParseWorkerSession(m.keys, session)
+	if err != nil {
+		return DispatchFailure{}, claimForbidden("invalid worker session")
+	}
+
+	if err := request.Validate(); err != nil {
+		// Refused as malformed rather than retried: the worker will produce the
+		// same report next time. It should terminate the message and move on --
+		// leaving it queued would spin.
+		return DispatchFailure{}, err
+	}
+
+	var worker WorkerInstance
+	if ok, err := m.store.GetByUID(ctx, &worker, claims.WorkerID); err != nil {
+		return DispatchFailure{}, claimUnavailable("load worker", err)
+	} else if !ok {
+		return DispatchFailure{}, claimForbidden("worker instance revoked")
+	}
+
+	if worker.Spec.RunnerID != claims.RunnerID {
+		return DispatchFailure{}, claimForbidden("session runner mismatch")
+	}
+
+	var runner Runner
+	if ok, err := m.store.GetByUID(ctx, &runner, worker.Spec.RunnerID); err != nil {
+		return DispatchFailure{}, claimUnavailable("load runner", err)
+	} else if !ok {
+		return DispatchFailure{}, claimForbidden("runner missing")
+	}
+
+	// Deliberately not gated on the runner being active or the worker unpaused,
+	// unlike a claim. A worker being wound down still knows why a message it was
+	// holding is undeliverable, and that report is the only record anyone will
+	// get -- refusing it would trade a real diagnosis for a policy check that
+	// protects nothing, since a report grants no authority to execute anything.
+
+	spec := DispatchFailureSpec{
+		Reason:        request.Reason,
+		EventUID:      request.EventUID,
+		DispatchID:    request.DispatchID,
+		ResultUID:     request.ResultUID,
+		ResultVersion: request.ResultVersion,
+		RunnerUID:     runner.UID,
+		ReportedBy:    ReporterWorker,
+		WorkerUID:     worker.UID,
+		Deliveries:    request.Deliveries,
+		Detail:        request.Detail,
+		OccurredAt:    time.Now(),
+	}
+
+	// The scenario name is taken from the stranded run rather than the report:
+	// it is used for display and label search, and a worker is not the authority
+	// on which scenario a run belongs to.
+	if spec.ResultUID != "" {
+		var result Result
+		if ok, err := m.store.GetByUID(ctx, &result, spec.ResultUID); err == nil && ok {
+			spec.ScenarioName = result.Spec.Execution.ScenarioName
+		}
+	}
+
+	failure, created, err := recordDispatchFailure(ctx, m.store, spec, runner.Name)
+	if err != nil {
+		if errors.Is(err, ErrInvalidDispatchFailure) {
+			return DispatchFailure{}, err
+		}
+		return DispatchFailure{}, claimUnavailable("record dispatch failure", err)
+	}
+
+	if created {
+		log.Printf("dispatch failure %q recorded: %v for result %v reported by worker %q",
+			failure.Name, spec.Reason, spec.ResultUID, worker.Name)
+	}
+
+	return failure, nil
+}
+
+// Retry creates a new run for a stranded dispatch.
+func (m *dispatchFailuresAPIImpl) Retry(ctx context.Context, id manifest.ResourceName, request RetryDispatchFailureRequest) (DispatchFailure, Result, error) {
+	var failure DispatchFailure
+	if ok, err := m.store.GetByName(ctx, &failure, id); err != nil {
+		return DispatchFailure{}, Result{}, err
+	} else if !ok {
+		return DispatchFailure{}, Result{}, bark.ErrResourceNotFound
+	}
+
+	// Resolving on retry is the default because an operator who retried is done
+	// with the record; leaving it in the working set would have every retried
+	// failure keep showing up as outstanding.
+	resolve := true
+	if request.Resolve != nil {
+		resolve = *request.Resolve
+	}
+
+	updated, retry, created, err := retryDispatchFailure(ctx, m.store, failure, resolve, time.Now())
+	if err != nil {
+		if errors.Is(err, ErrDispatchFailureNotRetryable) {
+			return DispatchFailure{}, Result{}, fmt.Errorf("%w: %v", bark.ErrForbidden, err)
+		}
+		return DispatchFailure{}, Result{}, err
+	}
+
+	if !created {
+		// Already retried, or another operator won the race. Either way this is
+		// not an error: the caller asked for a retry to exist and one does.
+		var existing Result
+		if updated.Status.RetryResultUID != "" {
+			if _, err := m.store.GetByUID(ctx, &existing, updated.Status.RetryResultUID); err != nil {
+				return updated, Result{}, err
+			}
+		}
+		return updated, existing, nil
+	}
+
+	log.Printf("dispatch failure %q retried as run %q", failure.Name, retry.Name)
+
+	return updated, retry, nil
+}
+
+// Resolve closes a failure without retrying it.
+func (m *dispatchFailuresAPIImpl) Resolve(ctx context.Context, id manifest.ResourceName) (DispatchFailure, error) {
+	var failure DispatchFailure
+	if ok, err := m.store.GetByName(ctx, &failure, id); err != nil {
+		return DispatchFailure{}, err
+	} else if !ok {
+		return DispatchFailure{}, bark.ErrResourceNotFound
+	}
+
+	updated, _, err := resolveDispatchFailure(ctx, m.store, failure, time.Now())
+
+	return updated, err
 }

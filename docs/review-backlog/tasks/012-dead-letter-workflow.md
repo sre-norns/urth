@@ -4,12 +4,12 @@ Shared context: [`CONTEXT.md`](../CONTEXT.md).
 
 | Field | Value |
 |---|---|
-| Status | `blocked` |
+| Status | `done` |
 | Priority | `P1` |
 | Workstream | Durability / Claim lifecycle |
-| Depends on | 003 |
+| Depends on | 003 (done) |
 | Likely conflicts | 002, 003, 013 |
-| Owner | Unclaimed |
+| Owner | `feat/dead-letter-workflow` |
 
 ## Why This Matters
 
@@ -72,12 +72,12 @@ queue merely because delivery count was exhausted.
 
 ## Acceptance Criteria / Definition of Done
 
-- [ ] Every Term and max-delivery outcome is visible as an authoritative resource.
-- [ ] Affected pending Results do not remain pending indefinitely.
-- [ ] Duplicate reports/advisories do not duplicate failure history.
-- [ ] Operator retry creates a new Result with traceable relation to the failure.
-- [ ] Failure details are redacted and metrics/alerts are available.
-- [ ] Reporting outages converge through reconciliation rather than losing evidence.
+- [x] Every Term and max-delivery outcome is visible as an authoritative resource.
+- [x] Affected pending Results do not remain pending indefinitely.
+- [x] Duplicate reports/advisories do not duplicate failure history.
+- [x] Operator retry creates a new Result with traceable relation to the failure.
+- [x] Failure details are redacted and metrics/alerts are available.
+- [x] Reporting outages converge through reconciliation rather than losing evidence.
 
 ## Required Tests
 
@@ -102,7 +102,93 @@ git diff --check
 ## Completion Record
 
 - **Implemented:**
-- **Tests added/updated:**
-- **Documentation updated:**
+  - `pkg/urth/dispatch_failure.go`: `DispatchFailure` as a resource (kind
+    `dispatchFailures`), the four `DispatchFailureReason` categories, the
+    reporter/report/retry request types, and the label vocabulary. A resource
+    rather than a private table because the questions asked of dead letters — by
+    runner, by reason, by scenario, over a time range — are the label and range
+    queries the resource API already answers.
+  - `pkg/urth/dispatch_failure_store.go`: `recordDispatchFailure` writes the
+    record and strands the run in one transaction; `strandRun` touches only a
+    pending run and only for the current version, version-guarded so a claim
+    racing the report wins; `retryDispatchFailure` creates a new `Result` and its
+    outbox entry together. Idempotency is a derived resource name
+    (`<eventUID>.<reason>`), so a repeat report collides rather than racing a
+    read against an insert.
+  - `pkg/urth/dispatch_advisory.go`: `DispatchAdvisory`, the domain-owned
+    `DispatchAdvisorySink`, and the recorder that resolves a broker sequence to
+    an outbox row via `PublishedSeq`. A sequence with no row is logged and
+    dropped rather than recorded.
+  - `pkg/natsq/advisory.go`: `AdvisoryWatcher`, a `controllers.Loop` subscribing
+    to `$JS.EVENT.ADVISORY.CONSUMER.MAX_DELIVERIES.URTH_JOBS.*`. The payload
+    struct is declared locally; nats-server is a test-only dependency here.
+  - `pkg/urth/service.go` + `client.go`: `DispatchFailuresAPI` (List/Get/Report/
+    Retry/Resolve) and its REST client. `Report` authorises exactly as a claim
+    does — identity from the session, never the body — but deliberately does not
+    require an active runner or unpaused worker, since a report grants no
+    authority to execute anything and a worker being wound down still knows why
+    its message is undeliverable.
+  - `cmd/nats-worker/report.go` + `consume.go`: all three worker Term paths now
+    report first and terminate only once the failure is on record. A report that
+    cannot be made leaves the message queued behind a delayed NAK; one refused as
+    malformed (4xx) terminates anyway rather than spinning forever.
+  - `cmd/api-server/main.go`: routes, the advisory loop registration, and the
+    kind added to `kindMap` so label search works for dead letters.
+  - `pkg/controllers/dispatch.go`: the advisory watcher composed as a loop, with
+    `--advisories-enabled`. It runs in every replica without a lease — safe
+    because recording is idempotent, and necessary because advisories are
+    at-most-once and a single listener is a single point at which they are missed.
+  - `cmd/urthctl/dispatch_failures.go`: `get dead-letters`, `get dead-letter`,
+    `retry`, `resolve`.
+  - `website/`: `/dead-letters` page, nav entry, search row, actions, and the
+    query/flattening helpers in `utils/deadLetters.js`.
+
+- **Policy recorded:** the reconciler's stale-dispatch sweep, not this path,
+  withdraws the queued message once a `Result` goes terminal. Retiring the outbox
+  row while recording the failure would take it *out* of that sweep and leave the
+  message in the queue. Leaning on task 003's machinery avoids a second, subtly
+  different copy of the withdrawal logic.
+
+- **Tests added/updated:** `pkg/urth/dispatch_failure_test.go` (12 tests,
+  Postgres) — a report strands the pending run; duplicate reports record one
+  failure; different reasons stay distinct; a claimed run is not rewritten; an
+  unknown reason and a missing session are refused; retry creates a new run and
+  dispatch with the snapshot copied, placement inherited and the relation
+  traceable both ways; retry is not repeatable; resolve schedules nothing;
+  advisories record, deduplicate, and ignore unknown sequences.
+  `cmd/nats-worker/consume_test.go` — a permanent refusal is reported before
+  termination, an unreported one keeps the message, and the 4xx/5xx
+  classification. `website/` — 8 page tests and 9 helper tests.
+
+- **Documentation updated:** `cmd/api-server/README.md` gains a dead-letter
+  section (categories, guarantees, what is *not* guaranteed, operating and
+  alerting).
+
 - **Validation evidence:**
+  - `make audit/postgres` — pass. `cd website && npm test` — 14 files, 169 tests.
+  - Guards confirmed load-bearing by breaking them first: making `terminate()`
+    unconditional fails `TestUnreportedRefusalKeepsTheMessage` on all three
+    assertions; removing the retry name's lowercasing fails
+    `TestRetryCreatesANewRunAndDispatch`.
+  - Verified against a live stack (Postgres + JetStream + api-server): a worker
+    session reports a `policy-refused` dispatch, the run becomes `errored` with
+    `time_ended` set; a second identical report adds no second record;
+    `urthctl retry` names the new run; retrying again returns the same run and
+    enqueues no second dispatch; the relay published the retry's dispatch; the
+    failed run keeps its history. The UI renders the full row with no React
+    errors.
+  - **Two bugs the suite did not catch and the live stack did**, both fixed with
+    regression tests: a retry's generated name was mixed case and so not a valid
+    DNS subdomain — it stored fine and failed only when a client read it back;
+    and the list endpoint returned flat entries while get returned manifests,
+    reproducing the `Result` shape wart that every piece of UI code has to
+    special-case.
+
 - **Follow-ups:**
+  - Metrics are label queries and log lines rather than a Prometheus exporter;
+    task 013 owns the metrics surface and should include unresolved-failure count
+    and reason breakdown.
+  - Per-Runner assembly of these failures alongside the rest of the dispatch
+    pipeline is task 016, which lists this task as a dependency.
+  - The legacy asynq transport has no dead-letter path. Task 015 removes it
+    rather than extending it.

@@ -42,6 +42,11 @@ var appCli struct {
 	Get  GetCmd  `cmd:"" help:"Get and display a managed resource(s) from the server"`
 	Logs getLogs `cmd:"" help:"Show logs for a scenario run"`
 
+	// Top-level rather than under `get`, because they are actions rather than
+	// reads: a retry schedules a new run.
+	Retry   RetryCmd   `cmd:"" help:"Retry a dispatch that stopped making progress"`
+	Resolve ResolveCmd `cmd:"" help:"Close a dispatch failure without retrying it"`
+
 	Convert ConvertHar `cmd:"" help:"Convert HAR file into a .http file format"`
 }
 

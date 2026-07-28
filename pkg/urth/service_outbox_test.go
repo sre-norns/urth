@@ -34,6 +34,7 @@ func newTestService(t *testing.T, scheduler urth.Scheduler, options ...urth.Serv
 		&urth.Artifact{},
 		&urth.DispatchOutboxEntry{},
 		&urth.ReconcileLease{},
+		&urth.DispatchFailure{},
 	}
 
 	// Dropped in reverse dependency order so a rerun starts clean; leftover rows

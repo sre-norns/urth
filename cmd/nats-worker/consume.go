@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"sync"
@@ -120,31 +121,33 @@ func (w *worker) consume(ctx context.Context, consumer jetstream.Consumer) error
 // handle claims and executes one delivered job.
 func (w *worker) handle(ctx context.Context, msg jetstream.Msg) {
 	envelope, err := natsq.UnmarshalEnvelope(msg.Data())
+	report := w.reportDispatchFailure(ctx, msg, envelope, err == nil)
+
 	if err != nil {
 		// A message nobody can parse will not parse next time either.
-		// Terminating it stops an infinite redelivery loop and surfaces the
-		// message to the dead-letter path instead.
-		log.Printf("terminating unreadable job message: %v", err)
-		if terr := msg.Term(); terr != nil {
-			log.Printf("failed to terminate unreadable message: %v", terr)
-		}
+		// Terminating it stops an infinite redelivery loop -- but only once the
+		// control plane has a record of it, because a terminated message is
+		// gone and this log line is not something anyone will find.
+		log.Printf("unreadable job message: %v", err)
+		terminate(msg, report(urth.ReasonMalformedEnvelope, err.Error()), "unreadable message")
+
 		return
 	}
 
 	// A message for another runner means this worker is bound to a consumer it
 	// should not be. Executing it anyway would defeat the placement rules.
 	if envelope.RunnerUID != w.runnerUID {
-		log.Printf("terminating job for runner %q delivered to worker of runner %q",
+		detail := fmt.Sprintf("dispatched to runner %v, delivered to a worker of runner %v",
 			envelope.RunnerUID, w.runnerUID)
-		if terr := msg.Term(); terr != nil {
-			log.Printf("failed to terminate misrouted message: %v", terr)
-		}
+		log.Printf("misrouted job: %s", detail)
+		terminate(msg, report(urth.ReasonMisroutedDispatch, detail), "misrouted message")
+
 		return
 	}
 
 	auth, outcome := w.claim(ctx, envelope)
 
-	if applyDisposition(msg, outcome, envelope.ResultUID) {
+	if applyDisposition(msg, outcome, envelope.ResultUID, report) {
 		w.execute(ctx, envelope, auth)
 	}
 }
@@ -153,7 +156,7 @@ func (w *worker) handle(ctx context.Context, msg jetstream.Msg) {
 // outcome and reports whether the job should now be executed. This is the one
 // place a claim outcome becomes an Ack/Nak/Term, kept separate from handle so the
 // decision can be tested without a live probe.
-func applyDisposition(msg jetstream.Msg, outcome claimOutcome, resultUID manifest.ResourceID) (execute bool) {
+func applyDisposition(msg jetstream.Msg, outcome claimOutcome, resultUID manifest.ResourceID, report dispatchReporter) (execute bool) {
 	switch outcome {
 	case claimAccepted:
 		// Acknowledge now, and before execution, because the claim has committed.
@@ -183,10 +186,12 @@ func applyDisposition(msg jetstream.Msg, outcome claimOutcome, resultUID manifes
 		}
 
 	case claimTerminal:
-		log.Printf("terminating job %v this worker may not run", resultUID)
-		if err := msg.Term(); err != nil {
-			log.Printf("failed to terminate refused job %v: %v", resultUID, err)
-		}
+		// A permanent refusal is a dead letter, not just a message to drop: the
+		// run stays pending and nothing else will ever start it. Reported before
+		// the message goes, so the reason survives the message.
+		log.Printf("job %v refused permanently for this worker", resultUID)
+		terminate(msg, report(urth.ReasonPolicyRefused, "the API permanently refused this worker's claim"),
+			fmt.Sprintf("refused job %v", resultUID))
 
 	case claimAbandon:
 		// Shutdown interrupted the claim before it resolved. Leave the message

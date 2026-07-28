@@ -3,6 +3,8 @@ package controllers
 import (
 	"time"
 
+	"github.com/nats-io/nats.go"
+	"github.com/sre-norns/urth/pkg/natsq"
 	"github.com/sre-norns/urth/pkg/urth"
 	"github.com/sre-norns/wyrd/pkg/dbstore"
 	"gorm.io/gorm"
@@ -40,6 +42,11 @@ type Config struct {
 	// margin is deliberately generous.
 	PendingDispatchGrace time.Duration `help:"How long past the transport's job expiry a pending run waits before it is expired" default:"30m"`
 
+	// Advisory watcher settings. The broker abandoning a message is the one
+	// dead-letter category no worker can report -- by the time the transport
+	// gives up, the workers that failed to claim it have long since moved on.
+	AdvisoriesEnabled bool `help:"Record dispatches the broker has stopped redelivering" default:"true" negatable:""`
+
 	// ShutdownTimeout bounds how long a command waits for its loops to stop.
 	ShutdownTimeout time.Duration `help:"How long to wait for control loops to stop during shutdown" default:"15s"`
 }
@@ -71,6 +78,10 @@ type Dependencies struct {
 	// will keep its message or the reconciler expires runs that are still queued
 	// and claimable.
 	MaxJobAge time.Duration
+
+	// Advisories watches for dispatches the transport has abandoned. Nil for a
+	// transport with no such notion, in which case that loop is not registered.
+	Advisories Loop
 }
 
 // Dispatch is what Register built, for a host that needs to reach a loop after
@@ -86,6 +97,9 @@ type Dispatch struct {
 	// "is anything reconciling". That question is answered from the lease row --
 	// see urth.ReconcileStore and ADR 0006 §5.
 	Reconciler *urth.Reconciler
+
+	// Advisories reports whether the abandoned-dispatch watcher was registered.
+	Advisories bool
 }
 
 // Register builds the enabled dispatch loops and adds them to a manager.
@@ -122,6 +136,19 @@ func Register(manager *Manager, cfg Config, deps Dependencies) (Dispatch, error)
 		}
 	}
 
+	if cfg.AdvisoriesEnabled && deps.Advisories != nil {
+		// Safe in every replica without a lease: recording a dead letter is
+		// idempotent by dispatch and reason, so every replica that sees the same
+		// advisory converges on one record. Which is just as well, because
+		// advisories are at-most-once and a single designated listener would be
+		// a single point at which they are missed.
+		if err := manager.Add("dispatch-advisories", deps.Advisories); err != nil {
+			return dispatch, err
+		}
+
+		dispatch.Advisories = true
+	}
+
 	return dispatch, nil
 }
 
@@ -135,4 +162,17 @@ func Models() []any {
 		&urth.DispatchOutboxEntry{},
 		&urth.ReconcileLease{},
 	}
+}
+
+// AdvisoryWatcherFor builds the abandoned-dispatch watcher, when the transport
+// and connection support one.
+//
+// Kept here rather than in the command so that the "which transport can do this"
+// question has one answer, and a second command hosting these loops inherits it.
+func AdvisoryWatcherFor(conn *nats.Conn, sink urth.DispatchAdvisorySink) Loop {
+	if conn == nil || sink == nil {
+		return nil
+	}
+
+	return natsq.NewAdvisoryWatcher(conn, sink)
 }
