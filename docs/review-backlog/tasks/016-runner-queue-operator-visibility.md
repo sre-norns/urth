@@ -35,6 +35,15 @@ means a Runner nobody is serving, and an empty queue with a growing outbox means
 the relay, not the Runner, is the problem. Read one at a time, all three look the
 same.
 
+There is a fourth explanation none of those stages can express: **nothing is
+repairing anything**. The relay and the reconciler are what move a dispatch
+between several of these stages, and a fleet where both are disabled, wedged, or
+never started looks exactly like a fleet where the work is merely slow. A healthy
+reconciler is deliberately silent, so an empty log is not evidence that it ran.
+This task therefore also owns control-loop health, which is fleet-wide rather than
+per-Runner and is read from the lease row, not from a process
+([ADR 0006](../../adr/0006-control-loop-placement.md) §5).
+
 ## Evidence
 
 - `website/src/pages/RunnerDetail.jsx:171-210`: the Runner page lists workers only.
@@ -42,8 +51,12 @@ same.
   with no pipeline state.
 - `pkg/urth/outbox.go`: `DispatchOutboxStats` is process-wide, not per Runner, and
   is not reachable through the API.
-- `cmd/api-server/README.md`: documents inspecting the backlog with hand-written
-  SQL, which is the workaround this task removes.
+- `cmd/api-server/README.md`: documents inspecting the backlog and the reconciler
+  lease with hand-written SQL, which is the workaround this task removes.
+- `pkg/urth/reconcile.go`: `Reconciler.Status()` reports scan age and the last
+  report for one process only, and nothing serves it.
+- `pkg/urth/reconcile.go`: `ReconcileLease` is the fleet-wide scan-age signal;
+  `ReconcileStore` has no read accessor for it.
 
 ## Required Outcome
 
@@ -64,6 +77,18 @@ same.
   "this Runner is stuck" to the specific failed dispatch without leaving the tool.
 - Stale or unavailable broker data is reported as unavailable, not as zero. A
   Runner whose queue depth could not be read must not render as an empty queue.
+- **Control-loop health is presented on both surfaces**, alongside the pipeline
+  but not inside a Runner: reconciler scan age taken from the lease row, the last
+  scan's repair counts and failures, and the age of the oldest unpublished outbox
+  entry as the relay's equivalent. Scan age is the alertable figure — it is what
+  separates "nothing is wrong" from "nothing is scanning".
+- Per-process reconciler status may be exposed for diagnosis, but it is never the
+  answer to "is anything reconciling". Under the default where every replica
+  reconciles, a replica that lost the lease reports a skipped scan, which is
+  indistinguishable from a fleet that has stopped. Anything presented as a health
+  verdict comes from the lease row.
+- An operator with no loops running anywhere can tell, from either surface,
+  without reading logs or opening `psql`.
 
 ## Implementation Constraints
 
@@ -107,6 +132,9 @@ same.
       distinguishable from one another at a glance.
 - [ ] Broker unavailability renders as unavailable, never as zero.
 - [ ] Per-Runner queries are indexed rather than scanning the outbox.
+- [ ] Reconciler scan age and relay backlog age are visible on both surfaces.
+- [ ] A deployment with every control loop disabled is distinguishable from a
+      healthy idle one, at both surfaces, without reading logs.
 
 ## Required Tests
 
@@ -119,6 +147,11 @@ same.
 - Reading the view twice does not change queue contents or delivery counts.
 - `urthctl` output covers the same stages as the UI, asserted against one fixture.
 - UI test: pipeline view renders stalled, healthy, and unavailable states.
+- Scan age is reported from the lease row: a fleet whose reconcilers are all
+  disabled reports a growing scan age, while a replica that merely lost the lease
+  does not make a healthy fleet look stopped.
+- A deployment with no reconcile lease row at all — nothing has ever scanned —
+  reports that as unknown rather than as a scan age of zero.
 
 ## Validation
 

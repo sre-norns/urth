@@ -122,6 +122,12 @@ Things worth knowing:
 - **Every replica reconciles by default.** Concurrent scans are settled by a
   `reconcile_leases` row, and every `Result` transition is version-guarded on top
   of that — two reconcilers reaching for one run produce one winner and one no-op.
+  A fleet therefore performs about one scan per interval in total, not one per
+  replica. [ADR 0006](../../docs/adr/0006-control-loop-placement.md) records why
+  this runs here rather than in its own process, and what would change that.
+- **A scan cannot take the API server down.** Both loops are supervised by
+  `pkg/controllers`: a panic is recovered and the loop restarted with backoff,
+  and both stop with the process rather than being hard-killed mid-transaction.
 - **Workers never repair anything.** Restoring a Runner's consumer is the control
   plane's job by design (ADR 0004): a Worker allowed to create its own would be
   creating one that overlaps the real one, which a work-queue stream rejects.
@@ -152,11 +158,34 @@ reconciler "reconciler-l2Hq0HDK" repaired 3 in 33ms (running-expired=0
 
 `oldest` is the number to alert on: the age of the oldest `Result` found needing
 repair. It stays near zero while the reconciler keeps up, however much it is
-repairing. The other figure worth watching is *scan age* —
-`urth.Reconciler.Status()` reports when a scan last completed without failures,
-which is the only thing that distinguishes "nothing is wrong" from "nothing is
-scanning". Surfacing both to operators is
-[task 016](../../docs/review-backlog/tasks/016-runner-queue-operator-visibility.md).
+repairing.
+
+The other figure worth watching is **scan age**, and it is the one thing that
+distinguishes "nothing is wrong" from "nothing is scanning" — a healthy
+reconciler is deliberately silent, so an empty log means both.
+
+Alert on the **lease row**, not on a process:
+
+```sql
+SELECT holder, updated_at, now() - updated_at AS scan_age
+  FROM reconcile_leases
+ WHERE name = 'dispatch-reconcile';
+```
+
+Every replica updates that row on every scan it wins, so its age is a property of
+the fleet and no single process can misreport it. Alert when `scan_age` exceeds a
+few multiples of `--reconcile-interval`.
+
+`urth.Reconciler.Status()` reports the same thing for *one process* and is for
+diagnosis, not alerting: under the default where every replica reconciles, the
+replicas that lose the lease truthfully report a skipped scan, which looks
+identical to a fleet where nothing is scanning at all. Putting both on the
+operator surfaces is
+[task 016](../../docs/review-backlog/tasks/016-runner-queue-operator-visibility.md);
+the reasoning is [ADR 0006](../../docs/adr/0006-control-loop-placement.md) §5.
+
+The same applies to the relay: it holds no scan lease, so its liveness is the age
+of the oldest unpublished row in `dispatch_outbox` (`DispatchOutbox.Stats`).
 
 A dispatch dropped rather than delivered says so in the row:
 
