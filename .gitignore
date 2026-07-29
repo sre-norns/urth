@@ -28,8 +28,11 @@ test.sqlite
 .DS_Store
 
 website/dist/*
+website-experiment/dist/*
+website-experiment/node_modules/
+website-experiment/test-results/
+website-experiment/playwright-report/
 
 # Temp worker directory, and local scratch copies of it
 worker
 worker.*
-
