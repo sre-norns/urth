@@ -274,9 +274,9 @@ type Reconciler struct {
 	store    ReconcileStore
 	channels RunnerChannelReconciler
 
-	holder         string
-	interval       time.Duration
-	lease          time.Duration
+	holder          string
+	interval        time.Duration
+	lease           time.Duration
 	batchSize       int
 	pendingTimeout  time.Duration
 	leaseGrace      time.Duration
@@ -341,8 +341,8 @@ func WithRunnerChannels(value RunnerChannelReconciler) ReconcilerOption {
 // NewReconciler builds a reconciler over authoritative state.
 func NewReconciler(store ReconcileStore, options ...ReconcilerOption) *Reconciler {
 	reconciler := &Reconciler{
-		store:          store,
-		holder:         fmt.Sprintf("reconciler-%s", NewRandToken(8)),
+		store:           store,
+		holder:          fmt.Sprintf("reconciler-%s", NewRandToken(8)),
 		interval:        DefaultReconcileInterval,
 		lease:           DefaultReconcileLease,
 		batchSize:       DefaultReconcileBatchSize,

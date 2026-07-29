@@ -2,15 +2,15 @@ apiVersion: v1
 kind: runners
 metadata:
   name: "example-runner-yaml"
-  labels: 
-    os: "linux"
-    cloud_self: aws
+  labels:
+    env: "dev" 
+    nature: "test-runner"
 spec:
   active: true
-  description: "A runner resource"
+  description: "A runner resource example"
   requirements:
     matchSelector:
-      - { "key": "urth/capability.prob.tcp", "operator":"NotIn"}
-      - { "key": "urth/capability.prob.http", "operator":"NotIn"}
-      - { "key": "urth/capability.prob.har", "operator":"NotIn"}
-      - { "key": "urth/capability.prob.puppeteer", "operator":"NotIn"}
+      - { "key": "urth/capability.prob.tcp", "operator":"Exists"}
+      - { "key": "urth/capability.prob.http", "operator":"Exists"}
+      - { "key": "urth/capability.prob.har", "operator":"Exists"}
+      - { "key": "urth/capability.prob.puppeteer", "operator":"Exists"}
