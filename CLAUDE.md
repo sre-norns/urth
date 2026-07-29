@@ -169,6 +169,23 @@ stale-dispatch sweep. Eligible runners with *no workers* is **not** unschedulabl
 that dispatch waits in the queue. `GET /scenarios/:id/placement` is the preflight
 the UI gates "Run now" on.
 
+**Placement reads capacity but can never refuse a run.** Among runners a scenario
+matches, `selectRunner` picks by spare capacity — `online workers − (queued +
+running) runs`, both counted from Postgres, with no broker round trip on the
+run-creation path. When nothing has spare it falls to a weighted random draw by
+worker count, which is why placement is *not* fully deterministic and why
+`placement.pick` exists to be injected in tests. The rule that must survive any
+future edit: **capacity decides which queue, never whether**. A fleet that is
+entirely offline still gets a placement and still queues, because the queue is
+durable. If you find yourself adding an "insufficient capacity" unschedulable
+reason, re-read ADR 0004 first. Only `online` presence counts as capacity — an
+`api-unreachable` worker cannot claim what it is offered and a `nats-unreachable`
+one never receives it. Queued runs count as committed *deliberately*: it is what
+makes a burst of runs spread rather than pile onto whichever runner looked idle
+when the burst began. This works only because `Create` records the runner on the
+`Result` before persisting it, so `results` knows every runner's queue depth —
+`idx_results_placement` is what keeps that query off a sequential scan.
+
 **A scheduled run does not read its Scenario again.** `ResultSpec.Execution` is
 an `ExecutionSnapshot` — scenario UID/name/version, requirements, and the whole
 typed `prob.Manifest` — copied when the run is created. Claim authorization uses

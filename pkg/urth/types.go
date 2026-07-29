@@ -214,7 +214,15 @@ type ResultSpec struct {
 // likely to be looking at it.
 type ExecutorRef struct {
 	// RunnerID is the UID of the runner this job was dispatched to.
-	RunnerID manifest.ResourceID `form:"runnerId,omitempty" json:"runnerId,omitempty" yaml:"runnerId,omitempty" xml:"runnerId,omitempty"`
+	//
+	// Indexed with the job status, because placement asks the reverse question
+	// on the run-creation path: how much unfinished work does each runner
+	// already hold. Without the index that is a sequential scan of every run
+	// ever recorded, on a table that grows by a row per scenario tick. The index
+	// is named rather than left to gorm's derivation -- a shared name is what
+	// makes wyrd's `idx_name` collide across models, and this one belongs to
+	// `results` alone.
+	RunnerID manifest.ResourceID `form:"runnerId,omitempty" json:"runnerId,omitempty" yaml:"runnerId,omitempty" xml:"runnerId,omitempty" gorm:"index:idx_results_placement,priority:1"`
 
 	// RunnerName is the name of the runner at the time the job was claimed.
 	RunnerName manifest.ResourceName `form:"runnerName,omitempty" json:"runnerName,omitempty" yaml:"runnerName,omitempty" xml:"runnerName,omitempty"`
@@ -233,10 +241,16 @@ func (e ExecutorRef) IsZero() bool {
 
 type ResultStatus struct {
 	// Status is the status of job in the job-scheduling life-cycle
-	Status JobStatus `form:"status" json:"status,omitempty" yaml:"status,omitempty" xml:"status"`
+	Status JobStatus `form:"status" json:"status,omitempty" yaml:"status,omitempty" xml:"status" gorm:"index:idx_results_placement,priority:2"`
 
-	// Executor records which runner and worker executed this run. It is set when
-	// a worker claims the job and is empty while the run is still pending.
+	// Executor records which runner and worker executed this run.
+	//
+	// The two halves are filled in at different moments, and the difference
+	// matters. The *runner* is recorded when the run is created, because that is
+	// when placement chooses the channel it goes to -- which is what lets the
+	// queue depth of every runner be read straight off this table. The *worker*
+	// stays empty until a claim, since until then no worker has it and ADR 0003
+	// binds a scheduled run to a runner rather than to any particular process.
 	Executor ExecutorRef `form:"executor,omitempty" json:"executor,omitempty" yaml:"executor,omitempty" xml:"executor,omitempty" gorm:"embedded;embeddedPrefix:executor_"`
 
 	// DispatchID identifies the dispatch this run was claimed for.

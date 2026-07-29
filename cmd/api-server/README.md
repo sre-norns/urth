@@ -256,6 +256,99 @@ Things worth knowing:
   `DispatchFailureStatus.retryResultName` forward, `urth/result.retry-of` back.
 - **A run nothing could take is not a dead letter.** See below.
 
+## Choosing a runner
+
+Once a scenario's requirements have narrowed the field to the runners that *may*
+take a run, something has to pick one. That used to be `sort by UID, take the
+first`: a runner won on its identifier and went on winning however far behind it
+fell, while its idle siblings took nothing. An active runner with no workers at
+all still won if its UID sorted first, and quietly accumulated a queue nobody was
+draining.
+
+Placement now compares what each candidate is actually carrying:
+
+```
+online     = workers reachable on both liveness signals, and not paused
+committed  = runs placed on this runner that have not finished (queued + running)
+spare      = online - committed
+pressure   = committed / online
+```
+
+`online` is strictly the `online` presence condition, which is where the two
+liveness signals earn their keep: a worker that cannot reach this server cannot
+claim what it is offered, and one absent from its queue never receives it.
+Neither is capacity. A worker that has never reported is not capacity either — it
+has demonstrated nothing.
+
+Counting **queued as well as running** work is what makes placement
+self-spreading. A run placed a moment ago has already reduced that runner's
+spare, so a burst of runs walks across the fleet instead of piling onto whichever
+runner happened to look idle when the burst began.
+
+Both numbers come from Postgres — worker presence, and one `GROUP BY` over
+unfinished runs per runner. There is no broker round trip on the run-creation
+path, and so no new way for run creation to fail. This is possible because
+placement records the chosen runner on the Result *before* it is persisted, which
+makes `results` the authority on every runner's queue depth.
+
+### The two regimes
+
+**Somebody has room.** Deterministic: most spare wins, ties broken by lower
+pressure, then by UID. Pressure is the second key rather than the only one
+because it separates a large runner that is nearly full from a small one that is
+empty — the empty one should win, having nothing to do.
+
+**Nothing has room.** A weighted draw, weighted by online worker count; falling
+back to registered workers when nothing is online anywhere, and to an even chance
+when no runner has any worker at all.
+
+The randomness is deliberate, not a shrug. When every channel is saturated each
+drains in proportion to the number of workers on it, so handing out new work in
+that same proportion keeps the expected *wait* equal across the fleet. Choosing
+deterministically here would send an unbroken stream to one runner until its
+counts moved, which is the concentration this change exists to end. Queue depth
+is not part of the weight for the same reason: once saturated, a deeper queue on
+a larger runner is not worse for a new run — it is being worked off faster.
+
+### What capacity never does
+
+**It never refuses a run.** A scenario whose fleet is entirely offline still gets
+a placement and still queues, because the queue is durable and the work waits for
+the fleet to come back. Capacity decides *which* queue, never *whether*. The only
+things that make a run unschedulable are the ones in the next section.
+
+**It never binds a run to a worker.** A run is placed on a runner; the worker is
+recorded when one claims it, which is the only moment the association is certain.
+
+**It is never authoritative.** Capacity is read when the run is created and may be
+stale by the time a worker claims. The claim checks in ADR 0002 remain the
+authority on whether a given worker may take a given run.
+
+If the capacity numbers cannot be read at all, placement logs once and falls back
+to the lowest UID — the behaviour that predates this — rather than failing a run
+because a count was unavailable. That case is visible as the `unmeasured` regime.
+
+### Observing it
+
+Every placement logs its regime and the chosen runner's numbers:
+
+```
+placed run of "web-check" on runner "syd-dmz" by spare-capacity
+  (2 of 3 eligible; online=4 queued=1 running=2 spare=1 pressure=0.75)
+```
+
+`urth_placement_decisions_total{regime}` counts decisions by regime only.
+Which runner won is deliberately not a label: runner UIDs are operator-created
+and unbounded, and putting them in a metric turns a growing fleet into a
+cardinality problem. A rising `saturated` rate means the fleet has no spare
+capacity; a rising `unmeasured` rate means placement has degraded to its
+fallback.
+
+`GET /api/v1/scenarios/:id/placement` reports the same picture before a run is
+created — `onlineWorkers`, `queuedRuns`, `runningRuns` and `spareCapacity`
+alongside the runner counts. `spareCapacity: 0` means a run would wait, not that
+it would be refused.
+
 ## Runs that were never placed
 
 A run of a scenario whose requirements match no *active* runner is created

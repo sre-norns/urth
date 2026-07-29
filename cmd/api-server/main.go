@@ -731,7 +731,7 @@ var appCli struct {
 // A registry of its own rather than prometheus.DefaultRegisterer, so that what
 // this endpoint exposes is a decision made here rather than whatever any
 // imported package happened to register into the global.
-func metricsRegistry(db *gorm.DB, scheduler urth.Scheduler) *prometheus.Registry {
+func metricsRegistry(db *gorm.DB, scheduler urth.Scheduler, placement *urth.PlacementMetrics) *prometheus.Registry {
 	registry := prometheus.NewRegistry()
 
 	// Process and Go runtime metrics: the baseline any on-call runbook assumes is
@@ -743,6 +743,7 @@ func metricsRegistry(db *gorm.DB, scheduler urth.Scheduler) *prometheus.Registry
 	)
 
 	registry.MustRegister(urth.NewDispatchCollector(db, urth.NewDispatchOutbox(db)))
+	registry.MustRegister(placement)
 
 	// Only the routing transport has a stream to report on. The legacy asynq path
 	// has no equivalent, and inventing empty gauges for it would read as a queue
@@ -809,6 +810,10 @@ func main() {
 	// interval. See urth.WorkerPresenceStore.
 	presence := urth.NewWorkerPresenceStore(db)
 
+	// Built before the service because both need it: placement increments it, and
+	// the metrics registry exposes it.
+	placementMetrics := urth.NewPlacementMetrics()
+
 	serviceOptions := []urth.ServiceOption{
 		urth.WithSigningKeys(keys),
 		urth.WithSessionTTL(appCli.SessionTTL),
@@ -816,6 +821,12 @@ func main() {
 		urth.WithWorkerPresence(presence),
 		urth.WithWorkerHeartbeatInterval(appCli.WorkerHeartbeatInterval),
 		urth.WithWorkerOfflineAfter(appCli.WorkerOfflineAfter),
+
+		// Placement reads how much work each runner already holds straight from
+		// the results table -- see urth.RunnerLoadStore for why this needs no
+		// broker round trip.
+		urth.WithRunnerLoad(urth.NewRunnerLoadStore(db)),
+		urth.WithPlacementCounter(placementMetrics),
 	}
 
 	var natsConn *nats.Conn
@@ -925,7 +936,7 @@ func main() {
 	}
 
 	api := urth.NewService(store, scheduler, serviceOptions...)
-	router := apiRoutes(api, natsConn, metricsRegistry(db, scheduler))
+	router := apiRoutes(api, natsConn, metricsRegistry(db, scheduler, placementMetrics))
 
 	server := &http.Server{
 		Addr:              listenAddress(),

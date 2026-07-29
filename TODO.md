@@ -168,10 +168,18 @@ looks deceptively like passing.
    clause. See `cmd/api-server/README.md`.
 [] Worker detail page — the per-worker breakdown of both signals wants more room than a
    list row. Filed as review-backlog task 023.
-[~] Capacity-aware placement (review-backlog task 014) now has a real capacity signal to
-   use: `RunnerStatus.Channel` reports parked pull requests per runner, and worker presence
-   distinguishes registered from actually-reporting. Placement still deliberately ignores
-   both — a run for an all-offline runner queues, per ADR 0004.
+[X] Capacity-aware placement (review-backlog task 014). Placement sorted eligible runners
+   by UID and took the first, so a runner won on its identifier and kept winning however
+   far behind it fell. It now picks by spare capacity — online workers minus queued and
+   running runs — and, when nothing has spare, by a draw weighted on worker count. Both
+   numbers come from Postgres, so run creation gained no broker round trip: presence says
+   who is reachable, and `results` already knows each runner's queue depth because the
+   runner is recorded before the run is persisted. Capacity still cannot refuse a run — an
+   all-offline fleet queues, per ADR 0004. See `cmd/api-server/README.md`.
+[] Surface the placement preview's new capacity fields (`onlineWorkers`, `queuedRuns`,
+   `runningRuns`, `spareCapacity`) in the UI. The "Run now" preflight already fetches them.
+[] Per-scenario policy requiring online capacity, mentioned in task 014. Needs a
+   `ScenarioSpec` field and a decision about whether a scenario may ever refuse to queue.
 [~] Workers should talk to API servers over gRPC -- reconsidered. ADR 0004 evaluated direct
    gRPC streams as the job backbone and rejected them: they would require Urth to implement
    durable offline queues, redelivery, and backpressure itself. gRPC may still be worth it
