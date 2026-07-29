@@ -23,6 +23,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/nats-io/nats.go"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"gorm.io/gorm"
 	// dlogger "gorm.io/gorm/logger"
 
@@ -165,9 +168,23 @@ func statusForResourceError(err error) int {
 	}
 }
 
-func apiRoutes(srv urth.Service, natsConn *nats.Conn) *gin.Engine {
+func apiRoutes(srv urth.Service, natsConn *nats.Conn, metrics *prometheus.Registry) *gin.Engine {
 	router := gin.Default()
 	router.UseRawPath = true
+
+	// Deliberately outside the /api/v1 group. Prometheus asks for a text exposition
+	// format, and bark's content negotiation on that group answers anything it does
+	// not recognise with 406 -- which is how the live run log stream came to be
+	// unreachable from a browser (task 019). A scrape endpoint is not a resource
+	// API and does not want that middleware.
+	if metrics != nil {
+		router.GET("/metrics", gin.WrapH(promhttp.HandlerFor(metrics, promhttp.HandlerOpts{
+			// A collector that cannot reach its backend reports the failure as a
+			// metric and returns what it does have; continuing is what lets
+			// "NATS is unreachable" be visible rather than blanking the scrape.
+			ErrorHandling: promhttp.ContinueOnError,
+		})))
+	}
 
 	// Simple group: v1
 	v1 := router.Group("/api/v1", bark.ContentTypeAPI())
@@ -660,6 +677,41 @@ var appCli struct {
 	Controllers controllers.Config `embed:""`
 }
 
+// metricsRegistry assembles what this process can tell an operator about the
+// dispatch pipeline.
+//
+// Two collectors, because the pipeline has two halves that look identical from
+// either side alone: the outbox knows what was committed and not yet published,
+// and JetStream knows what was published and not yet claimed. A backlog in the
+// first with an empty stream is the relay; the same backlog with a full stream
+// is the fleet.
+//
+// A registry of its own rather than prometheus.DefaultRegisterer, so that what
+// this endpoint exposes is a decision made here rather than whatever any
+// imported package happened to register into the global.
+func metricsRegistry(db *gorm.DB, scheduler urth.Scheduler) *prometheus.Registry {
+	registry := prometheus.NewRegistry()
+
+	// Process and Go runtime metrics: the baseline any on-call runbook assumes is
+	// there, and the thing that says whether the api-server itself is healthy
+	// before its own numbers are worth reading.
+	registry.MustRegister(
+		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+		collectors.NewGoCollector(),
+	)
+
+	registry.MustRegister(urth.NewDispatchCollector(db, urth.NewDispatchOutbox(db)))
+
+	// Only the routing transport has a stream to report on. The legacy asynq path
+	// has no equivalent, and inventing empty gauges for it would read as a queue
+	// that is always empty rather than one nobody is measuring.
+	if source, ok := scheduler.(natsq.MetricsSource); ok {
+		registry.MustRegister(source.Collector())
+	}
+
+	return registry
+}
+
 // listenAddress reproduces gin's own address resolution, which router.Run() used
 // to do for us. Serving through an http.Server is what makes a graceful shutdown
 // possible, and that is the one thing router.Run() cannot do -- but an operator
@@ -795,7 +847,7 @@ func main() {
 	}
 
 	api := urth.NewService(store, scheduler, serviceOptions...)
-	router := apiRoutes(api, natsConn)
+	router := apiRoutes(api, natsConn, metricsRegistry(db, scheduler))
 
 	server := &http.Server{
 		Addr:              listenAddress(),

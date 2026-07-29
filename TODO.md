@@ -236,6 +236,11 @@ looks deceptively like passing.
    `envX notin (dev,testing)`, because the runner has no `envX` label — which is what
    made task 018's runs unplaceable. Pick one rule, document it, make both evaluators
    obey it. See [task 020](docs/review-backlog/tasks/020-settle-notin-selector-semantics.md).
+[X] JetStream assets are bounded and observable: global message/byte/size limits
+   beside the per-runner one, `MaxAckPending` on consumers, config validated
+   before the broker is dialled, existing-stream drift reconciled or reported,
+   and Prometheus metrics on `/metrics` for stream, outbox and dead-letter state.
+   See [task 013](docs/review-backlog/tasks/013-bound-and-observe-jetstream.md).
 [] Live run logs return 406 in a browser: `EventSource` sends
    `Accept: text/event-stream` and `bark.ContentTypeAPI()` on the `/api/v1` group
    refuses it before the handler runs. See

@@ -4,10 +4,10 @@ Shared context: [`CONTEXT.md`](../CONTEXT.md).
 
 | Field | Value |
 |---|---|
-| Status | `blocked` |
+| Status | `ready` |
 | Priority | `P1` |
 | Workstream | Operability |
-| Depends on | 012, 013 |
+| Depends on | 012 (done), 013 (done) |
 | Likely conflicts | 012, 013, 014 |
 | Owner | Unclaimed |
 

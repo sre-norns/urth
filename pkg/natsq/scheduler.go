@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -41,8 +42,8 @@ type scheduler struct {
 	js   jetstream.JetStream
 	cfg  Config
 
-	totalErrors    uint64
-	totalScheduled uint64
+	totalErrors    atomic.Uint64
+	totalScheduled atomic.Uint64
 }
 
 // NewScheduler connects to NATS and provisions the shared jobs stream.
@@ -68,6 +69,16 @@ func NewScheduler(ctx context.Context, cfg Config) (Transport, error) {
 	}
 
 	return &scheduler{conn: conn, js: js, cfg: cfg}, nil
+}
+
+// PublishStats implements PublishCounters.
+//
+// The counters were previously incremented and never read, which made them a
+// cost with no benefit: "how much has this process published, and how much of it
+// failed" is exactly the question asked when a queue looks wrong, and it was
+// answerable only with a debugger.
+func (s *scheduler) PublishStats() (published, failed uint64) {
+	return s.totalScheduled.Load(), s.totalErrors.Load()
 }
 
 func (s *scheduler) Close() error {

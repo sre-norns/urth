@@ -3,7 +3,6 @@ package natsq
 import (
 	"context"
 	"fmt"
-	"sync/atomic"
 
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/sre-norns/urth/pkg/urth"
@@ -20,7 +19,7 @@ func (s *scheduler) PublishDispatch(ctx context.Context, entry urth.DispatchOutb
 	if entry.RunnerUID == "" {
 		// No subject to publish on. Retrying will not conjure a runner, and the
 		// entry is not this transport's to fix -- the run was never placed.
-		atomic.AddUint64(&s.totalErrors, 1)
+		s.totalErrors.Add(1)
 		return urth.DispatchReceipt{}, fmt.Errorf("%w: %w for result %v", urth.ErrPermanentDispatch, ErrNoRunner, entry.ResultUID)
 	}
 
@@ -39,7 +38,7 @@ func (s *scheduler) PublishDispatch(ctx context.Context, entry urth.DispatchOutb
 
 	data, err := MarshalEnvelope(envelope)
 	if err != nil {
-		atomic.AddUint64(&s.totalErrors, 1)
+		s.totalErrors.Add(1)
 		// An envelope this build cannot encode will not encode on the next
 		// attempt either.
 		return urth.DispatchReceipt{}, fmt.Errorf("%w: failed to encode dispatch %v: %w", urth.ErrPermanentDispatch, entry.EventUID, err)
@@ -51,11 +50,11 @@ func (s *scheduler) PublishDispatch(ctx context.Context, entry urth.DispatchOutb
 	// further down, exactly the lost-dispatch window the outbox closes.
 	ack, err := s.js.Publish(ctx, JobSubject(entry.RunnerUID), data, jetstream.WithMsgID(entry.EventUID))
 	if err != nil {
-		atomic.AddUint64(&s.totalErrors, 1)
+		s.totalErrors.Add(1)
 		return urth.DispatchReceipt{}, fmt.Errorf("failed to publish dispatch %v: %w", entry.EventUID, err)
 	}
 
-	atomic.AddUint64(&s.totalScheduled, 1)
+	s.totalScheduled.Add(1)
 
 	// The stream sequence is what makes this message addressable later. A
 	// duplicate suppressed by the message-ID window comes back with the sequence
