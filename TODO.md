@@ -252,11 +252,27 @@ looks deceptively like passing.
    label *absent*, `wyrd`'s Go matcher (`manifest.Requirement.Matches`) matches — the
    Kubernetes rule — while its SQL translation (`NOT IN` over a JSON path) yields NULL
    and excludes. Urth uses both: placement is a store query, worker admission at
-   registration is `Matches`. Consequence, and the reason this was found: the shipped
+   registration is `Matches`. Correction: this was originally written as "the shipped
    `examples/runner.yaml` cannot satisfy `examples/scenario.rest.httpbin.yml`'s
-   `envX notin (dev,testing)`, because the runner has no `envX` label — which is what
-   made task 018's runs unplaceable. Pick one rule, document it, make both evaluators
-   obey it. See [task 020](docs/review-backlog/tasks/020-settle-notin-selector-semantics.md).
+   `envX notin (dev,testing)`", which is how it was found and what made task 018's runs
+   unplaceable. That example now uses a plain `matchLabels: {env: dev}` and the shipped
+   manifests place correctly — verified live, `matchingRunners: 1, schedulable: true`.
+   **The divergence is unchanged** (`wyrd@v0.2.2` `manifest/selector.go:88-89` vs
+   `dbstore/gorm_json.go` `KeyNotIn`); only the symptom left the demo path, which is
+   worse — the next operator to write `notin` meets it with no example to warn them.
+   Pick one rule, document it, make both evaluators obey it.
+   See [task 020](docs/review-backlog/tasks/020-settle-notin-selector-semantics.md).
+[] **`make test/postgres` destroys your dev database.** It passes `store-url` — the
+   same Postgres the api-server uses — as `URTH_TEST_POSTGRES_URL`, and the tests
+   `DropTable` the whole model set on setup and on cleanup. Every runner, scenario and
+   run applied by hand disappears, silently. CI is fine, provisioning its own database.
+   Either default the tests to a separate database name, or refuse to run when the URL
+   matches `store-url` without an explicit override.
+[] **`urthctl get script` cannot run**: the kong subcommand is declared with no `Run`
+   method and no client call behind it, so it fails with `no Run() method found in
+   hierarchy`. The server endpoint behind it was also answering 404 for every scenario
+   until it was fixed to read typed prob specs — nobody noticed, which is the evidence
+   that nothing calls it. See [task 025](docs/review-backlog/tasks/025-urthctl-script-parity.md).
 [X] **A claimed job was acknowledged with `Msg.Ack`, which only publishes the ack and
    returns.** A connection lost before the server recorded it redelivers the message
    while the probe is running — and because the API's claim is idempotent for the same

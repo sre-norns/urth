@@ -95,12 +95,21 @@ silently swallows requests meant for the one just started. Check with
 `ss -ltnp | grep :8080` before concluding something is broken. Stop containers by
 name; `podman stop -a` will take out containers that aren't yours.
 
-**Kill it before running `make audit/postgres`, too.** Every api-server runs a
-relay and a reconciler against its database, so one left over from manual
-testing competes with the tests for the same outbox rows:
+**`make test/postgres` and `make audit/postgres` run against your dev database
+and destroy it.** They pass `store-url` — the same Postgres the api-server uses —
+as `URTH_TEST_POSTGRES_URL`, and the tests `DropTable` the whole model set on
+setup *and* on cleanup (`service_outbox_test.go`). Every runner, scenario and run
+you applied by hand is gone afterwards, silently: the next `urthctl get runners`
+just prints an empty table. CI is unaffected because it provisions a database of
+its own. Point `store-url` at a second database before running them, or expect to
+re-apply the examples every time.
+
+The same sharing bites in the other direction. A live api-server runs a relay and
+a reconciler against that database, so one left over from manual testing competes
+with the tests for the same outbox rows —
 `TestOutboxCompetingRelaysDoNotDoubleClaim` and
-`TestPublicationFailureLeavesResultPending` fail intermittently and look like a
-regression in code that was never touched.
+`TestPublicationFailureLeavesResultPending` then fail intermittently and read
+exactly like a regression in code nobody touched. Kill it first.
 
 ## Traps, in rough order of how much time they cost
 

@@ -4,12 +4,22 @@ Shared context: [`CONTEXT.md`](../CONTEXT.md).
 
 | Field | Value |
 |---|---|
-| Status | `blocked` |
+| Status | `ready` |
 | Priority | `P1` |
-| Workstream | Claim lifecycle / Durability / Authentication |
-| Depends on | 001–010 |
+| Workstream | Claim lifecycle / Durability |
+| Depends on | 001, 002, 003, 007, 010 (all done) |
 | Likely conflicts | all runtime tasks |
 | Owner | Unclaimed |
+
+> **Scope narrowed, 2026-07-29.** This task was `blocked` on "001–010", which put
+> the project's largest stated validation gap behind the entire P0 security
+> workstream. Most of it never needed that: the harness, the happy path, and the
+> claim/ACK and outbox crash boundaries depend only on the durability tasks, which
+> are done. The scenarios that genuinely need scoped credentials, enrollment,
+> hardened capabilities and blocklists — revocation, rotation, expiry, blocklisting
+> — moved to [task 024](024-authorization-integration-scenarios.md), which stays
+> blocked on 004/005/006/009. Splitting them costs one shared harness, which 024
+> reuses rather than rebuilds.
 
 ## Why This Matters
 
@@ -25,7 +35,11 @@ JetStream disposition, Postgres versions, and Worker behavior compose safely.
 
 ## Evidence
 
-- `cmd/nats-worker/`: no `_test.go` files at the review baseline.
+- `cmd/nats-worker/` had no `_test.go` files at the review baseline. It now has
+  four (tasks 001, 010, 012), but every one of them stubs the API: `stubResults`
+  answers `ClaimRun` from a canned value, so nothing exercises a real HTTP status
+  produced by a real `resultsAPIImpl` against a real Postgres row. The two halves
+  of the status-class contract are each tested against the other's *assumption*.
 - `pkg/natsq/natsq_test.go`: exercises JetStream assets and delivery, but not API
   claim or Worker execution/reporting.
 - `pkg/urth/signing_test.go`: token helper coverage does not exercise HTTP routes
@@ -38,13 +52,27 @@ JetStream disposition, Postgres versions, and Worker behavior compose safely.
 Create a reusable integration harness that starts:
 
 - real Postgres schema in an isolated test database;
-- an embedded or subprocess `nats-server` with JetStream, TLS, and test credentials;
+- an embedded or subprocess `nats-server` with JetStream;
 - the real Urth service and HTTP router on an ephemeral listener; and
 - one or more real Worker loops using a deterministic test prober.
 
-The harness exposes bounded failpoints at each durable boundary and runs the ADR
-failure matrix. It must be CI-owned, deterministic, parallel-safe, and produce
-resource/stream diagnostics on failure.
+The harness is the deliverable that outlives this task: [task 024](024-authorization-integration-scenarios.md)
+adds TLS and scoped credentials to it rather than standing up its own.
+
+It exposes bounded failpoints at each durable boundary and runs the part of the
+ADR failure matrix that does not turn on authorization:
+
+- a claim whose response is lost, retried by the same worker, executing once;
+- a worker killed after a confirmed ACK, settled by lease expiry and the
+  reconciler, with the retry creating a *new* Result;
+- a relay killed between the broker accepting a publication and the outbox row
+  being marked published, deduplicated by the reused event UID;
+- a dispatch redelivered while its run is executing, deduplicated in-process
+  ([task 010](010-synchronous-jetstream-ack.md)); and
+- a run whose message ages out, expired by the reconciler and not by the relay.
+
+It must be CI-owned, deterministic, parallel-safe, and produce resource/stream
+diagnostics on failure.
 
 ## Implementation Constraints
 
@@ -65,8 +93,10 @@ resource/stream diagnostics on failure.
 2. Build isolated Postgres/NATS fixtures with cleanup and diagnostic dumping.
 3. Add one happy-path test proving full resource history and Artifact linkage.
 4. Add claim/ACK and outbox crash failpoints.
-5. Add auth revocation, blocklist, expiry, and duplicate scenarios.
+5. Add the redelivery and lease-expiry scenarios above.
 6. Add a dedicated CI job and document local invocation.
+
+Auth revocation, blocklist, rotation and expiry are [task 024](024-authorization-integration-scenarios.md).
 
 ## Non-Goals
 
