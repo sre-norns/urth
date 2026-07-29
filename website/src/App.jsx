@@ -10,6 +10,7 @@ import RunDetail from './pages/RunDetail.jsx'
 import Results from './pages/Results.jsx'
 import Runners from './pages/Runners.jsx'
 import RunnerDetail from './pages/RunnerDetail.jsx'
+import WorkerDetail from './pages/WorkerDetail.jsx'
 import DeadLetters from './pages/DeadLetters.jsx'
 
 import {Redirect, Route, Switch} from 'wouter'
@@ -41,6 +42,7 @@ export default () => {
           <Route path="/results/:runId">{(params) => <RunDetail runId={params.runId} />}</Route>
           <Route path="/runners">{() => <Runners />}</Route>
           <Route path="/runners/:runnerId">{(params) => <RunnerDetail runnerId={params.runnerId} />}</Route>
+          <Route path="/workers/:workerName">{(params) => <WorkerDetail workerName={params.workerName} />}</Route>
           <Route path="/dead-letters">{() => <DeadLetters />}</Route>
           <Route>{() => <p>Not found</p>}</Route>
         </Switch>

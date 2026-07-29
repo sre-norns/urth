@@ -4,6 +4,7 @@ import styled from '@emotion/styled'
 import {useDispatch, useSelector} from 'react-redux'
 import fetchRun from '../actions/fetchRun.js'
 import fetchRunArtifacts from '../actions/fetchRunArtifacts.js'
+import fetchWorker from '../actions/fetchWorker.js'
 import Panel from '../components/Panel.js'
 import ErrorInlay from '../components/ErrorInlay.jsx'
 import SpinnerInlay from '../components/SpinnerInlay.jsx'
@@ -19,6 +20,8 @@ import {formatDuration, formatRelative, formatTimestamp} from '../utils/time.js'
 import {runDurationMs, runFinishedAt, runStartedAt} from '../utils/runStats.js'
 import {LabelArtifact, LabelResult, LabelRunner, LabelScenario, LabelWorker} from '../utils/labels.js'
 import {unschedulableMessage} from '../utils/placement.js'
+import {conditionOf, describePresence, WorkerCondition} from '../utils/presence.js'
+import {RESOURCE_REFRESH_INTERVAL_MS} from '../utils/refresh.js'
 
 const PageContainer = styled.div`
   width: 100%;
@@ -61,6 +64,12 @@ const SectionHeader = styled.div`
   margin-bottom: 0.75rem;
 `
 
+const WorkerReference = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+`
+
 // The run records who executed it, set when a worker claims the job.
 //
 // The fallback reads the same identity from artifact labels, which is where this
@@ -69,7 +78,11 @@ const SectionHeader = styled.div`
 const executorFrom = (run, artifacts) => {
   const executor = run?.status?.executor
   if (executor?.runnerName || executor?.workerName) {
-    return {runner: executor.runnerName || null, worker: executor.workerName || null}
+    return {
+      runner: executor.runnerName || null,
+      worker: executor.workerName || null,
+      workerUID: executor.workerId || null,
+    }
   }
 
   const labelled = (artifacts || []).find((a) => a.metadata?.labels?.[LabelRunner.Name])
@@ -78,6 +91,7 @@ const executorFrom = (run, artifacts) => {
   return {
     runner: labels[LabelRunner.Name] || null,
     worker: labels[LabelWorker.Name] || null,
+    workerUID: labels[LabelWorker.UID] || null,
   }
 }
 
@@ -94,6 +108,22 @@ const RunDetail = ({scenarioId, runId}) => {
 
   const artifactList = useMemo(() => artifacts.response?.data || [], [artifacts.response])
   const executor = useMemo(() => executorFrom(run.response, artifactList), [run.response, artifactList])
+  const worker = useSelector((s) => (executor.worker ? s.worker[executor.worker] : null)) || {}
+
+  useEffect(() => {
+    // Presence describes a current registration. Only fetch it when the
+    // historical run recorded enough identity to prove that the response is
+    // still the same WorkerInstance rather than a reused display name.
+    if (!executor.worker || !executor.workerUID) {
+      return
+    }
+
+    const refresh = () => dispatch(fetchWorker(executor.worker))
+    refresh()
+
+    const timer = setInterval(refresh, RESOURCE_REFRESH_INTERVAL_MS)
+    return () => clearInterval(timer)
+  }, [executor.worker, executor.workerUID])
 
   if (run.error) {
     return <ErrorInlay message="Error loading run" details={run.error.message || ''} />
@@ -114,6 +144,15 @@ const RunDetail = ({scenarioId, runId}) => {
   // failure with no logs, no artifacts and no explanation.
   const notScheduled = unschedulableMessage(result.labels?.[LabelResult.Unschedulable])
   const isRunning = result.status?.status === 'running' || result.status?.status === 'pending'
+  const currentWorker = worker.response
+  const sameRegistration =
+    Boolean(executor.workerUID) && currentWorker?.metadata?.uid && currentWorker.metadata.uid === executor.workerUID
+  const workerPresence = sameRegistration
+    ? describePresence(conditionOf(currentWorker))
+    : describePresence(WorkerCondition.Unknown)
+  const workerPresenceTitle = sameRegistration
+    ? `Current presence: ${workerPresence.label}`
+    : 'Current presence unknown: the executor registration is unavailable or has changed'
 
   // Logs first: they are what an operator opens when a run went wrong.
   const ordered = [...artifactList].sort((a, b) => {
@@ -164,7 +203,20 @@ const RunDetail = ({scenarioId, runId}) => {
           <StatTile
             caption="Runner"
             value={executor.runner ? <Link href={`/runners/${executor.runner}`}>{executor.runner}</Link> : '—'}
-            detail={executor.worker ? `worker ${executor.worker}` : null}
+            detail={
+              executor.worker ? (
+                <>
+                  worker{' '}
+                  <WorkerReference title={workerPresenceTitle}>
+                    <RagIndicator
+                      color={workerPresence.color}
+                      aria-label={`Current presence: ${workerPresence.label}`}
+                    />
+                    <Link href={`/workers/${executor.worker}`}>{executor.worker}</Link>
+                  </WorkerReference>
+                </>
+              ) : null
+            }
           />
         </StatsRow>
 

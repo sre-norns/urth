@@ -4,12 +4,12 @@ Shared context: [`CONTEXT.md`](../CONTEXT.md).
 
 | Field | Value |
 |---|---|
-| Status | `ready` |
+| Status | `done` |
 | Priority | `P2` |
 | Workstream | Operability |
 | Depends on | — |
 | Likely conflicts | — |
-| Owner | Unclaimed |
+| Owner | Codex (`feat/capacity-aware-placement`) |
 
 ## Why This Matters
 
@@ -47,15 +47,17 @@ which is exactly when they open the page.
 
 A route at `/workers/:name` showing, for one worker:
 
-1. Identity and membership — name, UID, its runner (linked), registration time,
-   and the labels it advertised, including its `urth/capability.prob.*` set.
+1. Identity and membership — name, hostname, UID, its runner (linked),
+   registration time, and the labels it advertised, including its
+   `urth/capability.prob.*` set.
 2. **The two signals broken out**, each with its own timestamp and freshness:
    API contact (and whether a heartbeat or a claim proved it), NATS presence,
    and any recorded departure. The combined condition is shown as a verdict
    *derived from* those, not instead of them.
 3. Its recent runs, by label query, so "is this worker actually doing anything"
    is answerable without leaving the page.
-4. The pause and drop actions the list row already offers.
+4. Pause and resume. Drop remains on the Runner's worker list, where the
+   registration is seen in the context of its sibling processes.
 
 Reached from a worker's name in `WorkerList`.
 
@@ -75,10 +77,33 @@ Reached from a worker's name in `WorkerList`.
 
 ## Acceptance
 
-- [ ] `/workers/:name` renders identity, both signals with timestamps, and runs.
-- [ ] A worker with one broken path shows *which* path, with the timestamp that
+- [x] `/workers/:name` renders identity, both signals with timestamps, and runs.
+- [x] A worker with one broken path shows *which* path, with the timestamp that
       justifies it.
-- [ ] A worker that never reported reads as unknown, not offline.
-- [ ] The page updates without a reload when a worker stops.
-- [ ] Worker names in `WorkerList` link to it.
-- [ ] `npm test` covers the three presence shapes: online, offline, split.
+- [x] A worker that never reported reads as unknown, not offline.
+- [x] The page updates without a reload when a worker stops.
+- [x] Worker names in `WorkerList` link to it.
+- [x] `npm test` covers the three presence shapes: online, offline, split.
+
+## Completion Record
+
+- **Implemented:** `/workers/:name`, dedicated WorkerInstance and recent-run
+  fetch state, shared Runner/Worker polling cadence, linked worker names and
+  Runner backlink, worker links from run details with a polled current-presence
+  indicator guarded by the historical executor UID, server-derived presence
+  diagnostics, registration metadata, all-time run count plus the latest ten
+  runs with the established alternating-row treatment, and Pause/Resume.
+  Workers now advertise `urth/worker.hostname`; older registrations render it
+  as unknown.
+- **Tests added/updated:** `pkg/runner/config_test.go`,
+  `website/src/actions/fetchWorkerResults.test.js`,
+  `website/src/pages/WorkerDetail.test.jsx`,
+  `website/src/pages/RunnerDetail.test.jsx`, and
+  `website/src/pages/RunDetail.test.jsx`.
+- **Documentation updated:** this task records the agreed page-only action
+  boundary: Drop stays on the Runner list and is not exposed on the detail page.
+- **Validation evidence:** `go test -race -count=1 ./...` passed; `go vet ./...`
+  passed; `npm test` passed 16 files / 204 tests; Prettier passed for every
+  changed website file; `git diff --check` passed.
+- **Follow-ups:** Worker registrations created before the hostname label was
+  introduced show `unknown` until the process registers again.

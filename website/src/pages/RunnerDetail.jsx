@@ -17,15 +17,7 @@ import WorkerList from '../components/WorkerList.jsx'
 import TextSpan, {TextDiv} from '../components/TextSpan.js'
 import {formatRelative} from '../utils/time.js'
 import {isOnline} from '../utils/presence.js'
-
-// How often the page re-reads the fleet while someone is looking at it.
-//
-// Liveness is the one thing on this page that changes on its own: a worker that
-// stopped a minute ago has to turn grey without the reader pressing anything, or
-// the page reports a fleet that no longer exists. Comfortably shorter than the
-// server's reporting interval, so a state change is visible within a refresh of
-// the server noticing it.
-const REFRESH_INTERVAL_MS = 15000
+import {RESOURCE_REFRESH_INTERVAL_MS} from '../utils/refresh.js'
 
 const PageContainer = styled.div`
   width: 100%;
@@ -106,7 +98,7 @@ const RunnerDetail = ({runnerId}) => {
 
     refresh()
 
-    const timer = setInterval(refresh, REFRESH_INTERVAL_MS)
+    const timer = setInterval(refresh, RESOURCE_REFRESH_INTERVAL_MS)
     return () => clearInterval(timer)
   }, [runnerId])
 
