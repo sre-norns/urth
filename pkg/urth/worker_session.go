@@ -4,8 +4,54 @@ import (
 	"context"
 	"time"
 
+	"github.com/sre-norns/wyrd/pkg/dbstore"
 	"github.com/sre-norns/wyrd/pkg/manifest"
 )
+
+// resolveSession turns a validated session credential into the worker and runner
+// it names.
+//
+// Signature validation says the credential was minted by this control plane; it
+// says nothing about whether the records behind it still exist or still agree.
+// These three checks are what answer that, and they are security decisions:
+// a revoked worker must stop being able to act on a credential that has not yet
+// expired, and a worker re-registered against a different runner must not carry
+// its old runner's authority. They are shared rather than written per endpoint
+// because divergence here is silent -- a caller that forgot the runner-mismatch
+// check would work perfectly until the day it mattered.
+//
+// Policy gates -- whether the worker is paused, whether the runner is enabled --
+// deliberately live at the call sites. They differ by endpoint: a claim is
+// refused for a paused worker, while a dispatch-failure report from one is still
+// worth recording. See loadClaimant and dispatchFailuresAPIImpl.Report.
+func resolveSession(ctx context.Context, store *dbstore.DBStore, claims WorkerSessionClaims) (WorkerInstance, Runner, error) {
+	var worker WorkerInstance
+	var runner Runner
+
+	if ok, err := store.GetByUID(ctx, &worker, claims.WorkerID); err != nil {
+		return worker, runner, claimUnavailable("load worker", err)
+	} else if !ok {
+		// The session is validly signed but its worker record is gone -- the
+		// instance was deleted or expired. ADR 0002 makes that a revocation, so
+		// the credential must stop working even though it has not expired.
+		return worker, runner, claimForbidden("worker instance revoked")
+	}
+
+	// The session names the runner it was issued for. If the worker has since
+	// been re-registered against a different runner, the credential no longer
+	// describes reality and is refused rather than silently re-scoped.
+	if worker.Spec.RunnerID != claims.RunnerID {
+		return worker, runner, claimForbidden("session runner mismatch")
+	}
+
+	if ok, err := store.GetByUID(ctx, &runner, worker.Spec.RunnerID); err != nil {
+		return worker, runner, claimUnavailable("load runner", err)
+	} else if !ok {
+		return worker, runner, claimForbidden("runner missing")
+	}
+
+	return worker, runner, nil
+}
 
 // Worker enrolment, in three credentials.
 //

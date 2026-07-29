@@ -171,6 +171,8 @@ func (w *worker) report(ctx context.Context, envelope natsq.DispatchEnvelope, au
 		return nil
 	})
 
+	w.metrics.ran(string(runResult.Result))
+
 	// The errors are surfaced rather than discarded. A run whose artifacts
 	// failed to upload looks, from the UI, like a run that produced none --
 	// and the asynq worker threw this return value away, so that failure mode

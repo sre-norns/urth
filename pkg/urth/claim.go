@@ -105,9 +105,9 @@ func claimForbidden(reason string) *ClaimError {
 // or terminating its only dispatch. The boolean says whether the error carried an
 // explicit disposition.
 func ClaimDispositionOf(err error) (ClaimDisposition, bool) {
-	var claimErr *ClaimError
-	if errors.As(err, &claimErr) {
+	if claimErr, ok := errors.AsType[*ClaimError](err); ok {
 		return claimErr.Disposition, true
 	}
+
 	return ClaimUnavailable, false
 }

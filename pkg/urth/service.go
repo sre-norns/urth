@@ -1130,36 +1130,20 @@ func (m *resultsAPIImpl) ClaimRun(ctx context.Context, resultUID manifest.Resour
 }
 
 // loadClaimant resolves and vets the worker behind a session credential.
+//
+// resolveSession settles identity -- does this worker still exist, and does its
+// session still describe it. What is left here is the policy a *claim* adds on
+// top: two states in which a worker keeps its identity but takes no new work.
 func (m *resultsAPIImpl) loadClaimant(ctx context.Context, claims WorkerSessionClaims) (WorkerInstance, Runner, error) {
-	var worker WorkerInstance
-	var runner Runner
-
-	if ok, err := m.store.GetByUID(ctx, &worker, claims.WorkerID); err != nil {
-		return worker, runner, claimUnavailable("load worker", err)
-	} else if !ok {
-		// The session is validly signed but its worker record is gone -- the
-		// instance was deleted or expired. ADR 0002 makes that a revocation, so
-		// the credential must stop working even though it has not expired.
-		return worker, runner, claimForbidden("worker instance revoked")
-	}
-
-	// The session names the runner it was issued for. If the worker has since
-	// been re-registered against a different runner, the credential no longer
-	// describes reality and is refused rather than silently re-scoped.
-	if worker.Spec.RunnerID != claims.RunnerID {
-		return worker, runner, claimForbidden("session runner mismatch")
+	worker, runner, err := resolveSession(ctx, m.store, claims)
+	if err != nil {
+		return worker, runner, err
 	}
 
 	// Business Rule: a paused worker stays registered and keeps its identity,
 	// but takes no new jobs.
 	if worker.Status.IsPaused {
 		return worker, runner, claimForbidden("worker is paused")
-	}
-
-	if ok, err := m.store.GetByUID(ctx, &runner, worker.Spec.RunnerID); err != nil {
-		return worker, runner, claimUnavailable("load runner", err)
-	} else if !ok {
-		return worker, runner, claimForbidden("runner missing")
 	}
 
 	// Business Rule: a worker of a disabled runner takes no jobs either.
@@ -1291,7 +1275,7 @@ func clampRunDuration(requested, maximum time.Duration) time.Duration {
 }
 
 func (m *resultsAPIImpl) validateUpdateRequest(_ context.Context, entry Result, bearerToken APIToken) error {
-	token, err := jwt.Parse(string(bearerToken), func(token *jwt.Token) (interface{}, error) {
+	token, err := jwt.Parse(string(bearerToken), func(token *jwt.Token) (any, error) {
 		// Don't forget to validate the alg is what you expect:
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
@@ -1833,7 +1817,7 @@ func (m *runnersAPIImpl) admitWorker(ctx context.Context, apiToken APIToken, new
 	var result Runner
 	var registered WorkerInstance
 
-	token, err := jwt.Parse(string(apiToken), func(token *jwt.Token) (interface{}, error) {
+	token, err := jwt.Parse(string(apiToken), func(token *jwt.Token) (any, error) {
 		// Don't forget to validate the alg is what you expect:
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
@@ -2011,7 +1995,7 @@ func artifactLabels(workerLabels manifest.Labels, spec ArtifactSpec, result Resu
 }
 
 func (m *artifactAPIImp) Create(ctx context.Context, apiToken APIToken, newEntry manifest.ResourceManifest) (manifest.ResourceManifest, error) {
-	token, err := jwt.Parse(string(apiToken), func(token *jwt.Token) (interface{}, error) {
+	token, err := jwt.Parse(string(apiToken), func(token *jwt.Token) (any, error) {
 		// Don't forget to validate the alg is what you expect:
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
@@ -2168,29 +2152,17 @@ func (m *dispatchFailuresAPIImpl) Report(ctx context.Context, session APIToken, 
 		return DispatchFailure{}, err
 	}
 
-	var worker WorkerInstance
-	if ok, err := m.store.GetByUID(ctx, &worker, claims.WorkerID); err != nil {
-		return DispatchFailure{}, claimUnavailable("load worker", err)
-	} else if !ok {
-		return DispatchFailure{}, claimForbidden("worker instance revoked")
+	// Identity only. Deliberately not gated on the runner being active or the
+	// worker unpaused, unlike a claim -- which is why this calls resolveSession
+	// rather than loadClaimant. A worker being wound down still knows why a
+	// message it was holding is undeliverable, and that report is the only record
+	// anyone will get; refusing it would trade a real diagnosis for a policy check
+	// that protects nothing, since a report grants no authority to execute
+	// anything.
+	worker, runner, err := resolveSession(ctx, m.store, claims)
+	if err != nil {
+		return DispatchFailure{}, err
 	}
-
-	if worker.Spec.RunnerID != claims.RunnerID {
-		return DispatchFailure{}, claimForbidden("session runner mismatch")
-	}
-
-	var runner Runner
-	if ok, err := m.store.GetByUID(ctx, &runner, worker.Spec.RunnerID); err != nil {
-		return DispatchFailure{}, claimUnavailable("load runner", err)
-	} else if !ok {
-		return DispatchFailure{}, claimForbidden("runner missing")
-	}
-
-	// Deliberately not gated on the runner being active or the worker unpaused,
-	// unlike a claim. A worker being wound down still knows why a message it was
-	// holding is undeliverable, and that report is the only record anyone will
-	// get -- refusing it would trade a real diagnosis for a policy check that
-	// protects nothing, since a report grants no authority to execute anything.
 
 	spec := DispatchFailureSpec{
 		Reason:        request.Reason,

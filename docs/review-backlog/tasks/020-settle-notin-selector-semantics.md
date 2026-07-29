@@ -26,13 +26,24 @@ admission at registration is `reqSelector.Matches(worker.Labels)` (Go). The same
 requirement written by the same operator therefore means different things at two
 points of the same dispatch path.
 
-It is not academic. Every shipped example carries such a clause, and the SQL rule
-makes them unsatisfiable: `examples/runner.yaml` cannot match
-`examples/scenario.rest.httpbin.yml`'s `envX notin (dev,testing)`, because the
-runner has no `envX` label at all. This is what made
-[task 018](018-fail-unplaceable-runs.md)'s stuck runs stuck — the api-server
-logged `no active runner matches requirements "os=linux,envX notin (dev,testing)"
-(0 considered)` with an active, otherwise-suitable runner registered.
+It was not academic. `examples/scenario.rest.httpbin.yml` carried
+`envX notin (dev,testing)`, which `examples/runner.yaml` could not satisfy under
+the SQL rule because the runner has no `envX` label at all — the api-server logged
+`no active runner matches requirements "os=linux,envX notin (dev,testing)"
+(0 considered)` with an active, otherwise-suitable runner registered. That is what
+made [task 018](018-fail-unplaceable-runs.md)'s stuck runs stuck.
+
+> **Evidence refreshed, 2026-07-29.** That example has since been changed to a
+> plain `matchLabels: {env: dev}` and the shipped manifests now place correctly —
+> verified live: `GET /scenarios/rest-httpbin-probe/placement` returns
+> `matchingRunners: 1, schedulable: true`. **The divergence itself is unchanged**,
+> confirmed in `wyrd@v0.2.2`: `manifest/selector.go:88-89` returns
+> `!labels.Has(key) || ...` for `NotIn`/`NotEquals`, while
+> `dbstore/gorm_json.go`'s `KeyNotIn` builds `json_extract_path_text(...) NOT IN
+> (...)`, which is NULL — and therefore false — for an absent key. Editing the
+> example removed the symptom from the demo path and left the bug in place, which
+> is the more dangerous state: the next operator to write `notin` meets it with no
+> example to warn them.
 
 The project also claims Kubernetes semantics: `README.md` and `CLAUDE.md` both say
 "if you've written a Kubernetes `nodeSelector`, it's that". Under the SQL rule,

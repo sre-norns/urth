@@ -63,6 +63,15 @@ type workerConfig struct {
 	// link: with nobody watching, the lines are discarded at the NATS server,
 	// so the cost is the worker's own upstream bandwidth.
 	StreamLogs bool `help:"Publish run logs live over NATS" default:"true" negatable:""`
+
+	// MetricsAddress exports what this worker knows about its own claim
+	// handshake, which is the part no other process can see.
+	//
+	// Empty by default, and that is the decision rather than an omission: this
+	// process runs inside the network segment it is probing, often one chosen
+	// for having very little listening on it. Opening a port nobody asked for is
+	// not a call this binary makes on an operator's behalf.
+	MetricsAddress string `help:"Address to serve Prometheus metrics on, e.g. :9101. Empty serves none" env:"METRICS_ADDRESS"`
 }
 
 // enrolmentToken resolves the enrolment secret from its file or the
@@ -146,6 +155,22 @@ type worker struct {
 	// presence announces this worker on its runner's subject. Built once the
 	// NATS connection and the worker's identity both exist.
 	presence *natsq.PresencePublisher
+
+	// The two halves of the claim handshake's budget, derived from the bound
+	// consumer's AckWait. See handshakeBudget.
+	claimBudget time.Duration
+	ackBudget   time.Duration
+
+	// inFlight is what stops a redelivered message becoming a second concurrent
+	// execution of a run this process already holds.
+	inFlight inFlightRuns
+
+	// metrics is nil unless --metrics-address was given. Every method on it is
+	// nil-safe for that reason.
+	metrics *workerMetrics
+
+	// executeJob replaces probe execution in tests. Nil in production; see runJob.
+	executeJob func(context.Context, natsq.DispatchEnvelope, urth.AuthJobResponse)
 }
 
 func (w *worker) currentSession() urth.APIToken {
@@ -197,6 +222,13 @@ func (w *worker) register(ctx context.Context) (urth.WorkerRegistrationResponse,
 }
 
 func (w *worker) run(ctx context.Context) error {
+	if w.config.MetricsAddress != "" {
+		metrics, registry := newWorkerMetrics()
+		w.metrics = metrics
+
+		go serveMetrics(ctx, w.config.MetricsAddress, registry)
+	}
+
 	registration, err := w.register(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to register with the API server: %w", err)
@@ -379,9 +411,9 @@ func (w *worker) heartbeat(ctx context.Context, current time.Duration, leaving b
 // is worth doing because a clean stop is the common case, and waiting out a
 // timeout to reflect one makes the fleet view look broken.
 func (w *worker) leave() {
-	// Detached from the worker's context, which is already cancelled: this
-	// request exists precisely because the process is going away.
-	leaveCtx, cancel := context.WithTimeout(context.WithoutCancel(context.Background()), 5*time.Second)
+	// Rooted at Background rather than the worker's context, which is already
+	// cancelled: this request exists precisely because the process is going away.
+	leaveCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	w.heartbeat(leaveCtx, 0, true)

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"net/http"
 	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
@@ -91,21 +90,34 @@ func (w *worker) reportDispatchFailure(ctx context.Context, msg jetstream.Msg, e
 	}
 }
 
+// apiStatus reports the HTTP status the API answered with, and whether the error
+// carried one at all.
+//
+// Every decision this worker makes about a message turns on that status class,
+// and this is the only place the error is unwrapped to find it. That matters
+// because of what "no status" means: a network error, a connection reset, an
+// unparseable body -- none of them are a verdict the API reached, and each of
+// the callers below has to treat them as transient. Three copies of this unwrap
+// were three chances for one of them to decide otherwise.
+func apiStatus(err error) (int, bool) {
+	if apiErr, ok := errors.AsType[*bark.ErrorResponse](err); ok {
+		return apiErr.Code, true
+	}
+
+	return 0, false
+}
+
 // permanentReportRefusal reports whether a refused report will always be refused.
 //
 // The same status-class reading the claim path uses, and for the same reason: a
 // 5xx is the control plane being briefly unable to answer, which must not be
-// mistaken for a verdict on the message.
+// mistaken for a verdict on the message. An opaque transport error is transient
+// by default -- terminating a message because the network hiccuped would destroy
+// the evidence this whole path exists to preserve.
 func permanentReportRefusal(err error) bool {
-	var apiErr *bark.ErrorResponse
-	if errors.As(err, &apiErr) {
-		return apiErr.Code >= 400 && apiErr.Code < 500
-	}
+	status, ok := apiStatus(err)
 
-	// An opaque transport error is transient by default. Terminating a message
-	// because the network hiccuped would destroy the evidence this whole path
-	// exists to preserve.
-	return false
+	return ok && status >= 400 && status < 500
 }
 
 // dispatchEventUID names the dispatch a failure is about.
@@ -158,13 +170,3 @@ func terminate(msg jetstream.Msg, mayTerminate bool, what string) {
 
 // reportRetryDelay holds an unreported message back before it is redelivered.
 const reportRetryDelay = 30 * time.Second
-
-// httpStatusOf is a small helper for tests asserting the classification above.
-func httpStatusOf(err error) int {
-	var apiErr *bark.ErrorResponse
-	if errors.As(err, &apiErr) {
-		return apiErr.Code
-	}
-
-	return http.StatusOK
-}

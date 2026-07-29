@@ -175,10 +175,28 @@ job. It also must not hold the NATS acknowledgement until a potentially long-run
 probe finishes. Once the API accepts a claim, the Result lifecycle—not a broker
 acknowledgement timer—tracks execution.
 
+> **Implementation note (step 5).** "Synchronously" means `jetstream.Msg.DoubleAck`,
+> which waits for the server to record the acknowledgement. `Ack` publishes and returns;
+> a connection lost in between leaves the message outstanding, and it is redelivered
+> while the probe runs. The confirmation is a round trip, so it needs time inside the
+> same window the claim does: the Worker reads its consumer's `AckWait` and splits it,
+> claim first and a fixed reserve for the acknowledgement, such that
+> `claim + ack ≤ AckWait` for every input. Failing to confirm within the reserve is
+> logged and counted; it never withholds execution, because the claim has already
+> committed and the Result is leased to this Worker. See `cmd/nats-worker/README.md`.
+
 The claim operation is idempotent for the same Result, dispatch ID, WorkerInstance, and
 active session. If the API commits the claim but its response is lost, the same Worker
 can retry and recover the same execution authorization without starting a second Result.
 A different Worker cannot take over an unexpired claim.
+
+That idempotency has a consequence worth stating plainly: a *redelivery* to the Worker
+already executing that Result is authorized rather than refused, because the API cannot
+distinguish it from the recovery the rule exists for. The Worker therefore keeps an
+in-process record of the runs it currently owns, taken before the claim is attempted,
+and drops a delivery for a run already in it. That record is a duplicate reducer and
+nothing more: it is not durable, a restart forgets it, and the execution lease remains
+the only authority on who is running what.
 
 If a Worker dies after the message is acknowledged, its Result lease eventually expires
 and the Result records that failed attempt. If policy calls for a retry, the scheduler
@@ -211,8 +229,12 @@ Probe authors should assume that an execution may be retried. Probes intended on
 observation should be side-effect safe. Scenarios that deliberately perform mutations
 must supply their own idempotency mechanism where the target protocol permits it.
 
-`Nats-Msg-Id`, JetStream's duplicate window, and synchronous acknowledgement are useful
-defences, not substitutes for these rules.
+`Nats-Msg-Id`, JetStream's duplicate window, synchronous acknowledgement, and the
+Worker's in-process ownership set are useful defences, not substitutes for these rules.
+Each of them narrows a window; none of them closes it. The Worker's own metrics say how
+wide the remaining window is in practice — `urth_worker_ack_unconfirmed_total` and
+`urth_worker_duplicate_deliveries_total` are the two numbers that should be zero, and
+are worth an alert rather than a dashboard.
 
 ### 6. Durable resource events use a separate stream
 

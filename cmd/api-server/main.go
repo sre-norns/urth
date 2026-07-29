@@ -145,6 +145,46 @@ func abortDispatchReport(ctx *gin.Context, err error) {
 	bark.AbortWithError(ctx, response.Code, response)
 }
 
+// probScript extracts the script a prob spec carries, if its kind has one.
+//
+// Reflection rather than a type switch because the set of script-bearing kinds
+// is open: probers register themselves at link time (pkg/probers/*), and a type
+// switch here would be a list this file has to be edited to extend -- silently
+// returning "no script" for any kind added later.
+//
+// It reads a *typed* spec, which is the whole point. This used to assert the
+// spec to map[string]any and look for a "Script" key, which worked only while
+// specs were untyped maps. Once the api-server started linking probers in, every
+// spec decoded to its registered type instead, the assertion failed for every
+// kind, and the endpoint answered 404 for scenarios that plainly had a script.
+// The map case is still handled for a kind nobody registered, where the spec
+// really does arrive as a map.
+func probScript(spec any) (string, bool) {
+	if data, ok := spec.(map[string]any); ok {
+		// Both spellings: YAML authored with Go field names decodes as "Script",
+		// JSON through the struct tags as "script".
+		for _, key := range []string{"script", "Script"} {
+			if script, ok := data[key].(string); ok && script != "" {
+				return script, true
+			}
+		}
+
+		return "", false
+	}
+
+	value := reflect.Indirect(reflect.ValueOf(spec))
+	if !value.IsValid() || value.Kind() != reflect.Struct {
+		return "", false
+	}
+
+	field := value.FieldByName("Script")
+	if !field.IsValid() || field.Kind() != reflect.String || field.String() == "" {
+		return "", false
+	}
+
+	return field.String(), true
+}
+
 // dispatchFailureManifests renders a listing in the shape every other resource
 // list uses.
 func dispatchFailureManifests(failures []urth.DispatchFailure) []manifest.ResourceManifest {
@@ -546,58 +586,20 @@ func apiRoutes(srv urth.Service, natsConn *nats.Conn, metrics *prometheus.Regist
 
 			scenario, err := urth.NewScenario(resource)
 			if err != nil {
-				bark.AbortWithError(ctx, http.StatusInternalServerError, bark.ErrResourceNotFound)
-			}
-
-			data, ok := scenario.Spec.Prob.Spec.(map[string]any)
-			if !ok || data == nil || len(data) == 0 {
-				bark.AbortWithError(ctx, http.StatusNotFound, fmt.Errorf("prob spec %q is %w", reflect.TypeOf(scenario.Spec.Prob.Spec), manifest.ErrNilSpec))
+				bark.AbortWithError(ctx, http.StatusInternalServerError, err)
 				return
 			}
 
-			scriptData, ok := data["Script"]
+			script, ok := probScript(scenario.Spec.Prob.Spec)
 			if !ok {
-				bark.AbortWithError(ctx, http.StatusNotFound, fmt.Errorf("prod has no 'Script' field"))
-				return
-			}
-			script, ok := scriptData.(string)
-			if !ok {
-				bark.AbortWithError(ctx, http.StatusNotFound, fmt.Errorf("prod 'Script' field is not a string"))
+				bark.AbortWithError(ctx, http.StatusNotFound,
+					fmt.Errorf("prob kind %q carries no script", scenario.Spec.Prob.Kind))
 				return
 			}
 
 			ctx.Header(bark.HTTPHeaderContentType, gin.MIMEPlain)
 			ctx.Writer.Write([]byte(script))
 		})
-
-		/*
-			v1.PUT("/scenarios/:id/script", ResourceAPI(), versionedResourceApi(), func(ctx *gin.Context) {
-				versionedId := ctx.MustGet(versionedIdKey).(urth.VersionedResourceId)
-
-				// Considers streaming data to a blob storage
-				data, err := ctx.GetRawData()
-				if err != nil {
-					bark.AbortWithError(ctx, http.StatusBadRequest, err)
-					return
-				}
-
-				result, exists, err := srv.GetScenarioAPI().UpdateScript(ctx.Request.Context(), versionedId, urth.ScenarioScript{
-					Kind:    urth.GuessScenarioKind(ctx.Query("kind"), ctx.ContentType(), data),
-					Content: data,
-				})
-				if err != nil {
-					bark.AbortWithError(ctx, http.StatusBadRequest, err)
-					return
-				}
-				if !exists {
-					bark.AbortWithError(ctx, http.StatusNotFound, urth.ErrResourceNotFound)
-					return
-				}
-
-				bark.MarshalResponse(ctx, http.StatusCreated, result)
-			})
-		*/
-		// DELETE script ? => UpdateScript("")
 
 		//------------
 		// Scenario run Results API
