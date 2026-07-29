@@ -257,6 +257,22 @@ func WithWorkerHeartbeatInterval(d time.Duration) ServiceOption {
 	return func(s *serviceImpl) { s.heartbeatInterval = d }
 }
 
+// WithRunnerLoad supplies the store that counts work already committed to each
+// runner.
+//
+// Without it, placement still spreads runs by online worker count -- an idle
+// runner and a busy one differ by that long before they differ by queue depth --
+// but it cannot see a runner falling behind. Optional rather than required so a
+// service can be built in a test without a gorm handle.
+func WithRunnerLoad(store RunnerLoadStore) ServiceOption {
+	return func(s *serviceImpl) { s.runnerLoad = store }
+}
+
+// WithPlacementCounter records how placement decisions are being reached.
+func WithPlacementCounter(counter PlacementCounter) ServiceOption {
+	return func(s *serviceImpl) { s.placementCounter = counter }
+}
+
 // WithRunnerChannelObserver supplies the transport's view of a runner's queue.
 // Without it, a runner simply reports an unobserved channel -- the right answer
 // for a transport that has no such notion, not a degraded mode.
@@ -321,6 +337,9 @@ type (
 		channels          RunnerChannelObserver
 		heartbeatInterval time.Duration
 		offlineAfter      time.Duration
+
+		runnerLoad       RunnerLoadStore
+		placementCounter PlacementCounter
 	}
 )
 
@@ -363,10 +382,25 @@ func (s *serviceImpl) Workers() WorkersAPI {
 	}
 }
 
+// newPlacement builds the placement decision-maker.
+//
+// One constructor rather than a literal at each call site, because the two
+// callers -- creating a run and previewing where one would go -- must decide
+// identically. A field added here and forgotten there is exactly how a UI comes
+// to offer a run the server then places somewhere else.
+func (s *serviceImpl) newPlacement() placement {
+	return placement{
+		store:        s.store,
+		load:         s.runnerLoad,
+		offlineAfter: s.workerOfflineAfter(),
+		decisions:    s.placementCounter,
+	}
+}
+
 func (s *serviceImpl) Scenarios() ScenarioAPI {
 	return &scenarioAPIImpl{
 		store:     s.store,
-		placement: placement{store: s.store},
+		placement: s.newPlacement(),
 	}
 }
 
@@ -375,7 +409,7 @@ func (s *serviceImpl) Results(scenarioName manifest.ResourceName) RunResultAPI {
 		store:      s.store,
 		scenarioID: scenarioName,
 		scheduler:  s.scheduler,
-		placement:  placement{store: s.store},
+		placement:  s.newPlacement(),
 
 		resultsSigningKey: s.keys.Run,
 		keys:              s.keys,

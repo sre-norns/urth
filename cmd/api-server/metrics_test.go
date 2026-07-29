@@ -77,7 +77,7 @@ func TestResourceAPIStillNegotiatesContent(t *testing.T) {
 // a registry that refuses a duplicate registration would panic at startup, and
 // this is the cheapest place to find that out.
 func TestMetricsRegistryComposes(t *testing.T) {
-	registry := metricsRegistry(nil, nil)
+	registry := metricsRegistry(nil, nil, urth.NewPlacementMetrics())
 	if registry == nil {
 		t.Fatal("metricsRegistry returned nothing")
 	}

@@ -17,6 +17,47 @@ import (
 // eventually arrives.
 const DefaultMetricsTimeout = 5 * time.Second
 
+// PlacementMetrics counts how runs are being placed on runners.
+//
+// Labelled by regime and nothing else. The obvious extra label -- which runner
+// won -- is exactly the one that must not be here: runner UIDs are unbounded and
+// operator-created, so a fleet that grows becomes a cardinality problem in the
+// monitoring system. Which runner won is a question for the placement log line;
+// this answers the aggregate one, which is whether placement is still finding
+// capacity or has been running saturated for an hour.
+type PlacementMetrics struct {
+	decisions *prometheus.CounterVec
+}
+
+// NewPlacementMetrics builds the placement counter.
+func NewPlacementMetrics() *PlacementMetrics {
+	return &PlacementMetrics{
+		decisions: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "urth_placement_decisions_total",
+			Help: "Runs placed on a runner, by how the runner was chosen. A rising `saturated` rate means the fleet has no spare capacity; a rising `unmeasured` rate means capacity could not be read and placement has degraded to its fallback.",
+		}, []string{"regime"}),
+	}
+}
+
+// CountPlacement implements PlacementCounter.
+func (m *PlacementMetrics) CountPlacement(regime PlacementRegime) {
+	if m == nil {
+		return
+	}
+
+	m.decisions.WithLabelValues(string(regime)).Inc()
+}
+
+// Describe implements prometheus.Collector.
+func (m *PlacementMetrics) Describe(ch chan<- *prometheus.Desc) {
+	m.decisions.Describe(ch)
+}
+
+// Collect implements prometheus.Collector.
+func (m *PlacementMetrics) Collect(ch chan<- prometheus.Metric) {
+	m.decisions.Collect(ch)
+}
+
 // DispatchCollector reports what the control plane knows about work that has
 // not happened yet.
 //
