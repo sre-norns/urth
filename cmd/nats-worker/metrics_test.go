@@ -168,4 +168,3 @@ func TestWorkerMetricsAreNilSafe(t *testing.T) {
 	metrics.ackUnconfirmed()
 	metrics.duplicateDelivery()
 }
-

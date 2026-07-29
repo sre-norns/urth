@@ -295,8 +295,9 @@ func TestPermanentReportRefusalClassification(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := permanentReportRefusal(tc.err); got != tc.want {
+				status, _ := apiStatus(tc.err)
 				t.Fatalf("permanentReportRefusal(%v) = %v, want %v (status %d)",
-					tc.err, got, tc.want, httpStatusOf(tc.err))
+					tc.err, got, tc.want, status)
 			}
 		})
 	}

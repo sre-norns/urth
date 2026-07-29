@@ -20,15 +20,23 @@ Read `README.md` for the user-facing version. It is accurate as of this session.
 ## Layout
 
 ```
-cmd/api-server/     REST API, owns all resources, hands out jobs
-cmd/asynq-runner/   the worker: claims jobs from Redis, executes, uploads results
-cmd/urthctl/        CLI (kubectl-shaped)
+cmd/api-server/     REST API, owns all resources, places and dispatches runs.
+                    Also hosts the outbox relay and the reconciler.
+cmd/nats-worker/    the worker: claims jobs from JetStream, executes, uploads.
+                    This is the one ADR 0004 describes.
+cmd/asynq-runner/   the Redis/asynq prototype worker. Migration-only; task 015 retires it.
+cmd/urthctl/        CLI (kubectl-shaped), co-equal with the Web UI
 pkg/urth/           domain model + service impl + REST client. The centre of gravity.
+pkg/natsq/          JetStream naming, assets, envelope, publication, live logs
 pkg/prob/           prob registry and the interface probers implement
 pkg/probers/*/      one package per prob kind (http, tcp, dns, icmp, grpc, rest, har, puppeteer…)
-pkg/runner/         job dispatch, run logging, metrics
+pkg/runner/         probe execution, run logging, worker capability labels
+pkg/redqueue/       legacy asynq transport, retiring with cmd/asynq-runner
 website/            React UI (webpack, emotion, redux, wouter)
 ```
+
+`pkg/urth` must not import `pkg/natsq`: transport adapters implement interfaces
+the domain package owns.
 
 Shared non-domain packages live in a sibling repo, `github.com/sre-norns/wyrd`
 (`manifest`, `dbstore`, `bark`). The user develops it locally at
@@ -44,14 +52,18 @@ TODO.md, not fixed because it needs a wyrd change.
 
 ```bash
 make run-postgres-podman        # or podman run … postgres:15
-make run-redis-podman
-make run-api-server             # passes a Postgres URL explicitly
+make run-nats-podman
+make run-api-server-nats        # passes a Postgres URL explicitly
 go run ./cmd/urthctl apply ./examples/runner.yaml
 go run ./cmd/urthctl apply ./examples/scenario.tcp.yaml
 export RUNNER_TOKEN=$(go run ./cmd/urthctl auth-worker -f ./examples/runner.yaml)
-go run ./cmd/asynq-runner --client.token="$RUNNER_TOKEN"
+make run-nats-worker            # reads RUNNER_TOKEN
 cd website && npm start         # :3000, proxies /api to :8080
 ```
+
+The asynq path (`make run-redis-podman`, `run-api-server`, `run-asynq-worker`)
+still works and is what `--transport` defaults to, but it is the prototype: no
+authentication, no placement, no outbox.
 
 Trigger a run without the UI:
 
@@ -69,7 +81,7 @@ caught them:
 - `make audit` (vet + staticcheck + race tests) must exit 0. CI runs
   `make audit/postgres`, which is the same plus the tests that need a real
   database — see the Postgres note below. Run that one before pushing.
-- `cd website && npm test` — vitest, currently ~119 tests.
+- `cd website && npm test` — vitest, currently 204 tests in 16 files.
 - **Run it.** Several of the worst bugs this session — timestamps ten hours in
   the future, workers unable to register, resources that could not be disabled —
   were invisible to the test suite and obvious the moment a real stack ran.
@@ -97,8 +109,9 @@ regression in code that was never touched.
 `false`. This defeated *disabling a scenario* and *disabling a runner* entirely;
 both returned 200 and changed nothing. Resource edits now use `saveResource()`
 (→ `CreateOrUpdate` → gorm `Save`). **Do not blanket-replace the remaining
-`store.Update` calls**: the job-claim path in `resultsAPIImpl.Auth` relies on the
-version-guarded update to lose the race when two workers reach for the same run.
+`store.Update` calls**: `resultsAPIImpl.ClaimRun` (and the legacy `Auth` beside
+it) relies on the version-guarded update to lose the race when two workers reach
+for the same run.
 
 **Worker liveness must never be written through `saveResource`.** Recording that
 a worker is alive is not a resource edit: it happens on a timer, forever, for
@@ -193,23 +206,21 @@ when the burst began. This works only because `Create` records the runner on the
 `Result` before persisting it, so `results` knows every runner's queue depth —
 `idx_results_placement` is what keeps that query off a sequential scan.
 
-**A claimed job is acknowledged with `DoubleAck`, and the budget for it comes
-from the consumer.** `Msg.Ack` only publishes the ack; a connection lost before
-the server records it redelivers the message mid-probe, and `ClaimRun` is
-*idempotent for the same worker and dispatch*, so the redelivery is authorised
-rather than refused — one process, the same external probe, twice. The worker
-reads `consumer.CachedInfo().Config.AckWait` and splits it (`handshakeBudget` in
-`cmd/nats-worker/ack.go`) so that claim + ack ≤ AckWait always; there is
-deliberately no floor under either half, because a worker quietly granting
-itself more of the window than the operator allowed would acknowledge messages
-already offered to somebody else. Two rules that must survive an edit here: an
-**unconfirmed ack never withholds execution** (the claim is committed and the
-Result is leased — refusing to run strands it, and re-claiming or rolling back
-is not the worker's to do), and the **in-process ownership set is acquired
-before the claim, not after**, because the racing case is two deliveries whose
-claims are in flight simultaneously. That set is not durable and is not meant to
-be; the execution lease is. Stale (409) messages keep the plain `Ack` — nothing
-is executing, so a lost one costs a redelivery and another cheap 409.
+**A claimed job is acknowledged with `DoubleAck`, budgeted from the consumer.**
+`Msg.Ack` only publishes the ack; lose the connection before the server records
+it and the message is redelivered mid-probe — and since `ClaimRun` is idempotent
+for the same worker and dispatch, that redelivery is *authorised*, not refused.
+One process, same probe, twice. `handshakeBudget` (`cmd/nats-worker/ack.go`)
+splits `consumer.CachedInfo().Config.AckWait` so claim + ack ≤ AckWait always,
+with no floor under either half — a worker granting itself more of the window
+than the operator allowed would acknowledge messages already offered elsewhere.
+Three rules to keep: an **unconfirmed ack never withholds execution** (the claim
+is committed and leased; refusing to run strands it, and re-claiming or rolling
+back is not the worker's to do); the **in-process ownership set is acquired
+before the claim**, because the racing case is two deliveries claiming at once;
+and stale (409) messages keep the plain `Ack`, since nothing is executing and a
+lost one costs a redelivery and another cheap 409. That set is not durable and
+is not meant to be — the execution lease is.
 
 **A scheduled run does not read its Scenario again.** `ResultSpec.Execution` is
 an `ExecutionSnapshot` — scenario UID/name/version, requirements, and the whole
@@ -287,9 +298,10 @@ CodeQL alert #1 (`go/clear-text-logging`) is dismissed as a false positive: the
 allowlist means no credential reaches the sink, but CodeQL can't model a map
 lookup as a sanitiser. The tests are the guard now.
 
-**Executor identity.** A run records which runner and worker executed it, captured
-in `Results.Auth` at the moment of claim — the only point the association is
-certain. Also exposed as `urth/runner.*` / `urth/worker.*` labels.
+**Executor identity.** A run records which runner and worker executed it,
+captured by `executorRef` in `ClaimRun` at the moment of claim — the only point
+the association is certain. Also exposed as `urth/runner.*` / `urth/worker.*`
+labels.
 
 **Label queries are the search surface** everywhere: scenarios, runners, results,
 artifacts, workers. `?labels=key = value` or `key in (a,b)`. `?from=` / `?till=`

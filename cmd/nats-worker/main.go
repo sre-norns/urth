@@ -411,9 +411,9 @@ func (w *worker) heartbeat(ctx context.Context, current time.Duration, leaving b
 // is worth doing because a clean stop is the common case, and waiting out a
 // timeout to reflect one makes the fleet view look broken.
 func (w *worker) leave() {
-	// Detached from the worker's context, which is already cancelled: this
-	// request exists precisely because the process is going away.
-	leaveCtx, cancel := context.WithTimeout(context.WithoutCancel(context.Background()), 5*time.Second)
+	// Rooted at Background rather than the worker's context, which is already
+	// cancelled: this request exists precisely because the process is going away.
+	leaveCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	w.heartbeat(leaveCtx, 0, true)

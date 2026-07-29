@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -13,7 +12,6 @@ import (
 
 	"github.com/sre-norns/urth/pkg/natsq"
 	"github.com/sre-norns/urth/pkg/urth"
-	"github.com/sre-norns/wyrd/pkg/bark"
 	"github.com/sre-norns/wyrd/pkg/manifest"
 )
 
@@ -102,6 +100,22 @@ func (w *worker) consume(ctx context.Context, consumer jetstream.Consumer) error
 
 		var received bool
 		for msg := range batch.Messages() {
+			if received {
+				// Only the first message uses the slot reserved before the fetch.
+				// Fetch(1) means there should never be a second -- but the slot
+				// accounting must not depend on that: every handler releases a
+				// slot when it finishes, so a batch that returned two messages
+				// against one reservation would drain the semaphore and wedge the
+				// fetch loop permanently. Blocking here is ordinary backpressure
+				// and resolves as soon as a running handler finishes.
+				select {
+				case <-ctx.Done():
+					inFlight.Wait()
+					return nil
+				case slots <- struct{}{}:
+				}
+			}
+
 			received = true
 			inFlight.Add(1)
 
@@ -323,27 +337,26 @@ func (w *worker) claim(ctx context.Context, envelope natsq.DispatchEnvelope) (ur
 // classifyClaimFailure turns a claim error into a queue disposition using only the
 // HTTP status class the API returned. The API owns the mapping from "why" to
 // status; the worker owns the mapping from status to Ack/Nak/Term, here, in one
-// place. Anything that is not a recognised API status -- a network error, a
-// connection reset, an unparseable body -- is transient by default, because the
-// run may still be pending and losing its only message is the worse failure.
+// place. Anything that is not a recognised API status -- see apiStatus -- is
+// transient by default, because the run may still be pending and losing its only
+// message is the worse failure.
 func classifyClaimFailure(err error) claimOutcome {
-	var apiErr *bark.ErrorResponse
-	if errors.As(err, &apiErr) {
-		switch {
-		case apiErr.Code == http.StatusConflict:
-			// The run no longer needs this dispatch: terminal, superseded, or
-			// held elsewhere. Drop the message.
-			return claimStale
-		case apiErr.Code == http.StatusForbidden,
-			apiErr.Code == http.StatusUnauthorized,
-			apiErr.Code == http.StatusBadRequest,
-			apiErr.Code == http.StatusNotFound:
-			// A refusal redelivery to this worker will not reverse, or a message
-			// malformed enough that the endpoint could not route it. Terminate it.
-			return claimTerminal
-		case apiErr.Code >= 500:
-			return claimRetry
-		}
+	status, ok := apiStatus(err)
+	if !ok {
+		return claimRetry
+	}
+
+	switch status {
+	case http.StatusConflict:
+		// The run no longer needs this dispatch: terminal, superseded, or held
+		// elsewhere. Drop the message.
+		return claimStale
+
+	case http.StatusForbidden, http.StatusUnauthorized,
+		http.StatusBadRequest, http.StatusNotFound:
+		// A refusal redelivery to this worker will not reverse, or a message
+		// malformed enough that the endpoint could not route it. Terminate it.
+		return claimTerminal
 	}
 
 	return claimRetry
