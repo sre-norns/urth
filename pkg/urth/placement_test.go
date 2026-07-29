@@ -4,8 +4,8 @@ import (
 	"math"
 	"testing"
 
-	"github.com/stretchr/testify/require"
 	"github.com/sre-norns/wyrd/pkg/manifest"
+	"github.com/stretchr/testify/require"
 )
 
 // Selection is pure with respect to the database, so the whole ranking is
