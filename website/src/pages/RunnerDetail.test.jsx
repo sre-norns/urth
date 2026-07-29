@@ -101,6 +101,12 @@ describe('RunnerDetail', () => {
     expect(screen.getByText('worker-02')).toBeInTheDocument()
   })
 
+  it('links each worker name to its detail page', () => {
+    render(stateWith([worker('worker-01', online())]))
+
+    expect(screen.getByRole('link', {name: 'worker-01'})).toHaveAttribute('href', '/workers/worker-01')
+  })
+
   // An operator's decision is the more important fact about a worker than its
   // liveness, so a paused worker reads as paused whatever its signals say.
   it('distinguishes a paused worker from one that is online', () => {

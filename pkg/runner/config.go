@@ -3,6 +3,7 @@ package runner
 import (
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
 	"runtime"
 	"runtime/debug"
@@ -73,12 +74,37 @@ func GetRuntimeLabels() manifest.Labels {
 		log.Print("[ERROR] failed to get Build info")
 	}
 
-	return manifest.Labels{
+	labels := manifest.Labels{
 		urth.LabelWorkerArch: runtime.GOARCH,
 		urth.LabelWorkerOS:   runtime.GOOS,
 		// See ProberAsLabels: the build version is not label-safe as it stands.
 		urth.LabelWorkerBuildVersion: urth.LabelSafeValue(strings.Trim(bi.Main.Version, "() ")),
 	}
+
+	// A worker name normally contains the host, but operators may configure a
+	// different name. Advertise it independently so the control plane can still
+	// say which machine this physical process is running on.
+	if hostname, err := os.Hostname(); err == nil {
+		if safe, valid := hostnameLabel(hostname); valid {
+			labels[urth.LabelWorkerHostname] = safe
+		}
+	}
+
+	return labels
+}
+
+func hostnameLabel(hostname string) (string, bool) {
+	safe := urth.LabelSafeValue(hostname)
+	if safe == "" {
+		return "", false
+	}
+
+	label := manifest.Labels{urth.LabelWorkerHostname: safe}
+	if label.Validate() != nil {
+		return "", false
+	}
+
+	return safe, true
 }
 
 func (c *RunnerConfig) GetEffectiveLabels() manifest.Labels {

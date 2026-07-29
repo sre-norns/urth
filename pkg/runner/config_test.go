@@ -1,10 +1,13 @@
 package runner
 
 import (
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/sre-norns/urth/pkg/urth"
 	"github.com/sre-norns/wyrd/pkg/manifest"
 )
 
@@ -24,6 +27,36 @@ func TestWorkerLabelsAreValid(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			require.NoError(t, labels.Validate())
+		})
+	}
+}
+
+func TestRuntimeLabelsAdvertiseHostname(t *testing.T) {
+	hostname, err := os.Hostname()
+	require.NoError(t, err)
+
+	labels := GetRuntimeLabels()
+
+	require.Equal(t, urth.LabelSafeValue(hostname), labels[urth.LabelWorkerHostname])
+}
+
+func TestHostnameLabelOmitsUnrepresentableValues(t *testing.T) {
+	testCases := map[string]struct {
+		hostname string
+		value    string
+		valid    bool
+	}{
+		"ordinary":        {hostname: "build-7", value: "build-7", valid: true},
+		"label-safe":      {hostname: "build_host", value: "build_host", valid: true},
+		"empty after map": {hostname: "::", valid: false},
+		"too long":        {hostname: strings.Repeat("a", 64), valid: false},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			value, valid := hostnameLabel(testCase.hostname)
+			require.Equal(t, testCase.valid, valid)
+			require.Equal(t, testCase.value, value)
 		})
 	}
 }

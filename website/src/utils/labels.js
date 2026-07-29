@@ -32,6 +32,7 @@ export const LabelWorker = {
   UID: `${PREFIX}worker.uid`,
   OS: `${PREFIX}worker.os`,
   Arch: `${PREFIX}worker.arch`,
+  Hostname: `${PREFIX}worker.hostname`,
   BuildVersion: `${PREFIX}worker.build.version`,
 }
 

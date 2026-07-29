@@ -5,6 +5,7 @@ import {useDispatch} from 'react-redux'
 import setWorkerPaused from '../actions/setWorkerPaused.js'
 import deleteWorker from '../actions/deleteWorker.js'
 import Button from './Button.js'
+import Link from './Link.js'
 import RagIndicator from './RagIndicator.js'
 import TextSpan, {TextDiv} from './TextSpan.js'
 import ObjectCapsules from './ObjectCapsules.jsx'
@@ -121,7 +122,7 @@ const WorkerRow = ({worker, runnerName}) => {
       <RagIndicator color={state.color} />
       <Identity>
         <TextDiv size="small" level={2} weight={500}>
-          {name}
+          <Link href={`/workers/${name}`}>{name}</Link>
         </TextDiv>
         <TextDiv size="small" level={4}>
           registered {formatRelative(worker.metadata.creationTimestamp)}

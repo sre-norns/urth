@@ -58,6 +58,7 @@ const (
 	// Well-known worker labels:
 	LabelWorkerOS           = LabelsPrefix + "worker.os"
 	LabelWorkerArch         = LabelsPrefix + "worker.arch"
+	LabelWorkerHostname     = LabelsPrefix + "worker.hostname"
 	LabelWorkerBuildVersion = LabelsPrefix + "worker.build.version"
 	LabelWorkerName         = LabelsPrefix + "worker.name"
 	LabelWorkerUID          = LabelsPrefix + "worker.uid"
