@@ -47,8 +47,15 @@ validation or ownership.
 - **Execution lease**: the server-controlled deadline recorded on a running Result.
 - **Run capability**: short-lived authority to report one claimed Result and its
   Artifacts; it is not a general Worker or Runner credential.
-- **Runner queue**: the exact subject `urth.v1.jobs.<runner-uid>` plus one durable
-  pull consumer shared by all Workers enrolled in that Runner.
+- **Runner queue**: one exact subject plus one durable pull consumer shared by all
+  Workers enrolled in that Runner. Addressed by the Runner's immutable *name* per
+  [ADR 0007](../adr/0007-runner-queue-addressing.md), so it outlives any one
+  generation of the resource; the code is still UID-addressed
+  (`urth.v1.jobs.<runner-uid>`) until
+  [task 021](tasks/021-name-keyed-runner-queues.md) lands.
+- **Runner generation**: one lifetime of a Runner resource — same name, new UID after
+  a delete and re-apply. A new generation inherits its predecessor's *queue*, never
+  its runs: entitlement is keyed by UID in Postgres.
 - **Outbox**: a Postgres row written in the same transaction as a resource change,
   later relayed to JetStream using a stable message ID.
 
@@ -95,8 +102,13 @@ silently weaken them.
 
 ### JetStream behavior
 
-- `URTH_JOBS` is one file-backed WorkQueue stream over `urth.v1.jobs.*`.
-- Each Runner has one exact-filter durable pull consumer addressed by immutable UID.
+- `URTH_JOBS` is one file-backed WorkQueue stream; Runner subject filters are disjoint.
+- Each Runner has one exact-filter durable pull consumer, addressed by its immutable
+  name through a validated encoder ([ADR 0007](../adr/0007-runner-queue-addressing.md) §2).
+- Possession of a message is never entitlement to execute it. A run is claimable only by
+  a Worker of the Runner UID recorded on the Result at placement.
+- Queue assets whose Runner resource no longer exists are garbage-collected; a *disabled*
+  Runner keeps its queue.
 - Workers bind existing assets and never create or update streams or consumers.
 - The Worker pulls only when local capacity exists, claims through the API, and
   synchronously acknowledges after the durable claim succeeds.

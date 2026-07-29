@@ -54,6 +54,8 @@ Status values:
 | 018 | P1 | done | [Fail unplaceable runs instead of queueing them forever](tasks/018-fail-unplaceable-runs.md) | 002, 003, 012 | 014, 016 |
 | 019 | P1 | ready | [Serve the live run log stream instead of refusing it](tasks/019-serve-run-log-stream.md) | — | — |
 | 020 | P1 | ready | [Settle `notin` selector semantics across both evaluators](tasks/020-settle-notin-selector-semantics.md) | — | 014, 018 |
+| 021 | P1 | blocked | [Address Runner queues by name and reap orphaned ones](tasks/021-name-keyed-runner-queues.md) | 022 | 004, 013, 014, 016 |
+| 022 | P1 | ready | [Recheck execution requirements at claim time](tasks/022-recheck-requirements-at-claim.md) | — | 008, 014, 018, 021 |
 
 Priority meanings:
 

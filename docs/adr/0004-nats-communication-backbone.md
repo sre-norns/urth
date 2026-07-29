@@ -146,6 +146,16 @@ still does not create a stream for every Runner.
 The logical queue is addressed by immutable Runner UID, not Runner name. Recreating a
 Runner with the same name cannot expose the old Runner's queued messages or consumer.
 
+> **Superseded by [ADR 0007](./0007-runner-queue-addressing.md).** The queue is addressed
+> by Runner *name*, so a Runner deleted and re-applied from the same manifest reattaches to
+> the queue its predecessor left rather than stranding it. The protection this paragraph
+> was reaching for now lives in Postgres instead of in the addressing: a pending Result
+> records the UID of the Runner it was placed on, and a claim from any other Runner is
+> refused — so a new generation drains its predecessor's messages without ever being
+> allowed to execute them. The rest of this section — one work-queue stream, disjoint
+> per-Runner subjects, one durable pull consumer per Runner, per-subject limits, no stream
+> per Runner — stands unchanged.
+
 ### 4. Job acknowledgement follows the authoritative claim
 
 Receiving a JetStream message is not a claim. The Worker performs this sequence:
