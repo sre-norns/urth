@@ -28,10 +28,12 @@ filtered to `urth.v1.jobs.<runner-uid>`, and workers of that runner share it. Th
 prototype had one queue that every worker competed on, so a scenario's placement
 requirements were computed and then discarded.
 
-**It acknowledges after the claim commits, never before or after execution.**
-Acking early loses the run if the claim fails; holding the ack across the probe
-makes the redelivery timer span an arbitrarily long run, and the job gets
-executed twice.
+**It acknowledges after the claim commits, never before or after execution —
+and waits for the server to confirm it.** Acking early loses the run if the
+claim fails; holding the ack across the probe makes the redelivery timer span an
+arbitrarily long run, and the job gets executed twice. See
+[the handshake budget](#the-claim-handshake-budget) for why the confirmation is
+not fire-and-forget.
 
 ## The claim outcome contract
 
@@ -43,7 +45,7 @@ action, in one place (`classifyClaimFailure` / `applyDisposition`):
 
 | API status | Meaning | Worker action |
 |---|---|---|
-| `2xx` | claim granted (or idempotently re-granted) | **Ack**, then execute |
+| `2xx` | claim granted (or idempotently re-granted) | **DoubleAck** (server-confirmed), then execute |
 | `5xx` | transient store/internal failure; the run may still be pending | **Nak** with delay — redelivered |
 | `409` | the run is terminal, superseded, or already validly held | **Ack** and drop |
 | `401` / `403` / `400` / `404` | policy refusal or a malformed message that redelivery will not fix | **Term** — stops redelivery, enters the dead-letter path |
@@ -56,6 +58,66 @@ The prototype flattened every claim failure to `401`, which the worker read as
 stale and acknowledged. A momentary Postgres blip could therefore delete the only
 live message for a still-pending run — silent, unrecoverable loss on a work-queue
 stream. See [review task 001](../../docs/review-backlog/tasks/001-preserve-retryable-claim-failures.md).
+
+## The claim handshake budget
+
+The granted-claim ack is a `DoubleAck`, not an `Ack`. The difference is not
+cosmetic: `Ack` publishes the acknowledgement and returns without waiting, so a
+connection lost in between leaves a message the broker still considers
+outstanding. It is redelivered after `AckWait` — and because the API's claim is
+*idempotent for the same worker and dispatch*, the redelivery is authorised
+rather than refused, and the same external probe runs twice, concurrently, from
+one process. `DoubleAck` is the request/reply form that closes that window.
+
+Because the confirmation is a round trip, it needs time inside the same window
+the claim does. The two are budgeted from one number — the bound consumer's
+`AckWait`, which the worker reads from the consumer rather than from a flag:
+
+```
+AckWait ─────────────────────────────────────────────
+├── claim (AckWait − 5s) ──────────────┤├─ ack (5s) ─┤
+```
+
+`claim + ack ≤ AckWait` always holds; there is no floor under either half. An
+`AckWait` too small to fit a claim is a misconfiguration, and the honest
+expression of it is abandoned claims and a dead-lettered dispatch, not a worker
+granting itself more of the window than the operator allowed. The split is
+logged at startup.
+
+Two things are deliberately *not* what you might expect:
+
+- **An unconfirmed acknowledgement does not stop the run.** The claim is
+  committed in Postgres — the Result is `running`, leased, with this worker
+  recorded as its executor. Refusing to execute would strand a run the control
+  plane already believes is in progress. The worker logs, counts
+  `urth_worker_ack_unconfirmed_total`, and proceeds. It never re-claims, never
+  hands the run to another worker, and never rolls it back.
+- **A stale (409) message keeps the plain `Ack`.** Nothing is executing, so a
+  lost stale-ack costs one redelivery and one more cheap 409 — not a duplicate
+  probe. A round trip per stale message would be cost without a failure mode.
+
+### The duplicate a confirmed ack cannot prevent
+
+Confirmation shrinks the window; it does not remove it. A claim that runs long
+enough, or an ack whose *reply* is lost, still produces a redelivery for a run
+this process is executing. So the worker keeps an in-process set of the runs it
+currently owns, acquired **before** the claim — the racing case includes two
+deliveries whose claims are in flight at once, which a set acquired after the
+claim would let through.
+
+A delivery for a run already in the set is acknowledged and dropped. Holding it
+would reserve one of the runner's `MaxAckPending` slots for the length of a
+probe, which is exactly what the ack must never span; naking it would bring it
+back every `AckWait` until `MaxDeliver` filed a dead letter for a dispatch that
+was delivered perfectly well.
+
+Nothing about this is durable, deliberately. A restarted worker has forgotten
+what it was running; the Result's execution lease is the durable truth and the
+reconciler settles a run whose worker died. **None of this makes probe execution
+exactly once** — a process can fail after making an external request and before
+reporting it, and no broker can prove whether that request happened. ADR 0004 §5
+is the contract: probes should be side-effect safe, and scenarios that mutate
+must carry their own idempotency.
 
 ## Running it
 
@@ -85,6 +147,26 @@ process table to every user on the host.
 | `--[no-]stream-logs` | Publish run output live. On by default |
 | `--nats.url` | Overridden by whatever the API server returns at registration |
 | `--heartbeat-interval` | Starting cadence for liveness reports. The server's answer wins |
+| `--metrics-address` | Serve Prometheus metrics, e.g. `:9101`. **Empty by default** — this process runs inside the segment it probes, and opening a port is the operator's call |
+
+## Metrics
+
+With `--metrics-address` set, `/metrics` exports what only this process knows —
+what happened between pulling a message and starting a probe. From the broker's
+side a message that leaves the queue looks the same whether it left cleanly,
+after a confirmation that had to be retried, or as the second copy of a run
+already in flight.
+
+| Metric | What it answers |
+|---|---|
+| `urth_worker_claims_total{outcome}` | Are claims being granted, or refused — and refused *how*? `stale` draining steadily is normal; `retry` climbing is an unwell API server |
+| `urth_worker_ack_confirm_seconds` | How much of the reserve confirmations are using |
+| `urth_worker_ack_confirm_retries_total` | Confirmations that needed a second attempt |
+| `urth_worker_ack_unconfirmed_total` | Runs executing on a message that may still be redeliverable. Should be zero |
+| `urth_worker_duplicate_deliveries_total` | Redeliveries dropped because the run was already in flight here. Non-zero means acks are not landing |
+| `urth_worker_runs_total{result}` | Probes executed, by outcome |
+
+Plus the usual process and Go runtime collectors.
 
 ## Reporting that it is alive
 

@@ -53,6 +53,12 @@ const (
 
 // consume pulls jobs and executes them, up to the configured concurrency.
 func (w *worker) consume(ctx context.Context, consumer jetstream.Consumer) error {
+	// The whole claim handshake has to fit inside the consumer's AckWait, and the
+	// consumer is the only place a worker can learn what that is -- it has the
+	// client half of the NATS configuration (URL and credentials) and never the
+	// stream settings, which are the control plane's to set.
+	w.budgetHandshake(consumer)
+
 	// The semaphore is the backpressure ADR 0004 asks for: the worker fetches
 	// only as much as it can currently execute, rather than reserving jobs it
 	// will sit on. Messages it holds without claiming are messages no other
@@ -118,6 +124,19 @@ func (w *worker) consume(ctx context.Context, consumer jetstream.Consumer) error
 	}
 }
 
+// budgetHandshake divides the consumer's AckWait between claim and ack.
+func (w *worker) budgetHandshake(consumer jetstream.Consumer) {
+	var ackWait time.Duration
+	if info := consumer.CachedInfo(); info != nil {
+		ackWait = info.Config.AckWait
+	}
+
+	w.claimBudget, w.ackBudget = handshakeBudget(ackWait)
+
+	log.Printf("claim handshake budget: %v to claim, %v to confirm the acknowledgement (ack-wait %v)",
+		w.claimBudget, w.ackBudget, ackWait)
+}
+
 // handle claims and executes one delivered job.
 func (w *worker) handle(ctx context.Context, msg jetstream.Msg) {
 	envelope, err := natsq.UnmarshalEnvelope(msg.Data())
@@ -145,18 +164,63 @@ func (w *worker) handle(ctx context.Context, msg jetstream.Msg) {
 		return
 	}
 
-	auth, outcome := w.claim(ctx, envelope)
+	// Claimed locally before the API is asked, because the duplicate this guards
+	// against is a redelivery arriving while the first claim is still in flight.
+	// See inFlightRuns.
+	if !w.inFlight.acquire(envelope.ResultUID) {
+		w.metrics.duplicateDelivery()
+		log.Printf("dropping a redelivery of %v: this worker is already executing it", envelope.ResultUID)
 
-	if applyDisposition(msg, outcome, envelope.ResultUID, report) {
-		w.execute(ctx, envelope, auth)
+		// Acknowledged and dropped, not naked. It describes work this process
+		// already owns, so the message is redundant: holding it would reserve one
+		// of the runner's MaxAckPending slots for the length of a probe -- exactly
+		// what ADR 0004 says an ack must never span -- and naking it would bring
+		// it back every AckWait until MaxDeliver filed a dead letter for a
+		// dispatch that was delivered perfectly well. If this process dies now,
+		// the execution lease and the reconciler are the recovery, as they are for
+		// any acknowledged message.
+		if err := msg.Ack(); err != nil {
+			log.Printf("failed to ack a duplicate delivery of %v: %v", envelope.ResultUID, err)
+		}
+
+		return
 	}
+	defer w.inFlight.release(envelope.ResultUID)
+
+	auth, outcome := w.claim(ctx, envelope)
+	w.metrics.claimed(outcome)
+
+	if applyDisposition(ctx, msg, outcome, envelope.ResultUID, report, w.confirmClaimAck) {
+		w.runJob(ctx, envelope, auth)
+	}
+}
+
+// confirmClaimAck is the worker's ackConfirmer, bound to its handshake budget.
+func (w *worker) confirmClaimAck(ctx context.Context, msg jetstream.Msg) error {
+	return confirmAck(ctx, msg, w.ackBudget, w.metrics)
+}
+
+// runJob executes a claimed job, through a seam the tests can replace.
+//
+// Everything this task cares about -- that the acknowledgement is confirmed
+// before execution starts, and that a duplicate delivery starts no second
+// execution -- is a statement about whether and when a probe runs. Asserting
+// that needs a stand-in for the probe; the alternative is proving the ordering
+// against a real prob, which tests the prober rather than the handshake.
+func (w *worker) runJob(ctx context.Context, envelope natsq.DispatchEnvelope, auth urth.AuthJobResponse) {
+	if w.executeJob != nil {
+		w.executeJob(ctx, envelope, auth)
+		return
+	}
+
+	w.execute(ctx, envelope, auth)
 }
 
 // applyDisposition performs the JetStream acknowledgement decided by a claim
 // outcome and reports whether the job should now be executed. This is the one
 // place a claim outcome becomes an Ack/Nak/Term, kept separate from handle so the
 // decision can be tested without a live probe.
-func applyDisposition(msg jetstream.Msg, outcome claimOutcome, resultUID manifest.ResourceID, report dispatchReporter) (execute bool) {
+func applyDisposition(ctx context.Context, msg jetstream.Msg, outcome claimOutcome, resultUID manifest.ResourceID, report dispatchReporter, ack ackConfirmer) (execute bool) {
 	switch outcome {
 	case claimAccepted:
 		// Acknowledge now, and before execution, because the claim has committed.
@@ -164,12 +228,25 @@ func applyDisposition(msg jetstream.Msg, outcome claimOutcome, resultUID manifes
 		// Both other orderings are wrong in a different way. Acking after
 		// execution makes the ack-wait timer span an arbitrarily long probe, so a
 		// slow run gets redelivered and executed twice. Not acking loses the
-		// message on the next reconnect. The API's record of the claim, not the
-		// broker, owns the run from here; if this ack is lost the idempotent claim
-		// is what stops the redelivery becoming a second execution.
-		if err := msg.Ack(); err != nil {
-			log.Printf("failed to ack claimed job %v: %v", resultUID, err)
+		// message on the next reconnect.
+		//
+		// Server-confirmed, not fire-and-forget: an ack that was only published
+		// leaves a redelivery window this worker cannot see, and the redelivery
+		// would be idempotently re-authorised rather than refused. See confirmAck.
+		//
+		// Detached from the caller's context. A worker asked to shut down drains
+		// its in-flight runs, so the run this ack belongs to is still going to be
+		// executed and reported; inheriting the cancellation would guarantee the
+		// ack it needs is never confirmed.
+		if err := ack(context.WithoutCancel(ctx), msg); err != nil {
+			// Not a reason to refuse the run. The claim is committed in Postgres:
+			// the Result is `running`, leased, with this worker recorded as its
+			// executor. Declining to execute now would strand a run the control
+			// plane already believes is in progress, and the one thing this worker
+			// must not do is roll that back or hand it to somebody else.
+			log.Printf("could not confirm the acknowledgement of claimed job %v (%v); executing it regardless", resultUID, err)
 		}
+
 		return true
 
 	case claimRetry:
@@ -206,7 +283,15 @@ func applyDisposition(msg jetstream.Msg, outcome claimOutcome, resultUID manifes
 
 // claim asks the API server for authority to run the job.
 func (w *worker) claim(ctx context.Context, envelope natsq.DispatchEnvelope) (urth.AuthJobResponse, claimOutcome) {
-	claimCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	// Bounded by this worker's share of the handshake budget rather than by a
+	// number of its own, so that a claim which runs long enough to make its
+	// acknowledgement meaningless is abandoned instead. See handshakeBudget.
+	budget := w.claimBudget
+	if budget <= 0 {
+		budget, _ = handshakeBudget(0)
+	}
+
+	claimCtx, cancel := context.WithTimeout(ctx, budget)
 	defer cancel()
 
 	auth, err := w.apiClient.Results(envelope.ScenarioName).ClaimRun(claimCtx,

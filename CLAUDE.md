@@ -83,6 +83,13 @@ silently swallows requests meant for the one just started. Check with
 `ss -ltnp | grep :8080` before concluding something is broken. Stop containers by
 name; `podman stop -a` will take out containers that aren't yours.
 
+**Kill it before running `make audit/postgres`, too.** Every api-server runs a
+relay and a reconciler against its database, so one left over from manual
+testing competes with the tests for the same outbox rows:
+`TestOutboxCompetingRelaysDoNotDoubleClaim` and
+`TestPublicationFailureLeavesResultPending` fail intermittently and look like a
+regression in code that was never touched.
+
 ## Traps, in rough order of how much time they cost
 
 **`dbstore.Update` silently drops zero values.** It passes the struct to gorm's
@@ -185,6 +192,24 @@ makes a burst of runs spread rather than pile onto whichever runner looked idle
 when the burst began. This works only because `Create` records the runner on the
 `Result` before persisting it, so `results` knows every runner's queue depth —
 `idx_results_placement` is what keeps that query off a sequential scan.
+
+**A claimed job is acknowledged with `DoubleAck`, and the budget for it comes
+from the consumer.** `Msg.Ack` only publishes the ack; a connection lost before
+the server records it redelivers the message mid-probe, and `ClaimRun` is
+*idempotent for the same worker and dispatch*, so the redelivery is authorised
+rather than refused — one process, the same external probe, twice. The worker
+reads `consumer.CachedInfo().Config.AckWait` and splits it (`handshakeBudget` in
+`cmd/nats-worker/ack.go`) so that claim + ack ≤ AckWait always; there is
+deliberately no floor under either half, because a worker quietly granting
+itself more of the window than the operator allowed would acknowledge messages
+already offered to somebody else. Two rules that must survive an edit here: an
+**unconfirmed ack never withholds execution** (the claim is committed and the
+Result is leased — refusing to run strands it, and re-claiming or rolling back
+is not the worker's to do), and the **in-process ownership set is acquired
+before the claim, not after**, because the racing case is two deliveries whose
+claims are in flight simultaneously. That set is not durable and is not meant to
+be; the execution lease is. Stale (409) messages keep the plain `Ack` — nothing
+is executing, so a lost one costs a redelivery and another cheap 409.
 
 **A scheduled run does not read its Scenario again.** `ResultSpec.Execution` is
 an `ExecutionSnapshot` — scenario UID/name/version, requirements, and the whole

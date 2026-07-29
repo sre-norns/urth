@@ -257,6 +257,18 @@ looks deceptively like passing.
    `envX notin (dev,testing)`, because the runner has no `envX` label — which is what
    made task 018's runs unplaceable. Pick one rule, document it, make both evaluators
    obey it. See [task 020](docs/review-backlog/tasks/020-settle-notin-selector-semantics.md).
+[X] **A claimed job was acknowledged with `Msg.Ack`, which only publishes the ack and
+   returns.** A connection lost before the server recorded it redelivers the message
+   while the probe is running — and because the API's claim is idempotent for the same
+   worker and dispatch, the redelivery is *authorised* rather than refused, so one
+   process ran the same external probe twice, concurrently. Now `DoubleAck`, inside a
+   reserve carved out of the consumer's own `AckWait` (the claim previously had a
+   hardcoded 30s timeout, which is the entire default window), plus an in-process
+   ownership set that drops a redelivery for a run already executing here. An
+   unconfirmed ack never withholds execution: the claim has committed and the Result is
+   leased. This narrows the duplicate window; ADR 0004 §5 still stands — probe execution
+   is not exactly once. `--metrics-address` exports the numbers that say how wide the
+   remaining window is. See [task 010](docs/review-backlog/tasks/010-synchronous-jetstream-ack.md).
 [X] JetStream assets are bounded and observable: global message/byte/size limits
    beside the per-runner one, `MaxAckPending` on consumers, config validated
    before the broker is dialled, existing-stream drift reconciled or reported,
