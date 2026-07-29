@@ -3,6 +3,13 @@
 Serves the main API objects: Scenarios and Script Run Results. For management
 purposes it also manages registration of async workers aka Runners.
 
+Everything below is implemented in [`pkg/apiserver`](../../pkg/apiserver): the
+route table, the status mapping, and the composition of store, transport, signing
+keys and control loops. This command is the process around it — flags, a database
+connection, a listener and a shutdown — and is deliberately thin, because a
+`main` can only be tested by starting it. The dispatch path is exercised whole in
+[`test/integration`](../../test/integration).
+
 ## The dispatch outbox
 
 Creating a run is two durable writes: the `Result` row in Postgres, and the job

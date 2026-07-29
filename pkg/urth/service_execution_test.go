@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
@@ -270,6 +271,74 @@ func TestLegacyDispatchPublishesTheSnapshotNotTheScenario(t *testing.T) {
 	published := scheduler.scheduled[0]
 	require.Equal(t, probeA, published.Spec.Execution.Prob.Spec.(*rest.Spec).Script)
 	require.Equal(t, scenario.Name, published.Spec.Execution.ScenarioName)
+}
+
+// A worker whose claim committed and whose response was lost must recover the
+// same authorization when it retries.
+//
+// The retry presents the version its *queue message* carried, and that version is
+// now one behind -- because committing the claim bumped it. The version guard
+// read that as "this dispatch has been overtaken by newer state" and answered
+// 409, so the worker acknowledged its message away as stale and the run it was
+// already entitled to execute sat in `running`, leased to that same worker, until
+// the reconciler expired it. A lost response cost a whole run, and the dispatch
+// ID that exists to make exactly this retry safe was never consulted.
+//
+// Found by test/integration, which is the only place both halves of the claim
+// were ever exercised against each other rather than against an assumption.
+func TestReclaimAfterALostResponseIsNotRefusedAsSuperseded(t *testing.T) {
+	srv, _, store := newTestService(t, &stubScheduler{}, urth.WithSigningKeys(testKeys(t)))
+	scenario := seedScenarioWithProb(t, store, restProb(probeA))
+
+	created, err := srv.Results(scenario.Name).Create(context.Background(), newRunRequest())
+	require.NoError(t, err)
+
+	// The claim commits; its response never reaches the worker.
+	first, err := claimRunErr(t, srv, created)
+	require.NoError(t, err)
+
+	// The worker retries from the same message: same dispatch ID, same version.
+	second, err := claimRunErr(t, srv, created)
+	require.NoError(t, err, "the retry of a lost claim response must be honoured")
+
+	// Within a microsecond rather than equal: the first response carries the
+	// deadline as it was computed, the second reads it back from a timestamptz
+	// column, which keeps microseconds.
+	require.WithinDuration(t, first.Deadline, second.Deadline, time.Microsecond,
+		"a re-issued authorization is the original one, not a fresh lease")
+	require.Equal(t, probeA, claimedScript(t, second))
+
+	stored := loadResult(t, store, created.UID)
+	require.Equal(t, urth.JobRunning, stored.Status.Status)
+	require.Equal(t, urth.DispatchEventUID(created.UID, created.Version), stored.Status.DispatchID)
+}
+
+// The guard the exemption above is carved out of still holds: a dispatch for a
+// version this run has genuinely moved past is refused.
+//
+// Without this the fix would read as "the version check is optional", when what
+// it actually says is "a run's own claim is not somebody else's edit".
+func TestClaimForASupersededVersionIsStillRefused(t *testing.T) {
+	srv, _, store := newTestService(t, &stubScheduler{}, urth.WithSigningKeys(testKeys(t)))
+	scenario := seedScenarioWithProb(t, store, restProb(probeA))
+
+	created, err := srv.Results(scenario.Name).Create(context.Background(), newRunRequest())
+	require.NoError(t, err)
+
+	// A message published for a version this Result never reached: nothing about
+	// it is a re-claim, so there is nothing to exempt.
+	stale := created
+	stale.Version += 3
+
+	_, err = claimRunErr(t, srv, stale)
+	require.Error(t, err)
+
+	disposition, ok := urth.ClaimDispositionOf(err)
+	require.True(t, ok)
+	require.Equal(t, urth.ClaimObsolete, disposition)
+
+	require.Equal(t, urth.JobPending, loadResult(t, store, created.UID).Status.Status,
+		"a refused claim leaves the run for whoever can take it")
 }
 
 // claimRunErr is claimRun without the assertion that the claim succeeds, for the

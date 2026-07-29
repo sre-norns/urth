@@ -268,6 +268,11 @@ looks deceptively like passing.
    run applied by hand disappears, silently. CI is fine, provisioning its own database.
    Either default the tests to a separate database name, or refuse to run when the URL
    matches `store-url` without an explicit override.
+   **Narrowed, 2026-07-30**: this is now only the `pkg/urth` fixtures.
+   `test/integration` creates a schema per test (`CREATE SCHEMA urthtest_…`,
+   `DROP SCHEMA … CASCADE`) and cannot reach anything outside it, which is the
+   shape the `pkg/urth` fixtures should be moved to — see
+   `test/integration/harness_test.go`'s `openTestSchema`.
 [] **`urthctl get script` cannot run**: the kong subcommand is declared with no `Run`
    method and no client call behind it, so it fails with `no Run() method found in
    hierarchy`. The server endpoint behind it was also answering 404 for every scenario

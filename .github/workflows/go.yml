@@ -45,7 +45,7 @@ jobs:
       # has to be inspected rather than the exit code.
       - name: Check gofmt
         run: |
-          unformatted="$(gofmt -l ./cmd ./pkg)"
+          unformatted="$(gofmt -l ./cmd ./pkg ./test)"
           if [ -n "$unformatted" ]; then
             echo "These files are not gofmt-formatted:"
             echo "$unformatted"
@@ -60,14 +60,20 @@ jobs:
   audit:
     name: Vet, staticcheck and test
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    # Raised from 20 for test/integration, which stands up an embedded NATS
+    # server and a private Postgres schema per scenario and waits out real
+    # redelivery timers. It is the slowest thing in the suite by a wide margin
+    # and the only thing that exercises the dispatch path whole.
+    timeout-minutes: 30
 
     # The dispatch outbox's guarantees are Postgres guarantees: relay leasing is
     # `SELECT ... FOR UPDATE SKIP LOCKED`, and Result/dispatch atomicity is a real
     # transaction over the resource schema, which does not migrate on SQLite.
     # Those tests skip themselves when no database is configured, so without this
     # service CI would report green having never run them. The step below runs
-    # `make audit/postgres`, which is what turns them on.
+    # `make audit/postgres`, which is what turns them on. The same is true of the
+    # whole of test/integration -- no new job for it, because `go test ./...`
+    # already picks it up once the database is there.
     services:
       postgres:
         image: postgres:15

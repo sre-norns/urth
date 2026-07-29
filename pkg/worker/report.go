@@ -1,4 +1,4 @@
-package main
+package worker
 
 import (
 	"context"
@@ -44,7 +44,7 @@ type dispatchReporter func(reason urth.DispatchFailureReason, detail string) (ma
 // that message forever. Those terminate anyway and say so in the log, which is
 // the one outcome here that loses information -- deliberately, because the
 // alternative loses a worker.
-func (w *worker) reportDispatchFailure(ctx context.Context, msg jetstream.Msg, envelope natsq.DispatchEnvelope, envelopeOK bool) dispatchReporter {
+func (w *Worker) reportDispatchFailure(ctx context.Context, msg jetstream.Msg, envelope natsq.DispatchEnvelope, envelopeOK bool) dispatchReporter {
 	return func(reason urth.DispatchFailureReason, detail string) bool {
 		request := urth.ReportDispatchFailureRequest{
 			Reason:     reason,

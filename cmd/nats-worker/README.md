@@ -7,6 +7,14 @@ This is the worker described by [ADR 0004](../../docs/adr/0004-nats-communicatio
 `cmd/asynq-runner` is the earlier prototype and still works; both can run against
 the same API server while the migration proceeds.
 
+Everything below is implemented in [`pkg/worker`](../../pkg/worker): registration,
+session renewal, the pull/claim/ack handshake, execution and reporting. This
+command is the process around it — flags, the enrolment secret, an API client and
+a signal-aware context. The handshake is exercised against a real API server and a
+real broker in [`test/integration`](../../test/integration), which is the only
+arrangement that can see a disagreement between the two halves of the claim
+contract.
+
 ## What is different from asynq-runner
 
 The broker is the least of it.

@@ -1,4 +1,4 @@
-package main
+package apiserver
 
 import (
 	"net/http"
@@ -26,7 +26,7 @@ func TestMetricsEndpointIsServedOutsideTheResourceAPI(t *testing.T) {
 		Help: "A metric that exists only to be scraped by this test.",
 	}, func() float64 { return 42 }))
 
-	router := apiRoutes(nil, nil, registry)
+	router := Routes(nil, nil, registry)
 
 	request := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 	// What Prometheus actually sends.
@@ -47,7 +47,7 @@ func TestMetricsEndpointIsServedOutsideTheResourceAPI(t *testing.T) {
 // added only when there is a registry to serve, rather than answering with an
 // empty page that reads as a fleet doing nothing.
 func TestMetricsEndpointIsAbsentWithoutARegistry(t *testing.T) {
-	router := apiRoutes(nil, nil, nil)
+	router := Routes(nil, nil, nil)
 
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/metrics", nil))
@@ -60,7 +60,7 @@ func TestMetricsEndpointIsAbsentWithoutARegistry(t *testing.T) {
 // The API's own routes keep their content negotiation, so moving the scrape
 // endpoint out of the group did not move anything else with it.
 func TestResourceAPIStillNegotiatesContent(t *testing.T) {
-	router := apiRoutes(nil, nil, prometheus.NewRegistry())
+	router := Routes(nil, nil, prometheus.NewRegistry())
 
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/version", nil)
 	request.Header.Set("Accept", "application/x-yaml")

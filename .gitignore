@@ -33,6 +33,11 @@ website-experiment/node_modules/
 website-experiment/test-results/
 website-experiment/playwright-report/
 
-# Temp worker directory, and local scratch copies of it
-worker
-worker.*
+# Temp worker directory, and local scratch copies of it.
+#
+# Anchored to the repository root. Unanchored, `worker` matches *any* path
+# component of that name -- which silently excluded the whole of `pkg/worker`
+# when the NATS worker was extracted into a package, in a way that shows up only
+# as a missing package in CI.
+/worker/
+/worker.*
