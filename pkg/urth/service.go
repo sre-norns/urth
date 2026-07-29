@@ -88,6 +88,13 @@ type WorkersAPI interface {
 	// register again unless its runner is disabled or its token revoked, so this
 	// is how a worker is dropped, not how it is permanently barred.
 	Delete(ctx context.Context, id manifest.VersionedResourceID) (bool, error)
+
+	// Heartbeat records that the worker holding this session is still there, and
+	// answers with the cadence it should keep reporting at.
+	//
+	// Reports ErrResourceNotFound when the session is valid but the registration
+	// behind it has been dropped, which is a worker's cue to register again.
+	Heartbeat(ctx context.Context, session APIToken, request WorkerHeartbeatRequest) (WorkerHeartbeatResponse, error)
 }
 
 type ScenarioAPI interface {
@@ -228,6 +235,35 @@ func WithMaxRunDuration(d time.Duration) ServiceOption {
 	return func(s *serviceImpl) { s.maxRunDuration = d }
 }
 
+// WithWorkerPresence supplies the store that records worker liveness.
+//
+// Without it a service still runs and every worker reports presence `unknown`,
+// which is the honest answer for a deployment that is not recording it -- and is
+// what the pkg/urth tests, which have no gorm handle of their own, see.
+func WithWorkerPresence(store WorkerPresenceStore) ServiceOption {
+	return func(s *serviceImpl) { s.presence = store }
+}
+
+// WithWorkerOfflineAfter sets how long a liveness signal may go unheard before
+// it is called offline.
+func WithWorkerOfflineAfter(d time.Duration) ServiceOption {
+	return func(s *serviceImpl) { s.offlineAfter = d }
+}
+
+// WithWorkerHeartbeatInterval sets the reporting cadence the server asks workers
+// for. The server owns this number, rather than each worker choosing, so that
+// the interval and the timeout derived from it cannot disagree.
+func WithWorkerHeartbeatInterval(d time.Duration) ServiceOption {
+	return func(s *serviceImpl) { s.heartbeatInterval = d }
+}
+
+// WithRunnerChannelObserver supplies the transport's view of a runner's queue.
+// Without it, a runner simply reports an unobserved channel -- the right answer
+// for a transport that has no such notion, not a degraded mode.
+func WithRunnerChannelObserver(observer RunnerChannelObserver) ServiceOption {
+	return func(s *serviceImpl) { s.channels = observer }
+}
+
 const (
 	// DefaultSessionTTL bounds a worker session. Short enough that revoking a
 	// worker takes effect within a shift, long enough that renewal is not a
@@ -280,8 +316,31 @@ type (
 		transport      WorkerTransportProvider
 		sessionTTL     time.Duration
 		maxRunDuration time.Duration
+
+		presence          WorkerPresenceStore
+		channels          RunnerChannelObserver
+		heartbeatInterval time.Duration
+		offlineAfter      time.Duration
 	}
 )
+
+// workerOfflineAfter is how long a signal may go unheard, defaulted from the
+// reporting interval so that the two cannot be configured into contradiction.
+func (s *serviceImpl) workerOfflineAfter() time.Duration {
+	if s.offlineAfter > 0 {
+		return s.offlineAfter
+	}
+
+	return s.workerHeartbeatInterval() * DefaultWorkerOfflineAfterFactor
+}
+
+func (s *serviceImpl) workerHeartbeatInterval() time.Duration {
+	if s.heartbeatInterval > 0 {
+		return s.heartbeatInterval
+	}
+
+	return DefaultWorkerHeartbeatInterval
+}
 
 func (s *serviceImpl) Runners() RunnersAPI {
 	return &runnersAPIImpl{
@@ -290,12 +349,17 @@ func (s *serviceImpl) Runners() RunnersAPI {
 		keys:             s.keys,
 		transport:        s.transport,
 		sessionTTL:       s.sessionTTL,
+		channels:         s.channels,
 	}
 }
 
 func (s *serviceImpl) Workers() WorkersAPI {
 	return &workersAPIImpl{
-		store: s.store,
+		store:             s.store,
+		presence:          s.presence,
+		keys:              s.keys,
+		heartbeatInterval: s.workerHeartbeatInterval(),
+		offlineAfter:      s.workerOfflineAfter(),
 	}
 }
 
@@ -316,6 +380,7 @@ func (s *serviceImpl) Results(scenarioName manifest.ResourceName) RunResultAPI {
 		resultsSigningKey: s.keys.Run,
 		keys:              s.keys,
 		maxRunDuration:    s.maxRunDuration,
+		presence:          s.presence,
 	}
 }
 
@@ -540,6 +605,8 @@ type resultsAPIImpl struct {
 
 	keys           SigningKeys
 	maxRunDuration time.Duration
+
+	presence WorkerPresenceStore
 }
 
 func (m *resultsAPIImpl) List(ctx context.Context, searchQuery manifest.SearchQuery) (results []Result, total int64, err error) {
@@ -915,6 +982,15 @@ func (m *resultsAPIImpl) ClaimRun(ctx context.Context, resultUID manifest.Resour
 		return AuthJobResponse{}, err
 	}
 
+	// A worker asking for work has just proved it is alive, so it should not have
+	// to wait out a heartbeat interval to be believed. On a busy queue this is the
+	// only liveness evidence the API ever needs.
+	//
+	// Recorded here, once the claimant is known to be a real, admitted worker, and
+	// before the claim is adjudicated: whether this particular dispatch turns out
+	// to be obsolete says nothing about whether the worker is reachable.
+	m.recordClaimContact(ctx, claims.WorkerID)
+
 	// Looked up by UID, not name. The dispatch envelope identifies the run by
 	// UID precisely because a name can be reused, and a claim that resolved a
 	// recycled name would authorise a worker against the wrong run.
@@ -1058,6 +1134,21 @@ func (m *resultsAPIImpl) loadClaimant(ctx context.Context, claims WorkerSessionC
 	}
 
 	return worker, runner, nil
+}
+
+// recordClaimContact notes that a worker reached the API server to claim a run.
+//
+// Deliberately swallows its errors. Presence is diagnostics; the claim is the
+// work, and failing a job because a liveness column could not be written would
+// trade something that matters for something that does not.
+func (m *resultsAPIImpl) recordClaimContact(ctx context.Context, workerUID manifest.ResourceID) {
+	if m.presence == nil {
+		return
+	}
+
+	if _, err := m.presence.RecordContact(ctx, workerUID, time.Now(), WorkerContactClaim, false); err != nil {
+		log.Printf("failed to record claim contact for worker %v: %v", workerUID, err)
+	}
 }
 
 // markUnschedulable retires a pending run that can never be executed as it
@@ -1253,7 +1344,35 @@ type runnersAPIImpl struct {
 	keys       SigningKeys
 	transport  WorkerTransportProvider
 	sessionTTL time.Duration
+	channels   RunnerChannelObserver
 }
+
+// observeChannel asks the transport what it can see of a runner's queue.
+//
+// Bounded, and every failure becomes an unobserved channel rather than a failed
+// request: this is a detail on a page, and a slow or absent broker must not stop
+// an operator loading the runner they came to look at. Errors are logged once
+// here rather than returned, for the same reason the placement code logs a
+// malformed selector rather than handing it to whoever triggered the run.
+func (m *runnersAPIImpl) observeChannel(ctx context.Context, runnerUID manifest.ResourceID) RunnerChannelStatus {
+	if m.channels == nil {
+		return RunnerChannelStatus{}
+	}
+
+	observeCtx, cancel := context.WithTimeout(ctx, runnerChannelObserveTimeout)
+	defer cancel()
+
+	status, err := m.channels.ObserveRunnerChannel(observeCtx, runnerUID)
+	if err != nil {
+		log.Printf("could not read the queue state of runner %v: %v", runnerUID, err)
+		return RunnerChannelStatus{}
+	}
+
+	return status
+}
+
+// runnerChannelObserveTimeout bounds the broker round trip a runner page makes.
+const runnerChannelObserveTimeout = 2 * time.Second
 
 func (m *runnersAPIImpl) List(ctx context.Context, searchQuery manifest.SearchQuery) (results []manifest.ResourceManifest, total int64, err error) {
 	var models []Runner
@@ -1272,6 +1391,14 @@ func (m *runnersAPIImpl) List(ctx context.Context, searchQuery manifest.SearchQu
 func (m *runnersAPIImpl) Get(ctx context.Context, id manifest.ResourceName) (result manifest.ResourceManifest, exist bool, err error) {
 	var model Runner
 	exist, err = m.store.GetByName(ctx, &model, id)
+
+	// Only here, never in List: this costs a broker round trip, and paying one
+	// per runner to render a list would make the index page as slow as the fleet
+	// is large.
+	if exist && err == nil {
+		model.Status.Channel = m.observeChannel(ctx, model.UID)
+	}
+
 	result = model.ToManifest()
 	return
 }
@@ -1391,7 +1518,24 @@ func (m *allResultsAPIImpl) Get(ctx context.Context, id manifest.ResourceName) (
 // / WorkersAPI implementation
 // ------------------------------
 type workersAPIImpl struct {
-	store *dbstore.DBStore
+	store    *dbstore.DBStore
+	presence WorkerPresenceStore
+
+	keys              SigningKeys
+	heartbeatInterval time.Duration
+	offlineAfter      time.Duration
+}
+
+// withPresence fills in the liveness verdict a worker's stored timestamps imply.
+//
+// Computed here, on the way out, rather than persisted by a background job: the
+// rule then has one definition, no sweep's lag becomes part of the answer, and a
+// record read a moment after a worker went quiet reports it correctly rather than
+// waiting for something to notice.
+func (m *workersAPIImpl) withPresence(model WorkerInstance, now time.Time) manifest.ResourceManifest {
+	model.Status.Presence = WorkerPresenceAt(model.Status, now, m.offlineAfter)
+
+	return model.ToManifest()
 }
 
 func (m *workersAPIImpl) List(ctx context.Context, searchQuery manifest.SearchQuery) (results []manifest.ResourceManifest, total int64, err error) {
@@ -1401,9 +1545,13 @@ func (m *workersAPIImpl) List(ctx context.Context, searchQuery manifest.SearchQu
 		return
 	}
 
+	// One clock reading for the whole page, so two workers last heard from at the
+	// same moment cannot be graded differently by the time the loop reaches them.
+	now := time.Now()
+
 	results = make([]manifest.ResourceManifest, 0, len(models))
 	for _, model := range models {
-		results = append(results, model.ToManifest())
+		results = append(results, m.withPresence(model, now))
 	}
 
 	return
@@ -1412,9 +1560,49 @@ func (m *workersAPIImpl) List(ctx context.Context, searchQuery manifest.SearchQu
 func (m *workersAPIImpl) Get(ctx context.Context, id manifest.ResourceName) (result manifest.ResourceManifest, exist bool, err error) {
 	var model WorkerInstance
 	exist, err = m.store.GetByName(ctx, &model, id)
-	result = model.ToManifest()
+	result = m.withPresence(model, time.Now())
 
 	return
+}
+
+// Heartbeat records that a worker is still there, and tells it when to report
+// next.
+//
+// The worker is identified by its session credential alone. Nothing in the
+// request body says who is calling, for the reason the claim route gives: a
+// request body is not evidence of identity, and presence that any caller could
+// assert for any worker would be worth nothing.
+func (m *workersAPIImpl) Heartbeat(ctx context.Context, session APIToken, request WorkerHeartbeatRequest) (WorkerHeartbeatResponse, error) {
+	claims, err := ParseWorkerSession(m.keys, session)
+	if err != nil {
+		return WorkerHeartbeatResponse{}, err
+	}
+
+	var worker WorkerInstance
+	if ok, err := m.store.GetByUID(ctx, &worker, claims.WorkerID); err != nil {
+		return WorkerHeartbeatResponse{}, err
+	} else if !ok {
+		// The session is valid but the registration behind it is gone -- dropped
+		// by an operator, most likely. Reported as not-found so the worker
+		// registers again instead of reporting into a record that no longer
+		// exists.
+		return WorkerHeartbeatResponse{}, bark.ErrResourceNotFound
+	}
+
+	if m.presence != nil {
+		if found, err := m.presence.RecordContact(ctx, claims.WorkerID, time.Now(), WorkerContactHeartbeat, request.Leaving); err != nil {
+			return WorkerHeartbeatResponse{}, err
+		} else if !found {
+			return WorkerHeartbeatResponse{}, bark.ErrResourceNotFound
+		}
+	}
+
+	return WorkerHeartbeatResponse{
+		Interval: m.heartbeatInterval,
+		// Told rather than left to be discovered by having claims refused: a
+		// paused worker can then stop asking, and its logs say why.
+		Paused: worker.Status.IsPaused,
+	}, nil
 }
 
 // SetPaused takes a single worker out of service, or puts it back.

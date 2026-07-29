@@ -244,6 +244,41 @@ func apiRoutes(srv urth.Service, natsConn *nats.Conn, metrics *prometheus.Regist
 			bark.Ok(ctx, registration)
 		})
 
+		// Worker liveness, authenticated by the worker's session.
+		//
+		// Grouped with the other session-authenticated worker routes rather than
+		// under /workers/:id, because the caller's identity comes from the token
+		// and nothing else: a heartbeat that named the worker it was for would
+		// let anyone report presence on anyone's behalf.
+		v1.POST("/auth/workers/heartbeat", bark.AuthBearerAPI(), func(ctx *gin.Context) {
+			var request urth.WorkerHeartbeatRequest
+			// Bound leniently: an empty body is the ordinary heartbeat, and
+			// requiring `{}` of every worker every interval would be ceremony.
+			if ctx.Request.ContentLength > 0 {
+				if err := ctx.ShouldBindJSON(&request); err != nil {
+					bark.AbortWithError(ctx, http.StatusBadRequest, err)
+					return
+				}
+			}
+
+			session := urth.APIToken(bark.RequireBearerToken(ctx))
+			response, err := srv.Workers().Heartbeat(ctx.Request.Context(), session, request)
+			if err != nil {
+				// A dropped registration is 404 so the worker re-registers; a bad
+				// or expired session is 401 so it stops.
+				if errors.Is(err, bark.ErrResourceNotFound) {
+					bark.AbortWithError(ctx, http.StatusNotFound, err)
+					return
+				}
+
+				bark.AbortWithError(ctx, http.StatusUnauthorized, err)
+				return
+			}
+
+			ctx.Header(bark.HTTPHeaderCacheControl, "no-store")
+			bark.Ok(ctx, response)
+		})
+
 		// Job claim, authenticated by the worker's session.
 		//
 		// Unlike the legacy /auth//scenarios route below, this one derives the
@@ -671,6 +706,13 @@ var appCli struct {
 	SessionTTL     time.Duration `help:"How long an issued worker session remains valid" default:"1h"`
 	MaxRunDuration time.Duration `help:"Maximum time a worker may hold a run capability" default:"30m"`
 
+	// Worker liveness. The interval is what the server asks workers to report
+	// at; the timeout is derived from it unless set, so the two cannot be
+	// configured into contradicting each other.
+	WorkerHeartbeatInterval time.Duration `name:"worker.heartbeat-interval" help:"How often a worker is asked to report that it is still there" default:"1m"`
+	WorkerOfflineAfter      time.Duration `name:"worker.offline-after" help:"How long a liveness signal may go unheard before it counts as offline. Zero derives it from the heartbeat interval" default:"0"`
+	WorkerRetention         time.Duration `name:"worker.retention" help:"How long a worker silent on every signal is kept before its registration is dropped" default:"24h"`
+
 	// Control loops are configured by the package that composes them, so that a
 	// command hosting them elsewhere offers the same flags rather than a second
 	// set that drifted. See ADR 0006.
@@ -761,10 +803,19 @@ func main() {
 	keys, err := appCli.Signing.Build()
 	grace.SuccessRequired(err, "failed to prepare token signing keys")
 
+	// Worker liveness is written straight to its columns rather than through the
+	// resource store, because recording it is not a resource edit: it happens on
+	// a timer forever, and a resource Save would bump metadata.version every
+	// interval. See urth.WorkerPresenceStore.
+	presence := urth.NewWorkerPresenceStore(db)
+
 	serviceOptions := []urth.ServiceOption{
 		urth.WithSigningKeys(keys),
 		urth.WithSessionTTL(appCli.SessionTTL),
 		urth.WithMaxRunDuration(appCli.MaxRunDuration),
+		urth.WithWorkerPresence(presence),
+		urth.WithWorkerHeartbeatInterval(appCli.WorkerHeartbeatInterval),
+		urth.WithWorkerOfflineAfter(appCli.WorkerOfflineAfter),
 	}
 
 	var natsConn *nats.Conn
@@ -786,6 +837,12 @@ func main() {
 	// pretending it repaired something.
 	var channels urth.RunnerChannelReconciler
 
+	// presenceWatcher records the NATS half of worker liveness. Nil for a
+	// transport with no broker to be present on, in which case workers report
+	// that signal as `unknown` -- the honest answer, and the one that keeps the
+	// reconciler from evicting them.
+	var presenceWatcher *natsq.PresenceWatcher
+
 	switch appCli.Transport {
 	case "nats":
 		natsScheduler, nerr := natsq.NewScheduler(context.TODO(), appCli.NATS)
@@ -798,13 +855,23 @@ func main() {
 		// the JetStream handle and the naming, so having it answer "where does
 		// this runner collect work" keeps one component responsible for the
 		// topology.
-		serviceOptions = append(serviceOptions, urth.WithWorkerTransport(natsScheduler))
+		serviceOptions = append(serviceOptions,
+			urth.WithWorkerTransport(natsScheduler),
+			// The same handle answers "who is waiting at this runner's queue",
+			// which is the fleet-level cross-check on per-worker presence.
+			urth.WithRunnerChannelObserver(natsScheduler),
+		)
 
 		// A separate connection for log tailing, so a browser holding a slow
 		// stream open cannot interfere with job publication.
 		natsConn, err = appCli.NATS.Connect("urth-api-server-logs")
 		grace.SuccessRequired(err, "failed to connect to NATS for run log streaming")
 		defer natsConn.Drain()
+
+		// Worker presence shares that connection. It is a handful of empty
+		// messages a minute per worker, and the traffic it competes with is a
+		// browser tailing a run.
+		presenceWatcher = natsq.NewPresenceWatcher(natsConn, presence)
 	default:
 		scheduler, err = redqueue.NewScheduler(context.TODO(), appCli.MessageBrokerURL)
 		grace.SuccessRequired(err, "failed to create a scheduler")
@@ -828,12 +895,23 @@ func main() {
 		Publisher: publisher,
 		Channels:  channels,
 		MaxJobAge: appCli.NATS.MaxJobAge,
+
+		WorkerRetention: appCli.WorkerRetention,
 		// Reuses the log-streaming connection rather than opening a third: an
 		// advisory subscription is idle almost all the time, and the traffic it
 		// competes with is a browser tailing a run.
 		Advisories: controllers.AdvisoryWatcherFor(natsConn, urth.NewAdvisoryRecorder(db, store)),
 	})
 	grace.SuccessRequired(err, "failed to compose the control loops")
+
+	// Added directly rather than through controllers.Register: that package
+	// composes the *dispatch* loops, and worker liveness is not one of them. It
+	// still wants the manager's supervision, so a panic recording presence
+	// restarts the watcher instead of taking the API server down.
+	if presenceWatcher != nil {
+		grace.SuccessRequired(controllerManager.Add("worker-presence", presenceWatcher),
+			"failed to register the worker presence watcher")
+	}
 
 	controllerManager.Start(ctx)
 

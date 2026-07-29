@@ -16,6 +16,16 @@ import StatTile from '../components/StatTile.jsx'
 import WorkerList from '../components/WorkerList.jsx'
 import TextSpan, {TextDiv} from '../components/TextSpan.js'
 import {formatRelative} from '../utils/time.js'
+import {isOnline} from '../utils/presence.js'
+
+// How often the page re-reads the fleet while someone is looking at it.
+//
+// Liveness is the one thing on this page that changes on its own: a worker that
+// stopped a minute ago has to turn grey without the reader pressing anything, or
+// the page reports a fleet that no longer exists. Comfortably shorter than the
+// server's reporting interval, so a state change is visible within a refresh of
+// the server noticing it.
+const REFRESH_INTERVAL_MS = 15000
 
 const PageContainer = styled.div`
   width: 100%;
@@ -89,14 +99,23 @@ const RunnerDetail = ({runnerId}) => {
   const workers = useSelector((s) => s.workers[runnerId]) || {}
 
   useEffect(() => {
-    dispatch(fetchRunner(runnerId))
-    dispatch(fetchWorkers(runnerId))
+    const refresh = () => {
+      dispatch(fetchRunner(runnerId))
+      dispatch(fetchWorkers(runnerId))
+    }
+
+    refresh()
+
+    const timer = setInterval(refresh, REFRESH_INTERVAL_MS)
+    return () => clearInterval(timer)
   }, [runnerId])
 
   const workerList = useMemo(() => workers.response?.data || [], [workers.response])
   const pausedCount = useMemo(() => workerList.filter((w) => w.status?.paused).length, [workerList])
+  const onlineCount = useMemo(() => workerList.filter(isOnline).length, [workerList])
 
   const manifest = runner.response
+  const channel = manifest?.status?.channel
 
   // Disabling a runner stops new workers registering and stops the ones already
   // connected from claiming further jobs. Runs already in flight are left alone.
@@ -172,12 +191,31 @@ const RunnerDetail = ({runnerId}) => {
             value={spec?.maxInstance ? `${workerList.length}/${spec.maxInstance}` : workerList.length}
             detail={spec?.maxInstance ? 'registered / limit' : 'registered'}
           />
+          {/* Registered is a count of records; online is a count of workers actually
+              reporting. The gap between them is the number worth looking at. */}
+          <StatTile
+            caption="Online"
+            value={`${onlineCount}/${workerList.length}`}
+            color={onlineCount ? 'success' : 'neutral'}
+            detail={onlineCount === workerList.length ? 'all reporting' : 'reporting on both paths'}
+          />
           <StatTile
             caption="Paused"
             value={pausedCount}
             color={pausedCount ? 'warning' : 'neutral'}
             detail={pausedCount ? 'not taking jobs' : null}
           />
+          {/* Hidden entirely rather than shown as zeroes when the transport cannot
+              be read: an authoritative-looking "0 waiting" from a broker nobody
+              asked would be worse than saying nothing. */}
+          {channel?.observed && (
+            <StatTile
+              caption="Queue"
+              value={channel.pullers}
+              color={channel.pullers ? 'success' : 'neutral'}
+              detail={`workers waiting · ${channel.pending} job(s) queued`}
+            />
+          )}
           <StatTile caption="Created" value={formatRelative(metadata.creationTimestamp)} />
         </StatsRow>
 
@@ -208,8 +246,10 @@ const RunnerDetail = ({runnerId}) => {
         </SectionHeader>
 
         <TextDiv size="small" level={4} style={{marginBottom: '0.75rem'}}>
-          Every process that authenticated with this runner&apos;s token. Pause one to take it out of service without
-          disturbing the rest of the pool; drop one to revoke a registration that should not be here.
+          Every process that authenticated with this runner&apos;s token. Liveness is reported over two independent
+          paths — the API server and NATS — so a worker with one of them broken is named as such rather than simply
+          shown as absent. Pause one to take it out of service without disturbing the rest of the pool; drop one to
+          revoke a registration that should not be here.
         </TextDiv>
 
         {workers.fetching && !workers.response && <SpinnerInlay />}

@@ -35,6 +35,7 @@ type Transport interface {
 	urth.DispatchPublisher
 	urth.WorkerTransportProvider
 	urth.RunnerChannelReconciler
+	urth.RunnerChannelObserver
 }
 
 type scheduler struct {

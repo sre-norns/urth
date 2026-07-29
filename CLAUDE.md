@@ -93,6 +93,32 @@ both returned 200 and changed nothing. Resource edits now use `saveResource()`
 `store.Update` calls**: the job-claim path in `resultsAPIImpl.Auth` relies on the
 version-guarded update to lose the race when two workers reach for the same run.
 
+**Worker liveness must never be written through `saveResource`.** Recording that
+a worker is alive is not a resource edit: it happens on a timer, forever, for
+every worker. `ObjectMeta.BeforeSave` in wyrd increments `Version` on every gorm
+`Save`, so routing a heartbeat through `CreateOrUpdate` would bump a worker's
+resource version every interval — the version would stop meaning "this record was
+edited", and the version-guarded delete behind the UI's Drop button would fail
+against a version that was current a minute ago. `WorkerPresenceStore` writes the
+columns with `UpdateColumns`, which also skips the `updated_at` refresh that
+`Updates` would do. Both properties have tests; both were measured against a live
+Postgres, not assumed. And note the asymmetry that surprised me: `Updates` with a
+*map* does **not** bump the version (the version is not a key), so a test using
+it as the counter-example proves nothing — `presence_store_test.go` guards
+against the resource-save path and against `updated_at` separately.
+
+**Presence is two signals, deliberately not one.** A worker reaches Urth over
+HTTPS to the api-server and over NATS to its queue, and either can fail alone.
+`status.lastSeenTime` (heartbeat *or* run claim — a busy worker proves itself by
+working) and `status.natsLastSeenTime` are stored and reported separately, and
+`WorkerPresenceAt` combines them into `online` / `offline` / `api-unreachable` /
+`nats-unreachable` / `unknown`. The worker publishes both **unconditionally**: if
+the NATS announcement were skipped when the heartbeat failed, `api-unreachable`
+could never be observed, which is the case the split exists for. `unknown` is a
+real third state — the asynq prototype reports neither signal, and records
+predating this feature have neither — and it is what keeps the reconciler's
+eviction pass off them.
+
 **Labels have a grammar and violating it is silent or fatal.** Values must match
 `^[[:alnum:]]$|^[a-zA-Z0-9][a-zA-Z0-9_.\-]*[a-zA-Z0-9]$`. MIME types (`text/plain`),
 file extensions (`.png`) and VCS build versions (`…+dirty`) all fail it. Artifact

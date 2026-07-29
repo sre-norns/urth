@@ -42,6 +42,44 @@ type WorkerInstanceStatus struct {
 	// record written before this existed -- or by any code path that forgets it
 	// -- keeps taking jobs rather than silently going dark.
 	IsPaused bool `form:"paused" json:"paused,omitempty" yaml:"paused,omitempty" xml:"paused,omitempty"`
+
+	// LastSeenTime is when this worker last reached the API server, by any
+	// authenticated route -- see WorkerPresenceAt for what the two liveness
+	// signals mean and why they are kept apart.
+	//
+	// TIMESTAMPTZ, like every other time column here: plain TIMESTAMP in Postgres
+	// is *without* time zone, so a local wall clock is stored naive and read back
+	// as UTC, putting every reading out by the server's offset.
+	LastSeenTime *time.Time `form:"lastSeenTime,omitempty" json:"lastSeenTime,omitempty" yaml:"lastSeenTime,omitempty" xml:"lastSeenTime,omitempty" gorm:"type:TIMESTAMPTZ NULL"`
+
+	// LastSeenVia is which evidence that was: a heartbeat says the process is
+	// up, a claim says it is up and taking work.
+	LastSeenVia WorkerContact `form:"lastSeenVia,omitempty" json:"lastSeenVia,omitempty" yaml:"lastSeenVia,omitempty" xml:"lastSeenVia,omitempty"`
+
+	// NATSLastSeenTime is when this worker was last heard on its runner's queue.
+	//
+	// Independent of LastSeenTime and stored separately, because the point is
+	// that one may move while the other does not: that is the difference between
+	// a worker that cannot reach the API and one that cannot reach the broker.
+	NATSLastSeenTime *time.Time `form:"natsLastSeenTime,omitempty" json:"natsLastSeenTime,omitempty" yaml:"natsLastSeenTime,omitempty" xml:"natsLastSeenTime,omitempty" gorm:"type:TIMESTAMPTZ NULL"`
+
+	// LeftAt is when this worker announced it was shutting down.
+	//
+	// A courtesy, never a guarantee: a worker killed outright, panicking, or cut
+	// off says nothing, and the reporting timeout is what covers those. It is
+	// worth having because a clean stop is the common case and waiting out a
+	// timeout to show it would make the fleet view feel broken.
+	LeftAt *time.Time `form:"leftAt,omitempty" json:"leftAt,omitempty" yaml:"leftAt,omitempty" xml:"leftAt,omitempty" gorm:"type:TIMESTAMPTZ NULL"`
+
+	// Presence is the liveness verdict, computed when the record is read and
+	// never stored -- the arrangement of RunnerStatus.NumberInstances and
+	// ScenarioStatus.NextRun.
+	//
+	// Computed rather than persisted so there is one definition of the rule and
+	// no background job whose lag becomes part of the answer. Deliberately not a
+	// label either: presence changes every interval, and labels are an indexed
+	// search surface, not a place to write telemetry.
+	Presence WorkerPresenceReport `form:"presence" json:"presence" yaml:"presence" xml:"presence" gorm:"-"`
 }
 
 // RunnerSpec holds information about a runner as supplied by the administrator to register one
@@ -66,6 +104,16 @@ type RunnerStatus struct {
 
 	// Instances of this runner that are currently active
 	Instances []WorkerInstance `json:"activeInstances,omitempty" yaml:"activeInstances,omitempty" gorm:"foreignKey:RunnerID;references:UID"`
+
+	// Channel is what the transport can see of this runner's queue, read when
+	// the runner is fetched on its own and never stored.
+	//
+	// The fleet-level counterpart to per-worker presence: it needs no
+	// cooperation from any worker, so when every worker has gone quiet but the
+	// queue still shows waiting pulls, what broke is the reporting rather than
+	// the fleet. Nothing on the dispatch path consults it -- see
+	// RunnerChannelObserver.
+	Channel RunnerChannelStatus `json:"channel" yaml:"channel" gorm:"-"`
 }
 
 // CronSchedule is a type to represent cron-like schedule: "@daily" or "0 */5 * * * *"

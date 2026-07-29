@@ -53,6 +53,32 @@ type (
 		IsPaused bool `form:"paused" json:"paused" yaml:"paused" xml:"paused"`
 	}
 
+	// WorkerHeartbeatRequest is a worker reporting that it is still there.
+	//
+	// It carries no identity: the session credential the request is authenticated
+	// with says which worker this is, and a body that named one would be an
+	// invitation to report presence on another worker's behalf.
+	WorkerHeartbeatRequest struct {
+		// Leaving marks the last report of a worker that is shutting down, so
+		// the fleet view updates at once rather than waiting out the timeout.
+		// Best-effort by nature -- a worker that is killed sends nothing.
+		Leaving bool `form:"leaving,omitempty" json:"leaving,omitempty" yaml:"leaving,omitempty" xml:"leaving,omitempty"`
+	}
+
+	// WorkerHeartbeatResponse tells a worker how to keep reporting.
+	WorkerHeartbeatResponse struct {
+		// Interval is how long to wait before reporting again. The server owns
+		// the cadence -- it is the same number the offline timeout is derived
+		// from, and a worker choosing its own could be declared dead while
+		// reporting exactly as often as it meant to.
+		Interval time.Duration `form:"interval" json:"interval" yaml:"interval" xml:"interval"`
+
+		// Paused reports that an operator has taken this worker out of service.
+		// Advisory: the server refuses its claims regardless, but a worker that
+		// knows can say so in its log instead of appearing to fail.
+		Paused bool `form:"paused" json:"paused" yaml:"paused" xml:"paused"`
+	}
+
 	// AuthJobRequest is a job authorization request: a worker sends it to take
 	// a job, if allowed.
 	//

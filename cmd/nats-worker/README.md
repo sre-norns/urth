@@ -84,6 +84,36 @@ process table to every user on the host.
 | `--timeout` | Per-run ceiling. The server's deadline still wins if it is shorter |
 | `--[no-]stream-logs` | Publish run output live. On by default |
 | `--nats.url` | Overridden by whatever the API server returns at registration |
+| `--heartbeat-interval` | Starting cadence for liveness reports. The server's answer wins |
+
+## Reporting that it is alive
+
+The worker reports liveness on both paths it has, every interval, **independently
+of each other**:
+
+- an HTTP heartbeat to `POST /api/v1/auth/workers/heartbeat`, authenticated by
+  its session; and
+- an empty NATS message on `urth.v1.presence.<runner-uid>.<worker-uid>`.
+
+The independence is the point. These two paths fail separately, and the server
+combines them into a diagnosis — a worker on its queue but silent to the API
+cannot claim the work it is being offered, while one heartbeating but absent from
+NATS has nowhere to collect work from. Making the announcement conditional on the
+heartbeat succeeding would collapse that back into "absent" and lose it.
+
+Neither failure is fatal here. A worker that cannot report is still a worker that
+can run probes; the control plane draws its own conclusion from the silence, and
+the attempt repeats next interval. The cadence comes from the heartbeat response
+rather than the flag, because the timeout the server judges workers by is derived
+from the same number — a worker picking its own could be declared dead while
+reporting exactly as often as it meant to.
+
+Claiming a run counts too, so a busy worker is confirmed alive by its work and
+never waits out an interval to be believed.
+
+On a clean shutdown it sends one last heartbeat marked `leaving`, so the fleet
+view updates at once rather than after the timeout. Best-effort by nature: a
+worker killed outright, panicking, or cut off sends nothing.
 
 ## Live logs
 
