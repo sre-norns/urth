@@ -461,6 +461,32 @@ func (c *workersAPIClient) Delete(ctx context.Context, id manifest.VersionedReso
 	return c.deleteResource(ctx, fmt.Sprintf("v1/workers/%v", id.ID), id.Version)
 }
 
+// Heartbeat reports that this worker is still there.
+//
+// The session goes in the Authorization header and the worker's identity is read
+// from it server-side, so there is no worker ID in the path or the body.
+func (c *workersAPIClient) Heartbeat(ctx context.Context, session APIToken, request WorkerHeartbeatRequest) (result WorkerHeartbeatResponse, err error) {
+	data, err := json.Marshal(request)
+	if err != nil {
+		return result, err
+	}
+
+	targetAPI := urlForPath(c.baseURL, "v1/auth/workers/heartbeat", nil)
+	resp, err := c.postWithAuth(ctx, targetAPI, string(session), nil, bytes.NewReader(data))
+	if err != nil {
+		return result, err
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusOK, http.StatusAccepted:
+		err = json.NewDecoder(resp.Body).Decode(&result)
+		return
+	default:
+		return result, readAPIError(resp)
+	}
+}
+
 type runnersAPIClient struct {
 	RestAPIClient
 }

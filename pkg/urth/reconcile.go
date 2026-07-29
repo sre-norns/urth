@@ -158,6 +158,14 @@ type ReconcileStore interface {
 
 	// ActiveRunnerUIDs lists the runners that should have a live queue.
 	ActiveRunnerUIDs(ctx context.Context) ([]manifest.ResourceID, error)
+
+	// SilentWorkers lists registrations quiet on every liveness signal since
+	// before cutoff. Workers that have never reported at all are excluded --
+	// they are `unknown`, not offline, and there is no evidence to act on.
+	SilentWorkers(ctx context.Context, cutoff time.Time, limit int) ([]WorkerInstance, error)
+
+	// DropWorker revokes one worker's registration.
+	DropWorker(ctx context.Context, worker WorkerInstance) (bool, error)
 }
 
 // RunnerChannelReconciler is the transport's half of reconciliation.
@@ -214,6 +222,10 @@ type ReconcileReport struct {
 	// RestoredChannels counts runner queues that had to be recreated.
 	RestoredChannels int `json:"restoredChannels" yaml:"restoredChannels"`
 
+	// EvictedWorkers counts registrations dropped after going silent on every
+	// liveness signal for longer than the retention window.
+	EvictedWorkers int `json:"evictedWorkers" yaml:"evictedWorkers"`
+
 	// Failures counts repairs that were attempted and did not land. A scan
 	// continues past them: one unreachable broker is no reason to leave every
 	// expired lease in place.
@@ -228,7 +240,8 @@ type ReconcileReport struct {
 // Repaired reports how many inconsistencies this scan resolved.
 func (r ReconcileReport) Repaired() int {
 	return r.ExpiredRunning + r.ExpiredPending + r.Redispatched +
-		r.RetiredDispatches + r.DroppedMessages + r.ReleasedLeases + r.RestoredChannels
+		r.RetiredDispatches + r.DroppedMessages + r.ReleasedLeases + r.RestoredChannels +
+		r.EvictedWorkers
 }
 
 // ReconcileStatus is the reconciler's own health, as distinct from what any one
@@ -261,12 +274,13 @@ type Reconciler struct {
 	store    ReconcileStore
 	channels RunnerChannelReconciler
 
-	holder         string
-	interval       time.Duration
-	lease          time.Duration
-	batchSize      int
-	pendingTimeout time.Duration
-	leaseGrace     time.Duration
+	holder          string
+	interval        time.Duration
+	lease           time.Duration
+	batchSize       int
+	pendingTimeout  time.Duration
+	leaseGrace      time.Duration
+	workerRetention time.Duration
 
 	mu          sync.Mutex
 	last        ReconcileReport
@@ -309,6 +323,14 @@ func WithExecutionLeaseGrace(value time.Duration) ReconcilerOption {
 	return func(r *Reconciler) { r.leaseGrace = value }
 }
 
+// WithWorkerRetention sets how long a worker silent on every liveness signal is
+// kept before its registration is dropped. Zero disables eviction, which leaves
+// dead registrations listed forever -- tolerable where worker names are stable,
+// less so where every restart mints a new one.
+func WithWorkerRetention(value time.Duration) ReconcilerOption {
+	return func(r *Reconciler) { r.workerRetention = value }
+}
+
 // WithRunnerChannels gives the reconciler the transport's half. Without it,
 // runner queues and withdrawn messages are left alone -- which is the right
 // behaviour for a transport that has no such notion, not a degraded mode.
@@ -319,12 +341,13 @@ func WithRunnerChannels(value RunnerChannelReconciler) ReconcilerOption {
 // NewReconciler builds a reconciler over authoritative state.
 func NewReconciler(store ReconcileStore, options ...ReconcilerOption) *Reconciler {
 	reconciler := &Reconciler{
-		store:          store,
-		holder:         fmt.Sprintf("reconciler-%s", NewRandToken(8)),
-		interval:       DefaultReconcileInterval,
-		lease:          DefaultReconcileLease,
-		batchSize:      DefaultReconcileBatchSize,
-		pendingTimeout: DefaultPendingDispatchTimeout,
+		store:           store,
+		holder:          fmt.Sprintf("reconciler-%s", NewRandToken(8)),
+		interval:        DefaultReconcileInterval,
+		lease:           DefaultReconcileLease,
+		batchSize:       DefaultReconcileBatchSize,
+		pendingTimeout:  DefaultPendingDispatchTimeout,
+		workerRetention: DefaultWorkerRetention,
 		// The capability a worker holds outlives its deadline by this much, so
 		// that a run using its whole budget can still report. Expiring at the
 		// deadline itself would bump the Result's version out from under an
@@ -399,6 +422,7 @@ func (r *Reconciler) RunOnce(ctx context.Context) (ReconcileReport, error) {
 		r.reconcilePendingDispatches(ctx, &report),
 		r.retireStaleDispatches(ctx, &report),
 		r.reconcileRunnerChannels(ctx, &report),
+		r.evictSilentWorkers(ctx, &report),
 	)
 
 	report.Duration = time.Since(report.StartedAt)
@@ -426,11 +450,11 @@ func (r *Reconciler) log(report ReconcileReport, err error) {
 	}
 
 	log.Printf("reconciler %q repaired %d in %v (running-expired=%d pending-expired=%d redispatched=%d "+
-		"retired=%d dropped=%d leases=%d channels=%d failures=%d oldest=%v)",
+		"retired=%d dropped=%d leases=%d channels=%d workers-evicted=%d failures=%d oldest=%v)",
 		r.holder, report.Repaired(), report.Duration,
 		report.ExpiredRunning, report.ExpiredPending, report.Redispatched,
 		report.RetiredDispatches, report.DroppedMessages, report.ReleasedLeases,
-		report.RestoredChannels, report.Failures, report.OldestInconsistent)
+		report.RestoredChannels, report.EvictedWorkers, report.Failures, report.OldestInconsistent)
 
 	if err != nil {
 		log.Printf("reconciler %q: %v", r.holder, err)
@@ -516,6 +540,60 @@ func (r *Reconciler) expireAbandonedRuns(ctx context.Context, report *ReconcileR
 		default:
 			report.ExpiredRunning++
 			log.Printf("run %q expired: %s", candidate.Name, reason)
+		}
+	}
+
+	return errs
+}
+
+// evictSilentWorkers drops registrations of workers that stopped reporting.
+//
+// A worker's registration is not self-cleaning: nothing deletes it when the
+// process goes away, so without this the fleet view accumulates every worker
+// that ever registered. That is bearable where worker names are stable and
+// steadily worse where they are not -- a container or pod that mints a new name
+// on each restart leaves one dead row behind per restart, and the page that is
+// meant to show who is running becomes a history of who ever ran.
+//
+// Two things it deliberately does not do. It never touches a worker that has
+// reported nothing at all: that is `unknown`, the state of the asynq prototype
+// and of every record predating liveness reporting, and deleting on an absence
+// of evidence is how you take a working fleet offline. And it requires *both*
+// signals to be silent, so a worker still announcing itself over NATS survives
+// however long its route to the API server has been broken -- that case wants an
+// operator, not a deletion.
+//
+// Evicting a worker does not disturb its runner or anything queued for it, and
+// the worker may register again at any time. This drops a registration; it does
+// not bar a worker.
+func (r *Reconciler) evictSilentWorkers(ctx context.Context, report *ReconcileReport) error {
+	if r.workerRetention <= 0 {
+		return nil
+	}
+
+	cutoff := time.Now().Add(-r.workerRetention)
+
+	candidates, err := r.store.SilentWorkers(ctx, cutoff, r.batchSize)
+	if err != nil {
+		report.Failures++
+		return fmt.Errorf("failed to list workers that have gone silent: %w", err)
+	}
+
+	var errs error
+	for _, candidate := range candidates {
+		switch dropped, err := r.store.DropWorker(ctx, candidate); {
+		case err != nil:
+			report.Failures++
+			errs = errors.Join(errs, fmt.Errorf("failed to evict silent worker %q: %w", candidate.Name, err))
+		case !dropped:
+			// The version guard rejected the write: the worker re-registered
+			// between this scan reading it and the delete. It is back, so there
+			// is nothing to evict.
+			log.Printf("worker %q came back before it could be evicted", candidate.Name)
+		default:
+			report.EvictedWorkers++
+			log.Printf("evicted worker %q, silent on every signal since before %v",
+				candidate.Name, cutoff.UTC().Format(time.RFC3339))
 		}
 	}
 

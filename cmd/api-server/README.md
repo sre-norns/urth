@@ -474,6 +474,106 @@ and the subject filter — the field a deployment that keyed consumers on runner
 *names* would have wrong — is updated in place without disturbing the queued
 messages. Guarding it would block the repair.
 
+## Worker liveness
+
+Nothing used to record that a worker was alive. A `WorkerInstance` row was
+written at registration and then sat there, so a worker whose process had been
+gone for a week rendered exactly like one running: registered, and therefore
+green.
+
+Liveness is now reported over **two independent signals**, and they are kept
+apart on purpose. A worker reaches Urth over HTTPS to this server and over NATS
+to its queue; either can fail on its own, and which one failed is the diagnosis.
+
+| | NATS presence | no NATS presence |
+|---|---|---|
+| **API contact** | `online` | `nats-unreachable` — the broker is down or its port blocked; the worker is healthy and has nowhere to collect work from |
+| **no API contact** | `api-unreachable` — the worker is parked on its queue but cannot reach this server; it will be offered work and can claim none of it | `offline` |
+
+A fifth state, `unknown`, means neither signal has *ever* been seen: a record
+written before this existed, or a worker that does not report — `asynq-runner`
+does not. It is a distinct state rather than a synonym for offline because
+asserting a worker dead on no evidence would be a worse answer than the green dot
+this replaced, and because it is what keeps the reconciler from evicting those
+registrations.
+
+**API contact** is any authenticated arrival from the worker's session:
+
+- `POST /api/v1/auth/workers/heartbeat`, authenticated by the session bearer
+  token. Nothing in the body identifies the caller — the same rule the claim
+  route follows, since a request body is not evidence of identity. The response
+  carries the interval to report at next (this server owns the cadence, because
+  the offline timeout is derived from the same number) and whether an operator
+  has paused the worker. A valid session whose registration has been dropped gets
+  **404**, which is the worker's cue to register again rather than report into
+  nothing.
+- **claiming a run.** A worker taking a steady stream of jobs is confirmed alive
+  by its work, without a single extra request and without waiting out an
+  interval. Recorded as `status.lastSeenVia = claim`, so a reader can tell "the
+  process is up" from "the process is up and taking work".
+
+**NATS presence** is an empty message the worker publishes on
+`urth.v1.presence.<runner-uid>.<worker-uid>`, recorded by the `worker-presence`
+control loop. Core NATS, not JetStream, for the reason run logs are: it is worth
+nothing once stale, and a dropped message costs one interval of resolution. The
+runner UID precedes the worker UID so publish permission can be scoped to a
+runner's own prefix; the recording write additionally requires the worker to be a
+member of the runner it announced under, which closes the gap that scoping alone
+leaves.
+
+The worker publishes both **unconditionally**. Skipping the announcement when the
+heartbeat failed is the obvious economy and would make `api-unreachable`
+unobservable — the case the split exists for.
+
+A worker shutting down cleanly sends a final `{"leaving": true}`, so stopping one
+shows up at once instead of after the timeout. It is a courtesy, never a
+guarantee: a worker killed outright, panicking, or cut off sends nothing, and the
+timeout covers those.
+
+Liveness is written straight to its columns rather than through the resource
+store — see `urth.WorkerPresenceStore` for why, and CLAUDE.md for the trap.
+It is **not** a label: presence changes every interval, and labels are an indexed
+search surface rather than a place to write telemetry.
+
+Nothing here affects scheduling. A run placed on a runner whose workers are all
+offline still queues, which is the durable-channel behaviour ADR 0004 requires.
+
+### Eviction
+
+The reconciler drops registrations silent on **both** signals for longer than
+`--worker.retention`, counted as `evictedWorkers`. Without it the fleet view
+accumulates every worker that ever registered — bearable where worker names are
+stable, steadily worse where a container mints a new one per restart.
+
+Two things it will not do: it never touches a worker that has reported nothing at
+all (`unknown`), and it requires both signals to be quiet, so a worker still
+announcing over NATS survives however long its API route has been broken. That
+case wants an operator, not a deletion.
+
+Evicting a worker does not disturb its runner or anything queued for it, and the
+worker may register again. This drops a registration; it does not bar a worker.
+
+### Queue observation
+
+`GET /api/v1/runners/:id` also reports `status.channel` — how many worker pull
+requests are parked on that runner's JetStream consumer, and how much is queued.
+It needs no cooperation from any worker, so it is the cross-check on the presence
+workers report about themselves: every worker quiet while the queue still shows
+waiting pulls means the reporting broke, not the fleet.
+
+Read only on the single-runner fetch, never on the list, which would be one
+broker round trip per runner on a page load. It is bounded at two seconds and any
+failure degrades to `observed: false` rather than failing the request — a client
+must show nothing rather than an authoritative-looking zero.
+
+### Configuration
+
+| Flag | Default | Notes |
+|---|---|---|
+| `--worker.heartbeat-interval` | `1m` | What workers are told to report at. Affordable at a minute because claims and the goodbye cover the fast cases. |
+| `--worker.offline-after` | `0` | How long a signal may go unheard before it counts as offline. Zero derives it as 3× the interval, so the two cannot be configured into contradiction. |
+| `--worker.retention` | `24h` | How long a doubly-silent worker is kept. `0` disables eviction. |
+
 ## Metrics
 
 `GET /metrics`, in Prometheus exposition format. Registered outside `/api/v1`

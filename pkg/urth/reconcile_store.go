@@ -126,6 +126,46 @@ func (s *reconcileStore) ExpiredRuns(ctx context.Context, cutoff time.Time, limi
 	return results, nil
 }
 
+// SilentWorkers lists registrations that have gone quiet on every signal.
+//
+// The first predicate is the load-bearing one: a worker with neither timestamp
+// has never reported at all, which is `unknown` rather than offline, and
+// evicting on no evidence would delete the asynq prototype's registrations and
+// every record written before liveness reporting existed. Silence is only
+// meaningful from something that was once heard.
+//
+// Both signals must be quiet. A worker still announcing itself over NATS is
+// present, however long its route to the API server has been broken -- that is
+// the api-unreachable case, which wants an operator, not a deletion.
+func (s *reconcileStore) SilentWorkers(ctx context.Context, cutoff time.Time, limit int) ([]WorkerInstance, error) {
+	var workers []WorkerInstance
+
+	// COALESCE to the zero time rather than testing each column for NULL: a
+	// signal never heard is older than any cutoff, and spelling that out in SQL
+	// keeps the predicate the same shape as WorkerInstanceStatus.IsSilent.
+	err := s.scan(ctx).
+		Where("status_last_seen_time IS NOT NULL OR status_nats_last_seen_time IS NOT NULL").
+		Where("COALESCE(status_last_seen_time, ?) < ?", time.Time{}, cutoff).
+		Where("COALESCE(status_nats_last_seen_time, ?) < ?", time.Time{}, cutoff).
+		Order("uid ASC").
+		Limit(limit).
+		Find(&workers).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to query workers that have gone silent: %w", err)
+	}
+
+	return workers, nil
+}
+
+// DropWorker revokes one worker's registration.
+//
+// Through dbstore rather than a bulk delete, so the soft-delete and version
+// bookkeeping are exactly the API's: a worker the reconciler drops and one an
+// operator drops should leave the same trace.
+func (s *reconcileStore) DropWorker(ctx context.Context, worker WorkerInstance) (bool, error) {
+	return s.store.Delete(ctx, &WorkerInstance{}, worker.UID, worker.Version)
+}
+
 func (s *reconcileStore) StalePendingRuns(ctx context.Context, cutoff time.Time, limit int) ([]PendingRun, error) {
 	var results []Result
 

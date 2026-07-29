@@ -159,6 +159,19 @@ looks deceptively like passing.
 "As a user, I want to be save a set of tags that can be quickly acceessed when I use the app UI"
 
 ## Workers / Prob Runners
+[X] Worker liveness. A stopped worker used to render exactly like a running one: nothing
+   ever recorded that a worker was alive, and re-registration at ⅔ of a 1h session was far
+   too coarse to be a signal. Two independent signals are now recorded — API contact
+   (heartbeat *or* run claim) and NATS presence — and combined into
+   `online`/`offline`/`api-unreachable`/`nats-unreachable`/`unknown`, so a half-connected
+   worker is diagnosed rather than merely marked absent. Closes ADR 0003 §7's liveness
+   clause. See `cmd/api-server/README.md`.
+[] Worker detail page — the per-worker breakdown of both signals wants more room than a
+   list row. Filed as review-backlog task 023.
+[~] Capacity-aware placement (review-backlog task 014) now has a real capacity signal to
+   use: `RunnerStatus.Channel` reports parked pull requests per runner, and worker presence
+   distinguishes registered from actually-reporting. Placement still deliberately ignores
+   both — a run for an all-offline runner queues, per ADR 0004.
 [~] Workers should talk to API servers over gRPC -- reconsidered. ADR 0004 evaluated direct
    gRPC streams as the job backbone and rejected them: they would require Urth to implement
    durable offline queues, redelivery, and backpressure itself. gRPC may still be worth it

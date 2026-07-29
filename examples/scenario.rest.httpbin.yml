@@ -1,19 +1,17 @@
 apiVersion: v1
 kind: scenarios
 metadata:
-  name: basic-rest-self-prober-http
+  name: rest-httpbin-probe
   labels:
     app: web-prob
     function: front-end
 spec:
-  description: "HTTP prober checking api/version every 5 minutes"
+  description: "HTTP prober checking httpbin every 8 minutes"
   active: true
-  schedule: "@5minutes"
+  schedule: "@8minutes"
   requirements:
     matchLabels:
-      os: "linux"
-    matchSelector:
-      - { key: "envX", operator: "NotIn",  values: ["dev", "testing"] }
+      env: "dev"
   prob:
     kind: rest
     spec:

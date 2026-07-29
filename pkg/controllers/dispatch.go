@@ -79,6 +79,14 @@ type Dependencies struct {
 	// and claimable.
 	MaxJobAge time.Duration
 
+	// WorkerRetention is how long a worker silent on every liveness signal is
+	// kept before the reconciler drops its registration. Zero disables eviction.
+	//
+	// Passed in rather than configured here because it belongs with the other
+	// worker-liveness settings the command owns -- the reporting interval and the
+	// offline timeout are the numbers this has to be comfortably larger than.
+	WorkerRetention time.Duration
+
 	// Advisories watches for dispatches the transport has abandoned. Nil for a
 	// transport with no such notion, in which case that loop is not registered.
 	Advisories Loop
@@ -133,6 +141,7 @@ func Register(manager *Manager, cfg Config, deps Dependencies) (Dispatch, error)
 			urth.WithReconcileBatchSize(cfg.ReconcileBatchSize),
 			urth.WithPendingDispatchTimeout(deps.MaxJobAge+cfg.PendingDispatchGrace),
 			urth.WithRunnerChannels(deps.Channels),
+			urth.WithWorkerRetention(deps.WorkerRetention),
 		)
 
 		if err := manager.Add("dispatch-reconciler", dispatch.Reconciler); err != nil {

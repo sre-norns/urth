@@ -54,6 +54,11 @@ type workerConfig struct {
 
 	APIRegistrationTimeout time.Duration `help:"Maximum time alloted for this worker to register with API server" default:"1m"`
 
+	// HeartbeatInterval is only the starting cadence. The server answers every
+	// heartbeat with the interval it wants, and that wins -- the timeout it
+	// judges workers by is derived from the same number.
+	HeartbeatInterval time.Duration `help:"How often to report that this worker is still alive, until the server says otherwise" default:"1m"`
+
 	// StreamLogs publishes run output live. Worth turning off on a constrained
 	// link: with nobody watching, the lines are discarded at the NATS server,
 	// so the cost is the worker's own upstream bandwidth.
@@ -137,6 +142,10 @@ type worker struct {
 	runnerUID  manifest.ResourceID
 
 	conn *nats.Conn
+
+	// presence announces this worker on its runner's subject. Built once the
+	// NATS connection and the worker's identity both exist.
+	presence *natsq.PresencePublisher
 }
 
 func (w *worker) currentSession() urth.APIToken {
@@ -202,7 +211,10 @@ func (w *worker) run(ctx context.Context) error {
 	}
 	defer w.conn.Drain()
 
+	w.presence = natsq.NewPresencePublisher(w.conn, w.runnerUID, w.workerMeta.UID)
+
 	go w.renewSession(ctx)
+	go w.reportPresence(ctx)
 
 	return w.consume(ctx, consumer)
 }
@@ -286,4 +298,91 @@ func (w *worker) renewSession(ctx context.Context) {
 
 		log.Print("worker session renewed")
 	}
+}
+
+// reportPresence tells the control plane this worker is still here, over both
+// paths it has.
+//
+// The two reports are made independently and neither is conditional on the
+// other, which is the entire point. A worker reaches Urth over HTTPS to the API
+// server and over NATS to its queue; either can fail alone, and which one failed
+// is the diagnosis. Skipping the announcement when the heartbeat failed -- the
+// obvious economy -- would make a worker that has lost only its API route
+// indistinguishable from one that has gone away, which is exactly the case this
+// exists to tell apart.
+//
+// Failures are logged and survived, like session renewal: a worker that cannot
+// report is still a worker that can run probes, and the control plane draws its
+// own conclusions from the silence.
+func (w *worker) reportPresence(ctx context.Context) {
+	interval := w.config.HeartbeatInterval
+	if interval < urth.MinWorkerHeartbeatInterval {
+		interval = urth.MinWorkerHeartbeatInterval
+	}
+
+	// Announce once immediately so a freshly started worker shows as present
+	// without waiting out an interval first.
+	w.announce()
+	interval = w.heartbeat(ctx, interval, false)
+
+	for {
+		select {
+		case <-ctx.Done():
+			w.leave()
+			return
+		case <-time.After(interval):
+		}
+
+		w.announce()
+		interval = w.heartbeat(ctx, interval, false)
+	}
+}
+
+// announce publishes this worker's presence on its runner's subject.
+func (w *worker) announce() {
+	if err := w.presence.Announce(); err != nil {
+		log.Printf("failed to announce presence over NATS: %v", err)
+	}
+}
+
+// heartbeat reports to the API server and returns the interval to wait next.
+//
+// The server owns the cadence: it is the same number the offline timeout is
+// derived from, so a worker choosing its own could be declared dead while
+// reporting exactly as often as it intended. The value is floored so that a
+// misconfigured server cannot turn this into a busy loop.
+func (w *worker) heartbeat(ctx context.Context, current time.Duration, leaving bool) time.Duration {
+	response, err := w.apiClient.Workers().Heartbeat(ctx, w.currentSession(), urth.WorkerHeartbeatRequest{Leaving: leaving})
+	if err != nil {
+		log.Printf("failed to report worker heartbeat: %v", err)
+		return current
+	}
+
+	if response.Paused {
+		// Said out loud because the symptom otherwise is claims that are refused
+		// for no visible reason. The server enforces the pause regardless; this
+		// only makes the worker's own log explain itself.
+		log.Print("this worker is paused by an operator and will not be given work")
+	}
+
+	if response.Interval >= urth.MinWorkerHeartbeatInterval {
+		return response.Interval
+	}
+
+	return current
+}
+
+// leave makes a final report so the fleet view updates at once.
+//
+// A courtesy, never a guarantee -- a worker that is killed outright, panics, or
+// loses its link says nothing, and the offline timeout is what covers those. It
+// is worth doing because a clean stop is the common case, and waiting out a
+// timeout to reflect one makes the fleet view look broken.
+func (w *worker) leave() {
+	// Detached from the worker's context, which is already cancelled: this
+	// request exists precisely because the process is going away.
+	leaveCtx, cancel := context.WithTimeout(context.WithoutCancel(context.Background()), 5*time.Second)
+	defer cancel()
+
+	w.heartbeat(leaveCtx, 0, true)
 }

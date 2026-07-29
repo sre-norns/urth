@@ -10,6 +10,7 @@ import TextSpan, {TextDiv} from './TextSpan.js'
 import ObjectCapsules from './ObjectCapsules.jsx'
 import {formatRelative} from '../utils/time.js'
 import {LabelWorker} from '../utils/labels.js'
+import {conditionOf, contactSuffix, describePresence, lastSeenAt} from '../utils/presence.js'
 
 const List = styled.div`
   display: flex;
@@ -38,6 +39,11 @@ const Platform = styled.div`
   min-width: 9rem;
 `
 
+const State = styled.div`
+  min-width: 10rem;
+  text-align: right;
+`
+
 const Actions = styled.div`
   display: flex;
   flex-direction: row;
@@ -54,11 +60,30 @@ const platformOf = (worker) => {
   return os && arch ? `${os}/${arch}` : os || arch || '—'
 }
 
+// A paused worker is described as paused whatever its liveness says: an
+// operator's decision is the more important fact about it, and a paused worker
+// that is also offline is still, first, one somebody took out of service.
+const describeWorker = (worker) => {
+  const presence = describePresence(conditionOf(worker))
+
+  if (isPaused(worker)) {
+    return {
+      label: 'paused',
+      color: 'warning',
+      detail: presence.label === 'online' ? 'registered, not taking jobs' : `paused, and ${presence.label}`,
+    }
+  }
+
+  return presence
+}
+
 const WorkerRow = ({worker, runnerName}) => {
   const dispatch = useDispatch()
   const [busy, setBusy] = useState(false)
   const paused = isPaused(worker)
   const name = worker.metadata.name
+  const state = describeWorker(worker)
+  const lastSeen = lastSeenAt(worker)
 
   const run = useCallback(
     async (action) => {
@@ -93,13 +118,15 @@ const WorkerRow = ({worker, runnerName}) => {
 
   return (
     <Row>
-      <RagIndicator color={paused ? 'warning' : 'success'} />
+      <RagIndicator color={state.color} />
       <Identity>
         <TextDiv size="small" level={2} weight={500}>
           {name}
         </TextDiv>
         <TextDiv size="small" level={4}>
           registered {formatRelative(worker.metadata.creationTimestamp)}
+          {' · '}
+          {lastSeen ? `last seen ${formatRelative(lastSeen)}${contactSuffix(worker)}` : 'never seen'}
         </TextDiv>
       </Identity>
       <Platform>
@@ -107,11 +134,16 @@ const WorkerRow = ({worker, runnerName}) => {
           {platformOf(worker)}
         </TextSpan>
       </Platform>
-      <div>
-        <TextSpan size="small" weight={500} level={2} color={paused ? 'warning' : 'success'}>
-          {paused ? 'paused' : 'taking jobs'}
+      <State>
+        <TextSpan size="small" weight={500} level={2} color={state.color}>
+          {state.label}
         </TextSpan>
-      </div>
+        {state.detail && (
+          <TextDiv size="small" level={4}>
+            {state.detail}
+          </TextDiv>
+        )}
+      </State>
       <Actions>
         <Button size="small" color="neutral" onClick={togglePause} disabled={busy}>
           {paused ? 'Resume' : 'Pause'}
