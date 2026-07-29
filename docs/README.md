@@ -17,6 +17,7 @@ changes, add a new ADR that supersedes the old one instead of rewriting the old 
 | [0004](./adr/0004-nats-communication-backbone.md) | Accepted | Use NATS and JetStream for durable Runner jobs, resource events, and internal communication without making messaging the source of truth. |
 | [0005](./adr/0005-local-scenario-execution.md) | Accepted | Keep local CLI execution separate from managed Results, Runner placement, and Worker authority. |
 | [0006](./adr/0006-control-loop-placement.md) | Accepted | Run control loops in every API server replica by default, composed from `pkg/controllers` so extraction to a separate process stays a configuration change. |
+| [0007](./adr/0007-runner-queue-addressing.md) | Accepted | Address a Runner's queue by its immutable name so a recreated Runner reattaches to it, keep entitlement to execute a run keyed by UID in Postgres, and garbage-collect queues whose Runner is gone. Supersedes ADR 0004 §3 on addressing only. |
 
 ## Implementation review backlog
 
