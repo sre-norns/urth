@@ -1,6 +1,7 @@
 # Makefile is handcrafted to automate repetitive tasks
 
 website-dist = website/dist
+website-experiment-dist = website-experiment/dist
 
 # Postgres connection used by the local development targets below.
 # Note: the api-server's own default is `sqlite:test.sqlite`, which currently fails
@@ -36,6 +37,24 @@ website/node_modules:
 .PHONY: serve-site
 serve-site: website/node_modules  # Start Web UI
 	@cd website && npm start 
+
+website-experiment/node_modules:
+	@cd website-experiment && npm install
+
+## serve-site-experiment: Start the experimental Web UI on port 3001
+.PHONY: serve-site-experiment
+serve-site-experiment: website-experiment/node_modules
+	@cd website-experiment && npm run dev
+
+## build-site-experiment: Build the experimental Web UI without replacing the default site
+.PHONY: build-site-experiment
+build-site-experiment: website-experiment/node_modules
+	@cd website-experiment && npm run build
+
+## test-site-experiment: Run the experimental Web UI test suite
+.PHONY: test-site-experiment
+test-site-experiment: website-experiment/node_modules
+	@cd website-experiment && npm test
 
 .PHONY: run-redis-podman
 run-redis-podman: # Start redis using podman container
@@ -155,7 +174,7 @@ test/cover:
 .PHONY: clean
 clean:
 	$(RM) ./api-server ./asynq-runner ./urthctl
-	$(RM) -dr ./dist $(website-dist)
+	$(RM) -dr ./dist $(website-dist) $(website-experiment-dist)
 
 
 api-server:
