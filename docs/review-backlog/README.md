@@ -44,7 +44,7 @@ Status values:
 | 008 | P0 | ready | [Complete the Runner channel policy contract](tasks/008-runner-channel-policy.md) | — | 006, 007, 009, 014 |
 | 009 | P0 | blocked | [Add stable Worker identity and Runner blocklists](tasks/009-worker-identity-and-blocklist.md) | 005 | 004, 008 |
 | 010 | P1 | done | [Synchronously acknowledge claimed dispatches](tasks/010-synchronous-jetstream-ack.md) | — | 001, 003, 011 |
-| 011 | P1 | ready | [Exercise the NATS Worker end to end and at crash points](tasks/011-nats-worker-failure-integration-tests.md) | 001, 002, 003, 007, 010 (done) | all runtime tasks |
+| 011 | P1 | done | [Exercise the NATS Worker end to end and at crash points](tasks/011-nats-worker-failure-integration-tests.md) | 001, 002, 003, 007, 010 (done) | all runtime tasks |
 | 012 | P1 | done | [Implement an operational dead-letter workflow](tasks/012-dead-letter-workflow.md) | 003 (done) | 002, 003, 013 |
 | 013 | P1 | done | [Bound and observe JetStream assets](tasks/013-bound-and-observe-jetstream.md) | — | 004, 012 |
 | 014 | P2 | done | [Make Runner placement capacity-aware](tasks/014-capacity-aware-runner-placement.md) | — | 008 |
@@ -57,7 +57,7 @@ Status values:
 | 021 | P1 | blocked | [Address Runner queues by name and reap orphaned ones](tasks/021-name-keyed-runner-queues.md) | 022 | 004, 013, 014, 016 |
 | 022 | P1 | ready | [Recheck execution requirements at claim time](tasks/022-recheck-requirements-at-claim.md) | — | 008, 014, 018, 021 |
 | 023 | P2 | done | [Give a Worker its own detail page](tasks/023-worker-detail-page.md) | — | 016 |
-| 024 | P1 | blocked | [Exercise authorization end to end](tasks/024-authorization-integration-scenarios.md) | 004, 005, 006, 009, 011 | 004, 005, 006, 009 |
+| 024 | P1 | blocked | [Exercise authorization end to end](tasks/024-authorization-integration-scenarios.md) | 004, 005, 006, 009, 011 (done) | 004, 005, 006, 009 |
 | 025 | P2 | ready | [Make `urthctl get script` work](tasks/025-urthctl-script-parity.md) | — | 017 |
 
 Priority meanings:
@@ -71,7 +71,7 @@ Priority meanings:
 
 ```text
 Claim lifecycle: 001 ─┐
-                      ├─→ 011 harness + crash boundaries (ready: all deps done)
+                      ├─→ 011 harness + crash boundaries (done: test/integration)
 Durability:      002 ─┤
                   003 ┤
                   007 ┤
@@ -108,8 +108,16 @@ git diff --check
 
 `make audit/postgres` is what CI runs, and it needs a Postgres —
 `make run-postgres-podman`. Plain `go test ./...` and `make audit` silently skip
-every test that needs a real transaction or real row locking, so they are not
-sufficient evidence for a task in the Durability workstream.
+every test that needs a real transaction or real row locking — and, since task
+011, the whole of `test/integration` — so they are not sufficient evidence for a
+task in the Durability workstream.
+
+`test/integration` is the harness task 011 built and the place a task should add
+a scenario when its failure crosses process boundaries. It composes the real
+router (`pkg/apiserver`) and the real worker loop (`pkg/worker`) against a
+private Postgres schema and an embedded broker, so it can express failures no
+unit test can: a claim whose response was lost, a relay that died mid-publish, a
+worker that went away holding a lease.
 
 Tasks changing Web UI behavior also run `(cd website && npm test)`. Tasks changing
 NATS or distributed lifecycle behavior must include focused integration tests that

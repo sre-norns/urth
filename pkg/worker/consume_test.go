@@ -1,4 +1,4 @@
-package main
+package worker
 
 import (
 	"context"
@@ -368,9 +368,9 @@ func (s stubResults) ClaimRun(context.Context, manifest.ResourceID, urth.APIToke
 	return s.auth, s.err
 }
 
-func newTestWorker(claimErr error) *worker {
-	return &worker{
-		config:      &workerConfig{RunnerConfig: runner.NewDefaultConfig()},
+func newTestWorker(claimErr error) *Worker {
+	return &Worker{
+		config:      &Config{RunnerConfig: runner.NewDefaultConfig()},
 		apiClient:   stubService{results: stubResults{err: claimErr}},
 		claimBudget: 5 * time.Second,
 		ackBudget:   time.Second,

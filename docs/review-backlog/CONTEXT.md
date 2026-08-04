@@ -124,11 +124,21 @@ silently weaken them.
   issuance/validation, and authoritative state transitions.
 - `pkg/natsq/`: NATS naming, stream/consumer provisioning, dispatch envelope,
   publication, and transient live-log transport.
-- `cmd/api-server/`: HTTP status mapping and composition of store, scheduler,
-  signing keys, transport provider, and log streaming.
-- `cmd/nats-worker/`: enrollment, session renewal, NATS connection, pull/claim/ack,
+- `pkg/apiserver/`: the route table with its HTTP status mapping, and composition
+  of store, scheduler, signing keys, transport provider, control loops and log
+  streaming.
+- `cmd/api-server/`: the process around `pkg/apiserver` — flags, the database
+  connection, the listener, and shutdown.
+- `pkg/worker/`: enrollment, session renewal, NATS connection, pull/claim/ack,
   execution, and reporting.
-- `pkg/runner/`: probe execution and Worker capability/label production.
+- `cmd/nats-worker/`: the process around `pkg/worker` — flags, the enrolment
+  secret, and the API client.
+- `test/integration/`: the whole dispatch path across Postgres, HTTP, JetStream
+  and a real Worker loop, one scenario per row of ADR 0004's failure table.
+- `pkg/runner/`: probe execution and Worker capability/label production. The name
+  is a pre-existing misnomer: it holds *probe execution*, not the Runner
+  resource, which is why `pkg/worker` sits awkwardly beside it. Renaming it is
+  not worth the churn; knowing it is.
 - `pkg/redqueue/` and `cmd/asynq-runner/`: migration-only legacy transport.
 - `website/`: resource UI and live run-log client.
 - `cmd/urthctl/`: kubectl-shaped CLI over every resource, and a co-equal operator
@@ -175,5 +185,8 @@ website npm test               12 files, 152 tests passed
 git diff --check               pass
 ```
 
-Those checks do not provide an end-to-end registration/claim/execution test and
-do not exercise the crash boundaries named in ADR 0004. Task 011 owns that gap.
+Those checks did not provide an end-to-end registration/claim/execution test and
+did not exercise the crash boundaries named in ADR 0004. Task 011 closed that
+gap: `test/integration` now runs the whole path, and `make audit/postgres` is
+what turns it on. `make audit` alone still skips it, so a green run of that is
+not evidence for anything in the Durability workstream.

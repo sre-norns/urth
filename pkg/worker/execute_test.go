@@ -1,4 +1,4 @@
-package main
+package worker
 
 import (
 	"context"
@@ -118,9 +118,9 @@ func (s stubStatusResults) UpdateStatus(ctx context.Context, _ manifest.Versione
 	return bark.CreatedResponse{}, err
 }
 
-func newReportingWorker(rec *reportRecorder) *worker {
-	return &worker{
-		config: &workerConfig{RunnerConfig: runner.NewDefaultConfig()},
+func newReportingWorker(rec *reportRecorder) *Worker {
+	return &Worker{
+		config: &Config{RunnerConfig: runner.NewDefaultConfig()},
 		apiClient: stubService{
 			results:   stubStatusResults{rec: rec},
 			artifacts: stubArtifacts{rec: rec},

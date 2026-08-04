@@ -999,6 +999,20 @@ func (m *resultsAPIImpl) Auth(ctx context.Context, resultName manifest.ResourceN
 // the same authorization back -- otherwise a dropped packet strands a run that
 // the server already believes is executing. A *different* worker asking for the
 // same run still loses, which is what keeps the race safe.
+// isReclaim reports whether a claim is the same worker asking again for the same
+// dispatch of a run it already holds.
+//
+// All three conditions matter. A different worker asking about a running run is
+// a stale redelivery; the same worker presenting a *different* dispatch ID is
+// answering a newer message for a run it holds under an older one; and a run
+// that is not running has not been claimed by anyone yet. Only the exact repeat
+// is idempotent, and it is the one a lost claim response produces.
+func isReclaim(entry Result, workerUID manifest.ResourceID, dispatchID string) bool {
+	return entry.Status.Status == JobRunning &&
+		entry.Status.Executor.WorkerID == workerUID &&
+		entry.Status.DispatchID == dispatchID
+}
+
 func (m *resultsAPIImpl) ClaimRun(ctx context.Context, resultUID manifest.ResourceID, session APIToken, request ClaimJobRequest) (AuthJobResponse, error) {
 	claims, err := ParseWorkerSession(m.keys, session)
 	if err != nil {
@@ -1041,7 +1055,22 @@ func (m *resultsAPIImpl) ClaimRun(ctx context.Context, resultUID manifest.Resour
 	// The dispatch must describe the Result as it now is. A message published
 	// for an older version has been overtaken -- the run was rescheduled or
 	// amended -- and executing it would run a stale definition.
-	if request.ResultVersion != 0 && request.ResultVersion != entry.Version {
+	//
+	// Unless the newer version is this claim's own. A claim commits by writing
+	// the Result, which bumps its version; a worker whose claim committed and
+	// whose *response* was lost retries with the version its queue message
+	// carried, which is now one behind. Reading that as "overtaken" refuses the
+	// one retry the dispatch ID exists to permit: the worker sees 409, correctly
+	// acknowledges the message away as describing work that no longer needs
+	// doing, and the run it is entitled to execute -- and which the control plane
+	// already records as running, leased, to this very worker -- sits there until
+	// its lease expires. One lost response, one lost run.
+	//
+	// So the re-claim is recognised here and settled by the idempotent case
+	// below, which re-issues the authorization that was lost rather than
+	// granting a new one.
+	if request.ResultVersion != 0 && request.ResultVersion != entry.Version &&
+		!isReclaim(entry, worker.UID, request.DispatchID) {
 		log.Printf("rejecting claim for %q: dispatch is for version %v, current is %v",
 			entry.Name, request.ResultVersion, entry.Version)
 		return AuthJobResponse{}, claimObsolete("dispatch superseded by newer result version")
@@ -1074,7 +1103,7 @@ func (m *resultsAPIImpl) ClaimRun(ctx context.Context, resultUID manifest.Resour
 
 	// The idempotent case: this worker already holds this run.
 	if entry.Status.Status == JobRunning {
-		if entry.Status.Executor.WorkerID == worker.UID && entry.Status.DispatchID == request.DispatchID {
+		if isReclaim(entry, worker.UID, request.DispatchID) {
 			log.Printf("worker %q re-claiming %q for dispatch %v; re-issuing authorization",
 				worker.Name, entry.Name, request.DispatchID)
 			return m.authorizeRun(ctx, entry, entry.Status.Deadline)

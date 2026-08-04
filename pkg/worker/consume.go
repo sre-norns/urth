@@ -1,4 +1,4 @@
-package main
+package worker
 
 import (
 	"context"
@@ -50,7 +50,7 @@ const (
 )
 
 // consume pulls jobs and executes them, up to the configured concurrency.
-func (w *worker) consume(ctx context.Context, consumer jetstream.Consumer) error {
+func (w *Worker) consume(ctx context.Context, consumer jetstream.Consumer) error {
 	// The whole claim handshake has to fit inside the consumer's AckWait, and the
 	// consumer is the only place a worker can learn what that is -- it has the
 	// client half of the NATS configuration (URL and credentials) and never the
@@ -75,71 +75,121 @@ func (w *worker) consume(ctx context.Context, consumer jetstream.Consumer) error
 		case slots <- struct{}{}:
 		}
 
-		batch, err := consumer.Fetch(1, jetstream.FetchMaxWait(5*time.Second))
-		if err != nil {
-			<-slots
-
-			if ctx.Err() != nil {
-				inFlight.Wait()
-				return nil
-			}
-
-			// A fetch failure is usually a reconnect in progress. The NATS
-			// client reconnects on its own, so this backs off rather than
-			// tearing the worker down -- a worker inside someone else's network
-			// that exits on a blip becomes an operator callout.
-			log.Printf("failed to fetch jobs: %v", err)
-			select {
-			case <-ctx.Done():
-				inFlight.Wait()
-				return nil
-			case <-time.After(2 * time.Second):
-			}
-			continue
-		}
-
-		var received bool
-		for msg := range batch.Messages() {
-			if received {
-				// Only the first message uses the slot reserved before the fetch.
-				// Fetch(1) means there should never be a second -- but the slot
-				// accounting must not depend on that: every handler releases a
-				// slot when it finishes, so a batch that returned two messages
-				// against one reservation would drain the semaphore and wedge the
-				// fetch loop permanently. Blocking here is ordinary backpressure
-				// and resolves as soon as a running handler finishes.
-				select {
-				case <-ctx.Done():
-					inFlight.Wait()
-					return nil
-				case slots <- struct{}{}:
-				}
-			}
-
-			received = true
-			inFlight.Add(1)
-
-			go func(msg jetstream.Msg) {
-				defer inFlight.Done()
-				defer func() { <-slots }()
-
-				w.handle(ctx, msg)
-			}(msg)
-		}
-
-		if err := batch.Error(); err != nil {
-			log.Printf("job batch ended with error: %v", err)
-		}
-
-		if !received {
-			// Nothing waiting; release the slot we reserved for it.
-			<-slots
+		if !w.pump(ctx, consumer, slots, &inFlight) {
+			inFlight.Wait()
+			return nil
 		}
 	}
 }
 
+// Pull timings.
+//
+// fetchMaxWait is how long one pull waits for work before it is reissued;
+// fetchHeartbeat is how often the server must say something during it. The
+// heartbeat is set explicitly because nats.go only supplies one for windows of
+// ten seconds or more, and this window is deliberately shorter -- see pump.
+const (
+	fetchMaxWait    = 5 * time.Second
+	fetchHeartbeat  = 1500 * time.Millisecond
+	fetchRetryPause = 2 * time.Second
+)
+
+// pump fetches at most one job and hands it to a handler, reporting whether the
+// consume loop should carry on.
+//
+// The caller has already reserved a slot for the message this fetch may return;
+// pump releases it again on every path that does not start a handler.
+//
+// Both bounds on the fetch are load-bearing, and neither was there before.
+//
+// The *context* is what makes a shutdown prompt: a pull is a request-reply, and
+// waiting out its window before noticing that the process is stopping made a
+// worker take seconds longer to exit than it needed to -- or, when the pull was
+// one the broker was never going to answer, not exit at all.
+//
+// The *heartbeat* is the more serious of the two. A pull request lost to a
+// reconnect leaves the client waiting on a reply to an inbox the server has
+// forgotten; with no heartbeat there is nothing to notice that with. The worker
+// stays connected, keeps registering, keeps reporting itself alive, and quietly
+// consumes nothing at all -- which is the worst shape a failure can take here,
+// because every other signal says the fleet is healthy. Found by
+// test/integration, where a broker restart mid-suite reproduced it.
+func (w *Worker) pump(ctx context.Context, consumer jetstream.Consumer, slots chan struct{}, inFlight *sync.WaitGroup) bool {
+	// Cancelled only once the batch has been drained: the batch is filled by a
+	// goroutine watching this context, so cancelling it early would discard
+	// messages the broker has already handed over.
+	fetchCtx, cancelFetch := context.WithTimeout(ctx, fetchMaxWait)
+	defer cancelFetch()
+
+	batch, err := consumer.Fetch(1,
+		jetstream.FetchContext(fetchCtx),
+		jetstream.FetchHeartbeat(fetchHeartbeat),
+	)
+	if err != nil {
+		<-slots
+
+		if ctx.Err() != nil {
+			return false
+		}
+
+		// A fetch failure is usually a reconnect in progress. The NATS client
+		// reconnects on its own, so this backs off rather than tearing the
+		// worker down -- a worker inside someone else's network that exits on a
+		// blip becomes an operator callout.
+		log.Printf("failed to fetch jobs: %v", err)
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(fetchRetryPause):
+		}
+
+		return true
+	}
+
+	var received bool
+	for msg := range batch.Messages() {
+		if received {
+			// Only the first message uses the slot reserved before the fetch.
+			// Fetch(1) means there should never be a second -- but the slot
+			// accounting must not depend on that: every handler releases a
+			// slot when it finishes, so a batch that returned two messages
+			// against one reservation would drain the semaphore and wedge the
+			// fetch loop permanently. Blocking here is ordinary backpressure
+			// and resolves as soon as a running handler finishes.
+			select {
+			case <-ctx.Done():
+				return false
+			case slots <- struct{}{}:
+			}
+		}
+
+		received = true
+		inFlight.Add(1)
+
+		go func(msg jetstream.Msg) {
+			defer inFlight.Done()
+			defer func() { <-slots }()
+
+			w.handle(ctx, msg)
+		}(msg)
+	}
+
+	// Only while the worker is still meant to be running. A batch ended by the
+	// shutdown above reports the cancellation, which is not news.
+	if err := batch.Error(); err != nil && ctx.Err() == nil {
+		log.Printf("job batch ended with error: %v", err)
+	}
+
+	if !received {
+		// Nothing waiting; release the slot we reserved for it.
+		<-slots
+	}
+
+	return true
+}
+
 // budgetHandshake divides the consumer's AckWait between claim and ack.
-func (w *worker) budgetHandshake(consumer jetstream.Consumer) {
+func (w *Worker) budgetHandshake(consumer jetstream.Consumer) {
 	var ackWait time.Duration
 	if info := consumer.CachedInfo(); info != nil {
 		ackWait = info.Config.AckWait
@@ -152,7 +202,7 @@ func (w *worker) budgetHandshake(consumer jetstream.Consumer) {
 }
 
 // handle claims and executes one delivered job.
-func (w *worker) handle(ctx context.Context, msg jetstream.Msg) {
+func (w *Worker) handle(ctx context.Context, msg jetstream.Msg) {
 	envelope, err := natsq.UnmarshalEnvelope(msg.Data())
 	report := w.reportDispatchFailure(ctx, msg, envelope, err == nil)
 
@@ -210,7 +260,7 @@ func (w *worker) handle(ctx context.Context, msg jetstream.Msg) {
 }
 
 // confirmClaimAck is the worker's ackConfirmer, bound to its handshake budget.
-func (w *worker) confirmClaimAck(ctx context.Context, msg jetstream.Msg) error {
+func (w *Worker) confirmClaimAck(ctx context.Context, msg jetstream.Msg) error {
 	return confirmAck(ctx, msg, w.ackBudget, w.metrics)
 }
 
@@ -221,7 +271,7 @@ func (w *worker) confirmClaimAck(ctx context.Context, msg jetstream.Msg) error {
 // execution -- is a statement about whether and when a probe runs. Asserting
 // that needs a stand-in for the probe; the alternative is proving the ordering
 // against a real prob, which tests the prober rather than the handshake.
-func (w *worker) runJob(ctx context.Context, envelope natsq.DispatchEnvelope, auth urth.AuthJobResponse) {
+func (w *Worker) runJob(ctx context.Context, envelope natsq.DispatchEnvelope, auth urth.AuthJobResponse) {
 	if w.executeJob != nil {
 		w.executeJob(ctx, envelope, auth)
 		return
@@ -296,7 +346,7 @@ func applyDisposition(ctx context.Context, msg jetstream.Msg, outcome claimOutco
 }
 
 // claim asks the API server for authority to run the job.
-func (w *worker) claim(ctx context.Context, envelope natsq.DispatchEnvelope) (urth.AuthJobResponse, claimOutcome) {
+func (w *Worker) claim(ctx context.Context, envelope natsq.DispatchEnvelope) (urth.AuthJobResponse, claimOutcome) {
 	// Bounded by this worker's share of the handshake budget rather than by a
 	// number of its own, so that a claim which runs long enough to make its
 	// acknowledgement meaningless is abandoned instead. See handshakeBudget.

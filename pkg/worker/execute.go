@@ -1,4 +1,4 @@
-package main
+package worker
 
 import (
 	"context"
@@ -17,7 +17,7 @@ import (
 )
 
 // execute runs a claimed job and reports its outcome.
-func (w *worker) execute(ctx context.Context, envelope natsq.DispatchEnvelope, auth urth.AuthJobResponse) {
+func (w *Worker) execute(ctx context.Context, envelope natsq.DispatchEnvelope, auth urth.AuthJobResponse) {
 	if auth.Prob.Spec == nil {
 		// The execution snapshot arrives with the claim, so an empty one means
 		// the server authorised a run it could not describe. Reporting it as a
@@ -69,7 +69,7 @@ func (w *worker) execute(ctx context.Context, envelope natsq.DispatchEnvelope, a
 }
 
 // runTimeout picks how long to allow the probe, respecting the server's lease.
-func (w *worker) runTimeout(auth urth.AuthJobResponse) time.Duration {
+func (w *Worker) runTimeout(auth urth.AuthJobResponse) time.Duration {
 	timeout := w.config.RunnerConfig.Timeout
 
 	if auth.Prob.Timeout > 0 && auth.Prob.Timeout < timeout {
@@ -97,7 +97,7 @@ func (w *worker) runTimeout(auth urth.AuthJobResponse) time.Duration {
 const uploadReserve = 15 * time.Second
 
 // report uploads artifacts and the final status under the run capability.
-func (w *worker) report(ctx context.Context, envelope natsq.DispatchEnvelope, auth urth.AuthJobResponse, runResult urth.ResultStatus, artifacts []urth.ArtifactSpec) {
+func (w *Worker) report(ctx context.Context, envelope natsq.DispatchEnvelope, auth urth.AuthJobResponse, runResult urth.ResultStatus, artifacts []urth.ArtifactSpec) {
 	// Reporting gets its own context, deliberately not derived from the run's.
 	// The run context is cancelled the moment the probe finishes or times out,
 	// and uploading through it means a timed-out run reports nothing at all --
@@ -192,7 +192,7 @@ const reportTimeout = 2 * time.Minute
 const reportConcurrency = 4
 
 // reportFailure records a run the worker could not even start.
-func (w *worker) reportFailure(ctx context.Context, auth urth.AuthJobResponse, reason string) {
+func (w *Worker) reportFailure(ctx context.Context, auth urth.AuthJobResponse, reason string) {
 	reportCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), reportTimeout)
 	defer cancel()
 

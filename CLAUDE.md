@@ -20,10 +20,12 @@ Read `README.md` for the user-facing version. It is accurate as of this session.
 ## Layout
 
 ```
-cmd/api-server/     REST API, owns all resources, places and dispatches runs.
-                    Also hosts the outbox relay and the reconciler.
-cmd/nats-worker/    the worker: claims jobs from JetStream, executes, uploads.
+pkg/apiserver/      REST API, owns all resources, places and dispatches runs.
+                    Also composes the outbox relay and the reconciler.
+cmd/api-server/     the process around it: flags, DB connection, listener, shutdown.
+pkg/worker/         the worker: claims jobs from JetStream, executes, uploads.
                     This is the one ADR 0004 describes.
+cmd/nats-worker/    the process around it: flags, enrolment secret, API client.
 cmd/asynq-runner/   the Redis/asynq prototype worker. Migration-only; task 015 retires it.
 cmd/urthctl/        CLI (kubectl-shaped), co-equal with the Web UI
 pkg/urth/           domain model + service impl + REST client. The centre of gravity.
@@ -32,8 +34,18 @@ pkg/prob/           prob registry and the interface probers implement
 pkg/probers/*/      one package per prob kind (http, tcp, dns, icmp, grpc, rest, har, puppeteer…)
 pkg/runner/         probe execution, run logging, worker capability labels
 pkg/redqueue/       legacy asynq transport, retiring with cmd/asynq-runner
+test/integration/   the dispatch path end to end: real Postgres, real broker,
+                    real router, real worker loop. See below.
 website/            React UI (webpack, emotion, redux, wouter)
 ```
+
+`pkg/runner` is a misnomer worth knowing about: it holds *probe execution*, not
+the Runner resource. `pkg/worker` — which is the Runner's worker — sits beside
+it. Renaming is not worth the churn.
+
+Both binaries are thin on purpose. The router, the service composition and the
+worker loop are packages so that `test/integration` can run them in one process
+with failpoints between them; a `main` can only be tested by starting it.
 
 `pkg/urth` must not import `pkg/natsq`: transport adapters implement interfaces
 the domain package owns.
@@ -82,6 +94,15 @@ caught them:
   `make audit/postgres`, which is the same plus the tests that need a real
   database — see the Postgres note below. Run that one before pushing.
 - `cd website && npm test` — vitest, currently 204 tests in 16 files.
+- **`test/integration` is the one place the dispatch path is tested whole.** Every
+  other package tests one boundary and assumes the rest, which is the arrangement
+  that hid the acknowledgement bug task 010 fixed and the lost-claim-response bug
+  task 011 found. It needs `URTH_TEST_POSTGRES_URL` and skips without one, so
+  `make audit` does not run it and `make audit/postgres` does. Each scenario
+  creates its own Postgres *schema* and its own embedded NATS server, so it is
+  parallel-safe and — unlike the `DropTable` fixtures in `pkg/urth` — cannot
+  destroy dev data. Adding a scenario is one `newHarness(t)` call; read
+  `test/integration/harness_test.go` first.
 - **Run it.** Several of the worst bugs this session — timestamps ten hours in
   the future, workers unable to register, resources that could not be disabled —
   were invisible to the test suite and obvious the moment a real stack ran.
@@ -215,11 +236,22 @@ when the burst began. This works only because `Create` records the runner on the
 `Result` before persisting it, so `results` knows every runner's queue depth —
 `idx_results_placement` is what keeps that query off a sequential scan.
 
+**A worker's pull must be bounded by its context and by a heartbeat.**
+`consumer.Fetch` with only `FetchMaxWait` gets no idle heartbeat — nats.go
+supplies one only for windows of ten seconds or more, and `fetchMaxWait` is
+deliberately five. A pull request lost to a reconnect then waits on a reply to an
+inbox the server has forgotten: the consume loop blocks, takes no further work,
+and ignores cancellation, while the worker stays connected, keeps re-registering
+and keeps heartbeating. Every signal an operator has says the fleet is healthy.
+`pump` (`pkg/worker/consume.go`) passes `FetchContext` *and* `FetchHeartbeat` for
+those two separate reasons — prompt shutdown, and noticing a dead pull while
+still running. Do not drop either back to a bare `FetchMaxWait`.
+
 **A claimed job is acknowledged with `DoubleAck`, budgeted from the consumer.**
 `Msg.Ack` only publishes the ack; lose the connection before the server records
 it and the message is redelivered mid-probe — and since `ClaimRun` is idempotent
 for the same worker and dispatch, that redelivery is *authorised*, not refused.
-One process, same probe, twice. `handshakeBudget` (`cmd/nats-worker/ack.go`)
+One process, same probe, twice. `handshakeBudget` (`pkg/worker/ack.go`)
 splits `consumer.CachedInfo().Config.AckWait` so claim + ack ≤ AckWait always,
 with no floor under either half — a worker granting itself more of the window
 than the operator allowed would acknowledge messages already offered elsewhere.
@@ -230,6 +262,17 @@ before the claim**, because the racing case is two deliveries claiming at once;
 and stale (409) messages keep the plain `Ack`, since nothing is executing and a
 lost one costs a redelivery and another cheap 409. That set is not durable and
 is not meant to be — the execution lease is.
+
+**A claim's own version bump is not a supersession.** `ClaimRun` refuses a
+dispatch published for an older `Result` version — the run was rescheduled and
+the message is stale. But committing a claim *writes the Result*, so a worker
+retrying after a lost claim response presents the version its queue message
+carried, which is now one behind. Refusing that gave the worker a 409, which it
+correctly acked away as stale, leaving a run in `running` — leased, to that same
+worker — until the reconciler expired it. One lost response, one lost run.
+`isReclaim` (same worker, same dispatch, still running) is the exemption, and it
+is checked *before* the version guard as well as after it. This was invisible to
+every unit test on both sides and was found by `test/integration`.
 
 **A scheduled run does not read its Scenario again.** `ResultSpec.Execution` is
 an `ExecutionSnapshot` — scenario UID/name/version, requirements, and the whole
