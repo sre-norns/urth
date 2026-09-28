@@ -219,60 +219,6 @@ func TestLegacyResultWithoutSnapshotFailsClosed(t *testing.T) {
 	require.Equal(t, urth.ReasonNoExecutionSnapshot, refused.Labels[urth.LabelResultUnschedulable])
 }
 
-// The relay must not hand a snapshot-less Result to a transport that carries the
-// job: there is nothing to carry, and no retry will produce one.
-func TestLegacyResultWithoutSnapshotIsNotDispatched(t *testing.T) {
-	srv, db, store := newTestService(t, &stubScheduler{})
-	scenario := seedScenarioWithProb(t, store, restProb(probeA))
-
-	ctx := context.Background()
-
-	created, err := srv.Results(scenario.Name).Create(ctx, newRunRequest())
-	require.NoError(t, err)
-
-	require.NoError(t, db.Model(&urth.Result{}).
-		Where("uid = ?", string(created.UID)).
-		UpdateColumn("execution", nil).Error)
-
-	entry := loadDispatch(t, db, created.UID)
-
-	scheduler := &stubScheduler{}
-	publisher := urth.NewSchedulerDispatchPublisher(scheduler, urth.NewStoreResultLoader(store))
-
-	_, err = publisher.PublishDispatch(ctx, entry)
-	require.ErrorIs(t, err, urth.ErrPermanentDispatch)
-	require.ErrorIs(t, err, urth.ErrNoExecutionSnapshot)
-	require.Empty(t, scheduler.scheduled)
-}
-
-// The legacy transport puts the whole prob in its queue message, so it is the
-// other place a scenario edit could change a queued run. It publishes what the
-// run was created with, not what the scenario has become.
-func TestLegacyDispatchPublishesTheSnapshotNotTheScenario(t *testing.T) {
-	srv, db, store := newTestService(t, &stubScheduler{})
-	scenario := seedScenarioWithProb(t, store, restProb(probeA))
-
-	ctx := context.Background()
-
-	created, err := srv.Results(scenario.Name).Create(ctx, newRunRequest())
-	require.NoError(t, err)
-
-	scenario.Spec.Prob = restProb(probeB)
-	_, err = store.CreateOrUpdate(ctx, &scenario)
-	require.NoError(t, err)
-
-	scheduler := &stubScheduler{}
-	publisher := urth.NewSchedulerDispatchPublisher(scheduler, urth.NewStoreResultLoader(store))
-
-	_, err = publisher.PublishDispatch(ctx, loadDispatch(t, db, created.UID))
-	require.NoError(t, err)
-	require.Len(t, scheduler.scheduled, 1)
-
-	published := scheduler.scheduled[0]
-	require.Equal(t, probeA, published.Spec.Execution.Prob.Spec.(*rest.Spec).Script)
-	require.Equal(t, scenario.Name, published.Spec.Execution.ScenarioName)
-}
-
 // A worker whose claim committed and whose response was lost must recover the
 // same authorization when it retries.
 //

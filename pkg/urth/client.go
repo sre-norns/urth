@@ -568,28 +568,6 @@ func (c *runnersAPIClient) GetToken(ctx context.Context, runnerName manifest.Res
 	}
 }
 
-func (c *runnersAPIClient) Auth(ctx context.Context, token APIToken, newEntry manifest.ResourceManifest) (result manifest.ResourceManifest, err error) {
-	data, err := json.Marshal(newEntry)
-	if err != nil {
-		return result, err
-	}
-
-	targetAPI := urlForPath(c.baseURL, "v1/auth/runners", nil)
-	resp, err := c.postWithAuth(ctx, targetAPI, string(token), nil, bytes.NewReader(data))
-	if err != nil {
-		return result, err
-	}
-	defer resp.Body.Close()
-
-	switch resp.StatusCode {
-	case http.StatusOK, http.StatusAccepted, http.StatusCreated:
-		err = json.NewDecoder(resp.Body).Decode(&result)
-		return
-	default:
-		return result, readAPIError(resp)
-	}
-}
-
 func (c *runnersAPIClient) AuthWorker(ctx context.Context, token APIToken, newEntry manifest.ResourceManifest) (result WorkerRegistrationResponse, err error) {
 	data, err := json.Marshal(newEntry)
 	if err != nil {
@@ -672,29 +650,6 @@ func (c *resultsAPIRestClient) Create(ctx context.Context, newEntry manifest.Res
 	}
 
 	return NewResult(resource)
-}
-
-func (c *resultsAPIRestClient) Auth(ctx context.Context, resultName manifest.ResourceName, authRequest AuthJobRequest) (result AuthJobResponse, err error) {
-	data, err := json.Marshal(authRequest)
-	if err != nil {
-		return result, err
-	}
-
-	targetAPI := urlForPath(c.baseURL, fmt.Sprintf("v1/auth/scenarios/%v/%v", c.ScenarioID, resultName), nil)
-	// TODO:require JWT to prevent replay attacks
-	resp, err := c.postWithAuth(ctx, targetAPI, "", nil, bytes.NewReader(data))
-	if err != nil {
-		return result, err
-	}
-	defer resp.Body.Close()
-
-	switch resp.StatusCode {
-	case http.StatusOK, http.StatusAccepted, http.StatusCreated:
-		err = json.NewDecoder(resp.Body).Decode(&result)
-		return
-	default:
-		return result, readAPIError(resp)
-	}
 }
 
 func (c *resultsAPIRestClient) ClaimRun(ctx context.Context, resultUID manifest.ResourceID, session APIToken, request ClaimJobRequest) (result AuthJobResponse, err error) {

@@ -1,9 +1,8 @@
 // Package natsq carries Urth jobs and run logs over NATS and JetStream.
 //
-// It occupies the same position as pkg/redqueue -- an implementation of
-// urth.Scheduler plus the worker-side machinery to consume what it publishes --
-// so that both transports can be built and run side by side while the migration
-// described in ADR 0004 proceeds.
+// It implements urth.Scheduler and the other transport interfaces pkg/urth
+// owns, plus the worker-side machinery to consume what it publishes. It is the
+// only transport since the asynq prototype was retired (ADR 0004).
 //
 // The package is named natsq rather than nats so that it does not shadow the
 // NATS client import in files that need both.

@@ -325,8 +325,8 @@ The detailed NATS review and migration work is tracked in
 [`docs/review-backlog/`](docs/review-backlog/README.md). Those task files are the source of
 truth for outbox/reconciliation, claim outcomes, NATS credentials, enrollment and run
 capabilities, immutable execution snapshots, Runner policy and blocklists, JetStream ACKs,
-failure testing, dead letters, capacity/observability, placement, and eventual Asynq
-retirement. Do not duplicate those items as flat bullets here.
+failure testing, dead letters, capacity/observability, and placement. Asynq has been
+retired (task 015). Do not duplicate those items as flat bullets here.
 
 [] Ensure DB constraints: Each Scenario ->* Result -> * Artifacts
 [] Use staw / S3 for artifacts storage!

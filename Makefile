@@ -9,16 +9,12 @@ website-experiment-dist = website-experiment/dist
 store-url ?= postgres://urth:urth@localhost:5432/urth
 
 .PHONY: run-api-server
-run-api-server: # Start API server
+run-api-server: # Start API server (needs Postgres and NATS)
 	@go run ./cmd/api-server --store.url="$(store-url)"
 
-.PHONY: run-asynq-worker
-run-asynq-worker: # Start Redis based worker
-	@go run ./cmd/asynq-runner
-
+# Kept as an alias: NATS used to be opt-in, and docs and habits still name it.
 .PHONY: run-api-server-nats
-run-api-server-nats: # Start API server using the NATS/JetStream transport
-	@go run ./cmd/api-server --store.url="$(store-url)" --transport=nats
+run-api-server-nats: run-api-server
 
 # The enrolment token comes from the environment or a file rather than a flag:
 # an argument is visible in the process table to every user on the host.
@@ -55,10 +51,6 @@ build-site-experiment: website-experiment/node_modules
 .PHONY: test-site-experiment
 test-site-experiment: website-experiment/node_modules
 	@cd website-experiment && npm test
-
-.PHONY: run-redis-podman
-run-redis-podman: # Start redis using podman container
-	@podman run -p 6379:6379 redis
 
 .PHONY: run-postgres-podman
 run-postgres-podman: # Start postgres using podman container
@@ -173,15 +165,15 @@ test/cover:
 ## clean: remove build artifacts
 .PHONY: clean
 clean:
-	$(RM) ./api-server ./asynq-runner ./urthctl
+	$(RM) ./api-server ./nats-worker ./urthctl
 	$(RM) -dr ./dist $(website-dist) $(website-experiment-dist)
 
 
 api-server:
 	go build ./cmd/api-server
 
-asynq-runner:
-	go build ./cmd/asynq-runner
+nats-worker:
+	go build ./cmd/nats-worker
 
 urthctl:
 	go build ./cmd/urthctl
@@ -189,4 +181,4 @@ urthctl:
 $(website-dist):
 	cd website && npm run build
 
-build: api-server $(website-dist) asynq-runner
+build: api-server $(website-dist) nats-worker

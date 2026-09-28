@@ -27,7 +27,6 @@ import (
 
 	"github.com/sre-norns/urth/pkg/controllers"
 	"github.com/sre-norns/urth/pkg/natsq"
-	"github.com/sre-norns/urth/pkg/redqueue"
 	"github.com/sre-norns/urth/pkg/urth"
 	"github.com/sre-norns/wyrd/pkg/dbstore"
 
@@ -54,12 +53,6 @@ import (
 	_ "github.com/sre-norns/urth/pkg/probers/tcp"
 )
 
-// Transport names a job transport this server can be composed with.
-const (
-	TransportNATS  = "nats"
-	TransportAsynq = "asynq"
-)
-
 // Config is everything an operator can set about an API server.
 //
 // The kong tags are the command's flag definitions and are load-bearing: kong
@@ -73,12 +66,9 @@ type Config struct {
 	Signing urth.SigningKeysConfig `embed:"" prefix:"signing."`
 	NATS    natsq.Config           `embed:"" prefix:"nats."`
 
-	// Transport selects the job queue. Both implementations are kept while the
-	// migration in ADR 0004 proceeds, so an operator can cut over and back
-	// without changing binaries.
-	Transport string `help:"Job transport to use: nats or asynq" enum:"nats,asynq" default:"asynq"`
-
-	MessageBrokerURL string `help:"Message broker address:port to connect to (asynq transport)" default:"localhost:6379"`
+	// Transport is accepted only so that command lines written while asynq was
+	// an alternative keep working. NATS is the only transport.
+	Transport string `help:"Job transport. Only nats remains" enum:"nats" default:"nats" hidden:""`
 
 	SessionTTL     time.Duration `help:"How long an issued worker session remains valid" default:"1h"`
 	MaxRunDuration time.Duration `help:"Maximum time a worker may hold a run capability" default:"30m"`
@@ -169,8 +159,7 @@ type Server struct {
 	// dispatch.
 	scheduler urth.Scheduler
 
-	// natsConn carries run-log streaming, presence, and advisories. Nil on the
-	// asynq transport.
+	// natsConn carries run-log streaming, presence, and advisories.
 	natsConn *nats.Conn
 
 	cfg Config
@@ -228,69 +217,44 @@ func New(ctx context.Context, db *gorm.DB, cfg Config, options ...Option) (*Serv
 		cfg:   cfg,
 	}
 
-	// publisher is what the relay hands committed outbox entries to. The two
-	// transports reach it differently: NATS publishes a dispatch envelope
-	// straight from the entry, while asynq needs the whole job and so goes
-	// through an adapter that reloads the Result. Both share one durability
-	// story, which is the point -- retiring asynq in task 015 deletes the
-	// adapter rather than a second way of dispatching.
-	var publisher urth.DispatchPublisher
+	natsScheduler, err := natsq.NewScheduler(ctx, cfg.NATS)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to NATS: %w", err)
+	}
+	server.scheduler = natsScheduler
+
+	// publisher is what the relay hands committed outbox entries to: the
+	// scheduler publishes a dispatch envelope straight from the entry.
+	var publisher urth.DispatchPublisher = natsScheduler
 
 	// channels is the transport's half of reconciliation: restoring a runner's
-	// queue and withdrawing a dispatch nothing will claim. It stays nil for the
-	// legacy transport, which has neither notion -- that is the honest answer,
-	// not a degraded mode, and the reconciler skips those passes rather than
-	// pretending it repaired something.
-	var channels urth.RunnerChannelReconciler
+	// queue and withdrawing a dispatch nothing will claim.
+	var channels urth.RunnerChannelReconciler = natsScheduler
 
-	// presenceWatcher records the NATS half of worker liveness. Nil for a
-	// transport with no broker to be present on, in which case workers report
-	// that signal as `unknown` -- the honest answer, and the one that keeps the
-	// reconciler from evicting them.
-	var presenceWatcher *natsq.PresenceWatcher
+	// The NATS scheduler doubles as the transport provider: it already owns
+	// the JetStream handle and the naming, so having it answer "where does
+	// this runner collect work" keeps one component responsible for the
+	// topology.
+	serviceOptions = append(serviceOptions,
+		urth.WithWorkerTransport(natsScheduler),
+		// The same handle answers "who is waiting at this runner's queue",
+		// which is the fleet-level cross-check on per-worker presence.
+		urth.WithRunnerChannelObserver(natsScheduler),
+	)
 
-	switch cfg.Transport {
-	case TransportNATS:
-		natsScheduler, nerr := natsq.NewScheduler(ctx, cfg.NATS)
-		if nerr != nil {
-			return nil, fmt.Errorf("failed to connect to NATS: %w", nerr)
-		}
-		server.scheduler = natsScheduler
-		publisher = natsScheduler
-		channels = natsScheduler
-
-		// The NATS scheduler doubles as the transport provider: it already owns
-		// the JetStream handle and the naming, so having it answer "where does
-		// this runner collect work" keeps one component responsible for the
-		// topology.
-		serviceOptions = append(serviceOptions,
-			urth.WithWorkerTransport(natsScheduler),
-			// The same handle answers "who is waiting at this runner's queue",
-			// which is the fleet-level cross-check on per-worker presence.
-			urth.WithRunnerChannelObserver(natsScheduler),
-		)
-
-		// A separate connection for log tailing, so a browser holding a slow
-		// stream open cannot interfere with job publication.
-		conn, cerr := cfg.NATS.Connect("urth-api-server-logs")
-		if cerr != nil {
-			_ = server.scheduler.Close()
-			return nil, fmt.Errorf("failed to connect to NATS for run log streaming: %w", cerr)
-		}
-		server.natsConn = conn
-
-		// Worker presence shares that connection. It is a handful of empty
-		// messages a minute per worker, and the traffic it competes with is a
-		// browser tailing a run.
-		presenceWatcher = natsq.NewPresenceWatcher(conn, presence)
-	default:
-		scheduler, serr := redqueue.NewScheduler(ctx, cfg.MessageBrokerURL)
-		if serr != nil {
-			return nil, fmt.Errorf("failed to create a scheduler: %w", serr)
-		}
-		server.scheduler = scheduler
-		publisher = urth.NewSchedulerDispatchPublisher(scheduler, urth.NewStoreResultLoader(store))
+	// A separate connection for log tailing, so a browser holding a slow
+	// stream open cannot interfere with job publication.
+	conn, err := cfg.NATS.Connect("urth-api-server-logs")
+	if err != nil {
+		_ = server.scheduler.Close()
+		return nil, fmt.Errorf("failed to connect to NATS for run log streaming: %w", err)
 	}
+	server.natsConn = conn
+
+	// Worker presence shares that connection. It is a handful of empty
+	// messages a minute per worker, and the traffic it competes with is a
+	// browser tailing a run.
+	presenceWatcher := natsq.NewPresenceWatcher(conn, presence)
 
 	if opts.decoratePublisher != nil {
 		publisher = opts.decoratePublisher(publisher)
@@ -329,11 +293,9 @@ func New(ctx context.Context, db *gorm.DB, cfg Config, options ...Option) (*Serv
 	// composes the *dispatch* loops, and worker liveness is not one of them. It
 	// still wants the manager's supervision, so a panic recording presence
 	// restarts the watcher instead of taking the API server down.
-	if presenceWatcher != nil {
-		if err := server.Loops.Add("worker-presence", presenceWatcher); err != nil {
-			_ = server.Close()
-			return nil, fmt.Errorf("failed to register the worker presence watcher: %w", err)
-		}
+	if err := server.Loops.Add("worker-presence", presenceWatcher); err != nil {
+		_ = server.Close()
+		return nil, fmt.Errorf("failed to register the worker presence watcher: %w", err)
 	}
 
 	server.Service = urth.NewService(store, server.scheduler, serviceOptions...)
@@ -410,9 +372,9 @@ func metricsRegistry(db *gorm.DB, scheduler urth.Scheduler, placement *urth.Plac
 	registry.MustRegister(urth.NewDispatchCollector(db, urth.NewDispatchOutbox(db)))
 	registry.MustRegister(placement)
 
-	// Only the routing transport has a stream to report on. The legacy asynq path
-	// has no equivalent, and inventing empty gauges for it would read as a queue
-	// that is always empty rather than one nobody is measuring.
+	// Stream metrics come from the transport when it offers them. A stand-in
+	// that has no stream registers nothing, rather than empty gauges that would
+	// read as a queue that is always empty instead of one nobody is measuring.
 	if source, ok := scheduler.(natsq.MetricsSource); ok {
 		registry.MustRegister(source.Collector())
 	}

@@ -57,8 +57,7 @@ const (
 	// WorkerPresenceUnknown means this signal has never been seen at all.
 	//
 	// It is a third state rather than a synonym for offline on purpose. A record
-	// written before liveness reporting existed, or one belonging to a worker
-	// that does not report -- the asynq prototype -- has told us nothing, and
+	// written before liveness reporting existed has told us nothing, and
 	// asserting it dead on no evidence would be a worse lie than the green dot
 	// this replaces. It is also what keeps eviction off those records.
 	WorkerPresenceUnknown WorkerPresence = "unknown"
@@ -222,8 +221,7 @@ func derefTime(value *time.Time) time.Time {
 //
 // The second half is what keeps the reconciler off records it has no evidence
 // about: a worker with neither timestamp is unknown, not offline, and evicting
-// it would delete the asynq prototype's registrations and every record written
-// before liveness reporting existed.
+// it would delete every record written before liveness reporting existed.
 func (s WorkerInstanceStatus) IsSilent(cutoff time.Time) bool {
 	if s.LastSeenTime == nil && s.NATSLastSeenTime == nil {
 		return false

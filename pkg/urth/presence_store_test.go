@@ -225,7 +225,7 @@ func TestSilentWorkersSkipsWorkersThatNeverReported(t *testing.T) {
 	ctx := context.Background()
 
 	// A second worker of the same runner that has never reported anything --
-	// the asynq prototype, or a record written before liveness reporting.
+	// a record written before liveness reporting.
 	silent := urth.WorkerInstance{
 		ObjectMeta: manifest.ObjectMeta{Name: "never-reported"},
 		Spec:       urth.WorkerInstanceSpec{RunnerID: runner.UID},

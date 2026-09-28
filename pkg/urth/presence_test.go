@@ -108,7 +108,7 @@ func TestWorkerPresenceAt(t *testing.T) {
 // Eviction acts on silence, and silence is only meaningful from something that
 // was once heard. A worker that has never reported has told us nothing, and
 // dropping registrations on an absence of evidence is how a working fleet gets
-// deleted -- the asynq prototype reports neither signal.
+// deleted -- a record predating liveness reporting has neither signal.
 func TestIsSilentIgnoresWorkersThatNeverReported(t *testing.T) {
 	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
 	cutoff := now.Add(-time.Hour)

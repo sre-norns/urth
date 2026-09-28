@@ -148,8 +148,7 @@ func newHarness(t *testing.T, options ...harnessOption) *harness {
 		"schema migration failed; the harness owns a private schema, so this is not a collision with anyone else")
 
 	h.Config = apiserver.Config{
-		Transport: apiserver.TransportNATS,
-		NATS:      h.natsConfig(),
+		NATS: h.natsConfig(),
 
 		SessionTTL: time.Hour,
 		// Short enough that a test can outlive a run's lease by backdating the

@@ -226,7 +226,8 @@ func TestRelayContinuesBatchAfterOneFailure(t *testing.T) {
 		"the unreadable entry must not have been handed to the transport")
 }
 
-// stubScheduler stands in for the legacy asynq transport.
+// stubScheduler stands in for the transport. A service built with one writes
+// outbox entries for the runs it creates; one built without does not.
 type stubScheduler struct {
 	scheduled []urth.Result
 	err       error
@@ -241,44 +242,4 @@ func (s *stubScheduler) Schedule(_ context.Context, result urth.Result) (urth.Ru
 	s.scheduled = append(s.scheduled, result)
 
 	return urth.RunID("task-1"), nil
-}
-
-type stubLoader struct {
-	result urth.Result
-	err    error
-}
-
-func (l *stubLoader) LoadForDispatch(context.Context, urth.DispatchOutboxEntry) (urth.Result, error) {
-	return l.result, l.err
-}
-
-// The legacy transport is reached through the same outbox, so that both
-// transports share one durability story until task 015 removes asynq.
-func TestSchedulerPublisherDispatchesThroughLegacyScheduler(t *testing.T) {
-	var result urth.Result
-	result.UID = "result-1"
-	result.Version = 1
-
-	scheduler := &stubScheduler{}
-	publisher := urth.NewSchedulerDispatchPublisher(scheduler, &stubLoader{result: result})
-
-	_, err := publisher.PublishDispatch(context.Background(), testEntry(1, "result-1.1"))
-	require.NoError(t, err)
-	require.Len(t, scheduler.scheduled, 1)
-}
-
-// An entry written for an older version of a Result is not replayed against the
-// current one: the entry records what was true at commit time, and dispatching
-// it now would start a run that current state does not ask for.
-func TestSchedulerPublisherRejectsStaleResultVersion(t *testing.T) {
-	var result urth.Result
-	result.UID = "result-1"
-	result.Version = 4
-
-	scheduler := &stubScheduler{}
-	publisher := urth.NewSchedulerDispatchPublisher(scheduler, &stubLoader{result: result})
-
-	_, err := publisher.PublishDispatch(context.Background(), testEntry(1, "result-1.1"))
-	require.ErrorIs(t, err, urth.ErrPermanentDispatch)
-	require.Empty(t, scheduler.scheduled)
 }

@@ -130,8 +130,8 @@ func (s *reconcileStore) ExpiredRuns(ctx context.Context, cutoff time.Time, limi
 //
 // The first predicate is the load-bearing one: a worker with neither timestamp
 // has never reported at all, which is `unknown` rather than offline, and
-// evicting on no evidence would delete the asynq prototype's registrations and
-// every record written before liveness reporting existed. Silence is only
+// evicting on no evidence would delete every record written before liveness
+// reporting existed. Silence is only
 // meaningful from something that was once heard.
 //
 // Both signals must be quiet. A worker still announcing itself over NATS is

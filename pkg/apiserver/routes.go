@@ -232,23 +232,8 @@ func Routes(srv urth.Service, natsConn *nats.Conn, metrics *prometheus.Registry)
 		//------------
 		// Auth API for various operations
 		//------------
-		// Auth API for Worker to assume a Runner identity, given auth token
-		v1.POST("/auth/runners", bark.AuthBearerAPI(), bark.ManifestAPI(urth.KindWorkerInstance), func(ctx *gin.Context) {
-			ctx.Header(bark.HTTPHeaderCacheControl, "no-store")
-
-			token := bark.RequireBearerToken(ctx)
-			// This route exists to serve the deprecated Auth flow; the /auth/workers
-			// route below is the replacement. Kept because the asynq prototype worker
-			// still reads its identity out of the runner manifest this returns.
-			//lint:ignore SA1019 deliberate: this handler implements the deprecated endpoint the prototype worker depends on.
-			bark.Manifest(ctx).Created(srv.Runners().Auth(ctx.Request.Context(), urth.APIToken(token), bark.RequireManifest(ctx)))
-		})
 		// Worker registration: exchange an enrolment token for an identity, a
 		// session credential, and the queue to pull from.
-		//
-		// Separate from /auth/runners rather than replacing it, because the
-		// asynq prototype worker reads its identity out of the runner manifest
-		// that route returns. Both admit workers by the same rules.
 		v1.POST("/auth/workers", bark.AuthBearerAPI(), bark.ManifestAPI(urth.KindWorkerInstance), func(ctx *gin.Context) {
 			ctx.Header(bark.HTTPHeaderCacheControl, "no-store")
 
@@ -346,35 +331,6 @@ func Routes(srv urth.Service, natsConn *nats.Conn, metrics *prometheus.Registry)
 			ctx.Writer.Write([]byte(token))
 		})
 
-		// "/scenarios/:id/results/:runId/auth"
-		v1.POST("/auth//scenarios/:id/:runId", func(ctx *gin.Context) {
-			var resourceRequest urth.ScenarioRunResultsRequest
-			if err := ctx.ShouldBindUri(&resourceRequest); err != nil {
-				log.Print("error while trying to bind to ScenarioRunResultsRequest", "err", err)
-				bark.AbortWithError(ctx, http.StatusNotFound, err)
-				return
-			}
-
-			var authRequest urth.AuthJobRequest
-			if err := ctx.ShouldBind(&authRequest); err != nil {
-				log.Print("error while trying to parse AuthJobRequest", "err", err)
-				bark.AbortWithError(ctx, http.StatusBadRequest, err)
-				return
-			}
-
-			// This route implements the deprecated body-asserted job claim retained
-			// for the asynq prototype worker; ClaimRun is the session-backed replacement.
-			//lint:ignore SA1019 deliberate: this handler implements the deprecated endpoint the prototype worker depends on.
-			resource, err := srv.Results(manifest.ResourceName(resourceRequest.ID)).Auth(ctx.Request.Context(), resourceRequest.RunID, authRequest)
-			if err != nil {
-				log.Print("error while calling auth", "err", err)
-				bark.AbortWithError(ctx, http.StatusBadRequest, err)
-				return
-			}
-
-			ctx.Header(bark.HTTPHeaderCacheControl, "no-store")
-			bark.Ok(ctx, resource)
-		})
 		//------------
 		// Runners API
 		//------------

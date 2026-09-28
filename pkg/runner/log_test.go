@@ -168,8 +168,7 @@ func TestRunLoggerPublishesIndependentCopies(t *testing.T) {
 	require.Contains(t, publisher.joined(), "first message")
 }
 
-// A nil publisher is the common case -- the asynq worker passes none -- and
-// must not panic.
+// A nil publisher -- a caller with nowhere to stream the log -- must not panic.
 func TestRunLoggerWithoutPublisher(t *testing.T) {
 	logger := NewRunLogger(nil)
 

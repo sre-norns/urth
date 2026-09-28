@@ -56,12 +56,6 @@ type RunnersAPI interface {
 	// GetToken generates a JWT token for a worker instance to auth as a Runner
 	GetToken(ctx context.Context, runID manifest.ResourceName) (APIToken, bool, error)
 
-	// Authenticate a worker and receive Identity from the server
-	//
-	// Deprecated: returns no session credential, leaving the caller to find its
-	// own identity in the runner's Status.Instances. Use AuthWorker.
-	Auth(ctx context.Context, token APIToken, worker manifest.ResourceManifest) (manifest.ResourceManifest, error)
-
 	// AuthWorker registers a worker, returning its assigned identity, a session
 	// credential for authenticating later calls, and where to collect work.
 	AuthWorker(ctx context.Context, token APIToken, worker manifest.ResourceManifest) (WorkerRegistrationResponse, error)
@@ -118,12 +112,6 @@ type RunResultAPI interface {
 	ReadableResourceAPI[Result]
 
 	Create(ctx context.Context, entry manifest.ResourceManifest) (Result, error)
-
-	// Auth claims a job using identity supplied in the request body.
-	//
-	// Deprecated: the caller asserts its own identity, which is not evidence of
-	// anything. Retained for the asynq prototype worker. Use ClaimRun.
-	Auth(ctx context.Context, runID manifest.ResourceName, authRequest AuthJobRequest) (AuthJobResponse, error)
 
 	// ClaimRun claims a dispatched job on behalf of the worker that owns the
 	// given session credential. The run is identified by UID, matching the
@@ -220,7 +208,7 @@ func WithSigningKeys(keys SigningKeys) ServiceOption {
 
 // WithWorkerTransport supplies the provider that tells a registered worker
 // where to collect its jobs. Without it, registration still succeeds but
-// returns no connection details, which is what an asynq-only deployment wants.
+// returns no connection details, which is what a test without a broker wants.
 func WithWorkerTransport(provider WorkerTransportProvider) ServiceOption {
 	return func(s *serviceImpl) { s.transport = provider }
 }
@@ -866,125 +854,6 @@ func executorLabels(executor ExecutorRef) manifest.Labels {
 	putLabel(labels, LabelWorkerUID, string(executor.WorkerID))
 
 	return labels
-}
-
-func (m *resultsAPIImpl) Auth(ctx context.Context, resultName manifest.ResourceName, authRequest AuthJobRequest) (AuthJobResponse, error) {
-	var worker WorkerInstance
-	if ok, err := m.store.GetByUID(ctx, &worker, authRequest.WorkerID.ID); err != nil {
-		log.Print("error while looking up Worker ", authRequest.WorkerID.ID, " err", err)
-		return AuthJobResponse{}, bark.ErrResourceNotFound
-	} else if !ok {
-		log.Print("no Worker manifest found by ID ", authRequest.WorkerID.ID)
-		return AuthJobResponse{}, bark.ErrResourceUnauthorized
-	}
-
-	// Validate that worker if for the right Runner:
-	if authRequest.RunnerID.ID != worker.Spec.RunnerID {
-		return AuthJobResponse{}, bark.ErrResourceUnauthorized
-	}
-
-	// Business Rule: a paused worker stays registered and keeps its identity,
-	// but takes no new jobs. This is the check that makes pausing mean
-	// something -- without it the flag is a label on a worker that carries on
-	// working.
-	if worker.Status.IsPaused {
-		log.Printf("worker %q is paused and may not take job %q", worker.Name, resultName)
-		return AuthJobResponse{}, bark.ErrResourceUnauthorized
-	}
-
-	// The runner is loaded here rather than through worker.Spec.Runner, which is
-	// a lazy association and arrives zero-valued from GetByUID -- reading
-	// IsActive off it would reject every worker.
-	var runner Runner
-	if ok, err := m.store.GetByUID(ctx, &runner, worker.Spec.RunnerID); err != nil {
-		log.Print("error while looking up Runner ", worker.Spec.RunnerID, " err", err)
-		return AuthJobResponse{}, bark.ErrResourceNotFound
-	} else if !ok {
-		log.Print("no Runner found by ID ", worker.Spec.RunnerID)
-		return AuthJobResponse{}, bark.ErrResourceUnauthorized
-	}
-
-	// Business Rule: a worker of a disabled runner takes no jobs either.
-	// Disabling a runner already stops new workers registering; without this it
-	// would not stop the ones already connected, so a runner could be "disabled"
-	// and still executing work.
-	if !runner.Spec.IsActive {
-		log.Printf("runner %q is not active; worker %q may not take job %q", runner.Name, worker.Name, resultName)
-		return AuthJobResponse{}, bark.ErrResourceUnauthorized
-	}
-
-	var entry Result
-	if ok, err := m.store.GetByName(ctx, &entry, resultName); err != nil {
-		log.Print("error while looking up Results Object", resultName, "err", err)
-		return AuthJobResponse{}, bark.ErrResourceNotFound
-	} else if !ok {
-		log.Print("not found Results Object", resultName)
-		return AuthJobResponse{}, bark.ErrResourceUnauthorized
-	}
-
-	// Check that no one else took this job
-	// Note: This means that no re-try is possible!
-	if entry.Status.Status != JobPending {
-		return AuthJobResponse{}, bark.ErrResourceUnauthorized
-	}
-
-	// Ensure start timestamp is set:
-	if entry.Spec.TimeStarted != nil {
-		return AuthJobResponse{}, bark.ErrResourceUnauthorized
-	}
-	now := time.Now()
-
-	// Update start time
-	entry.Spec.TimeStarted = &now
-
-	// TODO: Record expected deadline and JWT's exp claim
-	entry.Status.Status = JobRunning
-
-	// Record who took the job. This is the only moment the association is known
-	// for certain -- the server has just authenticated this worker and checked
-	// it belongs to the runner the job was dispatched to.
-	entry.Status.Executor = executorRef(worker, runner)
-
-	entry.Labels = manifest.MergeLabels(
-		entry.Labels,
-		// authRequest.Labels,
-		// Set labels to reflect results pending status
-		manifest.Labels{
-			LabelResultJobState: string(entry.Status.Status),
-		},
-		executorLabels(entry.Status.Executor),
-	)
-
-	// Generate JWT with valid-until clause, to give worker a time to post
-	claims := &jwt.RegisteredClaims{
-		// ExpiresAt: jwt.NewNumericDate(time.Now().Add(30 * time.Minute)),
-		IssuedAt:  jwt.NewNumericDate(now),
-		ExpiresAt: jwt.NewNumericDate(now.Add(authRequest.Timeout)),
-		Subject:   string(entry.UID),
-		// Issuer: ,
-		// ID: ,
-	}
-
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenString, err := token.SignedString(m.resultsSigningKey)
-	if err != nil {
-		return AuthJobResponse{}, fmt.Errorf("failed to sign an auth token: %w", err)
-	}
-
-	log.Print("authorizing worker ", authRequest.RunnerID, " to execute ", entry.Name, " for at most ", authRequest.Timeout)
-	if ok, err := m.store.Update(ctx, &entry, entry.UID, dbstore.WithVersion(entry.Version)); err != nil {
-		return AuthJobResponse{}, err
-	} else if !ok {
-		// If version update failed, it means that someone else bit us to it and took the job
-		return AuthJobResponse{}, bark.ErrResourceUnauthorized // ErrResourceVersionConflict
-	}
-
-	return AuthJobResponse{
-		CreatedResponse: bark.CreatedResponse{
-			VersionedResourceID: entry.GetVersionedID(),
-		},
-		Token: APIToken(tokenString), // NewRandToken(32), //entry.UpdateToken,
-	}, err
 }
 
 // ClaimRun authorises a worker to execute a dispatched job.
@@ -1768,21 +1637,6 @@ func (m *runnersAPIImpl) GetToken(ctx context.Context, runnerName manifest.Resou
 	}
 
 	return APIToken(tokenString), true, nil
-}
-
-// Auth registers a worker and returns the runner manifest.
-//
-// This is the prototype's registration call, kept because the asynq worker digs
-// its identity out of Status.Instances[0] of the returned runner. New workers
-// should use AuthWorker, which returns an explicit identity and a session
-// credential instead.
-func (m *runnersAPIImpl) Auth(ctx context.Context, apiToken APIToken, newEntry manifest.ResourceManifest) (manifest.ResourceManifest, error) {
-	runner, _, err := m.admitWorker(ctx, apiToken, newEntry)
-	if err != nil {
-		return manifest.ResourceManifest{}, err
-	}
-
-	return runner.ToManifest(), nil
 }
 
 // AuthWorker registers a worker and issues it a session credential and the

@@ -3,7 +3,6 @@ package urth
 import (
 	"github.com/sre-norns/urth/pkg/prob"
 	"github.com/sre-norns/wyrd/pkg/manifest"
-	"gopkg.in/yaml.v3"
 )
 
 type Job struct {
@@ -21,26 +20,6 @@ type Job struct {
 
 	// True if you want the worker to keep temp working directory with run artifacts
 	IsKeepDirectory bool `form:"keepDir" json:"keepDir" yaml:"keepDir" xml:"keepDir"`
-}
-
-func UnmarshalJob(data []byte) (result Job, err error) {
-	err = yaml.Unmarshal(data, &result)
-	// err = json.Unmarshal(data, &result)
-	// dec := gob.NewDecoder(bytes.NewBuffer(data))
-	// err = dec.Decode(&result)
-
-	return
-}
-
-func MarshalJob(job Job) ([]byte, error) {
-	return yaml.Marshal(&job)
-	// return json.Marshal(&job)
-
-	// var buf bytes.Buffer        // Stand-in for a network connection
-	// enc := gob.NewEncoder(&buf) // Will write to network.
-
-	// err := enc.Encode(job)
-	// return buf.Bytes(), err
 }
 
 // RunScenarioJob represents a job to be picked by a qualifying worker
