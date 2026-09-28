@@ -62,10 +62,11 @@ looks deceptively like passing.
    pending run whose dispatch outlived job expiry is expired rather than
    republished. §7 draws the boundary -- the reconciler terminates attempts, the
    scheduler decides whether another one happens.
-3. **Fix SQLite, or stop offering it.** `--store.url` defaults to a backend that
-   cannot start. Either fix `idx_name` upstream in wyrd (`index:idx_name` ->
-   `index`, letting gorm name it per table) or change the default to make the
-   supported path the obvious one. Currently a new contributor's first run fails.
+3. **Stop offering SQLite as the default.** wyrd v0.3.0 fixed the `idx_name`
+   collision, so the schema now migrates on SQLite and a run is dispatched -- but
+   `type:TIMESTAMPTZ` columns come back as strings the driver cannot scan, so the
+   claim, heartbeats and listing runs fail. Change the default so the supported
+   path is the obvious one.
 4. **Retention acting on data classification.** The labels exist and are queried;
    nothing expires. `secret-bearing` artifacts should have a shorter default
    expiry and restricted download. This is the other half of the artifact
@@ -299,12 +300,12 @@ looks deceptively like passing.
    `Accept: text/event-stream` and `bark.ContentTypeAPI()` on the `/api/v1` group
    refuses it before the handler runs. See
    [task 019](docs/review-backlog/tasks/019-serve-run-log-stream.md).
-[] SQLite backend is broken: AutoMigrate fails with `index idx_name already exists`.
-   `wyrd`'s `manifest.ResourceMeta.Name` carries a hardcoded `gorm:"index:idx_name"`, and
-   every model embeds it; index names are schema-global in SQLite so the second
-   CREATE INDEX collides. Postgres is unaffected. Either fix upstream in `wyrd`
-   (use `index` and let gorm name it per-table) or drop the `sqlite:test.sqlite`
-   default from `dbstore.Config` so the broken path isn't the default.
+[X] SQLite AutoMigrate failed with `index idx_name already exists`: wyrd's
+   `ObjectMeta.Name` hardcoded `gorm:"index:idx_name"` and every model embeds it.
+   Fixed in wyrd v0.3.0 (indexes are named per table). Correction to what was
+   written here: Postgres was *not* unaffected. It ran `CREATE INDEX IF NOT EXISTS`,
+   so only the first table migrated got a name index. SQLite remains unsupported
+   for other reasons -- see item 3 above.
 [X] Rename identifiers to Go initialism convention (`Api`->`API`, `Id`->`ID`, `Url`->`URL`,
     `Http`->`HTTP`) so `staticcheck` passes and `make audit` is green.
 [X] Fix API to accept `version` query param

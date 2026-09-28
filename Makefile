@@ -4,8 +4,8 @@ website-dist = website/dist
 website-experiment-dist = website-experiment/dist
 
 # Postgres connection used by the local development targets below.
-# Note: the api-server's own default is `sqlite:test.sqlite`, which currently fails
-# schema migration, so a Postgres URL is passed explicitly here.
+# Note: the api-server's own default is `sqlite:test.sqlite`, which is not
+# supported (TIMESTAMPTZ columns cannot be read back), so Postgres is passed here.
 store-url ?= postgres://urth:urth@localhost:5432/urth
 
 .PHONY: run-api-server
