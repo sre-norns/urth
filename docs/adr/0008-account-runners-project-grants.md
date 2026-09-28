@@ -1,6 +1,6 @@
 # ADR 0008: Runners belong to accounts and are granted to projects
 
-- **Status:** Proposed
+- **Status:** Accepted (2026-09-28)
 - **Date:** 2026-09-28
 - **Depends on:** wyrd ADR 0001 (portfolio API conventions), wyrd ADR 0002 (shared identity
   module)
@@ -134,6 +134,12 @@ lifetime, so the subject cannot move under a live Runner any more than the name 
 Log and presence subjects stay keyed by Runner UID. UIDs are already globally unique.
 
 ### 7. Existing installations migrate into a default tenant
+
+> **Acceptance note (2026-09-28):** there are no Urth deployments to migrate, and Postgres 18
+> is the only supported version. This section, and ADR 0007 §6's drain from the `v1` subject
+> layout, are therefore not implemented: the account-qualified `v2` layout replaces `v1`
+> outright, and a fresh installation starts with no tenant. The section is kept to record
+> what an upgrade would have required.
 
 On upgrade, a one-shot, idempotent migration does the following:
 
