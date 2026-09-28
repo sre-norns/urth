@@ -19,7 +19,7 @@ require (
 	github.com/prometheus/client_golang v1.24.1
 	github.com/prometheus/client_model v0.6.3
 	github.com/prometheus/common v0.71.0
-	github.com/sre-norns/wyrd v0.3.0
+	github.com/sre-norns/wyrd v0.4.0
 	github.com/stretchr/testify v1.12.1
 	golang.org/x/mod v0.41.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -81,9 +81,10 @@ require (
 	github.com/prometheus/procfs v0.22.0 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/quic-go/quic-go v0.63.0 // indirect
+	github.com/stoewer/go-strcase v1.3.1 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.3.2 // indirect
-	github.com/xo/dburl v0.31.0 // indirect
+	github.com/xo/dburl v0.34.0 // indirect
 	go.mongodb.org/mongo-driver/v2 v2.9.1 // indirect
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
