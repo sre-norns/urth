@@ -54,7 +54,7 @@ test-site-experiment: website-experiment/node_modules
 
 .PHONY: run-postgres-podman
 run-postgres-podman: # Start postgres using podman container
-	@podman run -p 5432:5432 -e POSTGRES_USER=urth -e POSTGRES_PASSWORD=urth -e POSTGRES_DB=urth postgres:15
+	@podman run -p 5432:5432 -e POSTGRES_USER=urth -e POSTGRES_PASSWORD=urth -e POSTGRES_DB=urth postgres:18
 
 # Single non-replicated server with JetStream: fine for development, explicitly
 # not highly available. Production wants three replicas on persistent volumes.
