@@ -3,6 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-07-29
 - **Supersedes:** [ADR 0004](./0004-nats-communication-backbone.md) §3, on queue addressing only
+- **Amended by:** [ADR 0008](./0008-account-runners-project-grants.md) §6 — subjects carry the account (proposed)
 
 ## Context
 
