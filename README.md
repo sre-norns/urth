@@ -211,7 +211,7 @@ are recorded in [the architecture decision records](./docs/README.md).
 > Four things are worth knowing before you start:
 >
 > - **Postgres is required.** `--store.url` still defaults to `sqlite:test.sqlite`, but
->   schema migration currently fails on SQLite with `index idx_name already exists`, so
+>   the schema relies on Postgres `TIMESTAMPTZ` columns that SQLite cannot read back, so
 >   you must pass a Postgres URL explicitly. See [TODO.md](./TODO.md).
 > - **There is no scheduling loop yet.** Scenario `schedule` fields are stored and
 >   validated, but runs must currently be triggered manually via the API, UI, or

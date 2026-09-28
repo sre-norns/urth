@@ -54,11 +54,17 @@ Shared non-domain packages live in a sibling repo, `github.com/sre-norns/wyrd`
 
 ## Running it
 
-**Postgres is required. SQLite does not work.** `--store.url` still defaults to
-`sqlite:test.sqlite`, and migration fails there with `index idx_name already
-exists` — wyrd's `ResourceMeta.Name` carries a hardcoded `gorm:"index:idx_name"`
-and every model embeds it, so the second `CREATE INDEX` collides. Known, in
-TODO.md, not fixed because it needs a wyrd change.
+**Postgres is required. SQLite is not supported.** `--store.url` still defaults to
+`sqlite:test.sqlite`, and since wyrd v0.3.0 the schema does migrate there — the
+shared `idx_name` that used to collide is now per table. A run is even placed and
+dispatched. It then fails: columns tagged `type:TIMESTAMPTZ` (`status_deadline`,
+`status_last_seen_time`, …) come back from the SQLite driver as strings that
+cannot be scanned into `time.Time`, so the claim, worker heartbeats and listing
+runs all error. Measured, not inferred. Changing the default is in TODO.md.
+
+The same wyrd bug hid on Postgres, silently: `CREATE INDEX IF NOT EXISTS idx_name`
+indexed only the first table migrated. A database created before v0.3.0 gains
+`idx_<table>_name` on its next migration and keeps one redundant `idx_name`.
 
 ```bash
 make run-postgres-podman        # or podman run … postgres:15
