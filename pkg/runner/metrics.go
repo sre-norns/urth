@@ -64,6 +64,23 @@ func negotiateEncodingWriter(rw io.Writer, compressions []string) (_ io.Writer, 
 	}
 }
 
+// prometheusFormats and openMetricsFormats are the preference orders that
+// expfmt.Negotiate and NegotiateIncludingOpenMetrics used before they were
+// deprecated, less OpenMetrics 0.0.1, whose constant is deprecated in favour
+// of 1.0.0. The artifact's format is unchanged: no Accept header is offered
+// below, so negotiation returns its text fallback whatever the list holds.
+var (
+	prometheusFormats = []expfmt.Format{
+		expfmt.NewFormat(expfmt.TypeProtoDelim),
+		expfmt.NewFormat(expfmt.TypeProtoText),
+		expfmt.NewFormat(expfmt.TypeProtoCompact),
+		expfmt.NewFormat(expfmt.TypeTextPlain),
+	}
+	openMetricsFormats = append([]expfmt.Format{
+		expfmt.NewFormat(expfmt.TypeOpenMetrics),
+	}, prometheusFormats...)
+)
+
 func ToArtifact(registry *prometheus.Registry, opts RegistryOptions) (urth.ArtifactSpec, error) {
 	var compressions []string
 	if !opts.DisableCompression {
@@ -86,9 +103,9 @@ func ToArtifact(registry *prometheus.Registry, opts RegistryOptions) (urth.Artif
 	var headers http.Header
 	var contentType expfmt.Format
 	if opts.EnableOpenMetrics {
-		contentType = expfmt.NegotiateIncludingOpenMetrics(headers)
+		contentType = expfmt.NegotiateAccept(headers, openMetricsFormats...)
 	} else {
-		contentType = expfmt.Negotiate(headers)
+		contentType = expfmt.NegotiateAccept(headers, prometheusFormats...)
 	}
 
 	var buf bytes.Buffer
