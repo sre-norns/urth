@@ -65,9 +65,9 @@ type DispatchOutboxEntry struct {
 	ResultVersion manifest.Version      `gorm:"not null"`
 	ScenarioName  manifest.ResourceName `gorm:"not null"`
 
-	// RunnerUID is the runner this dispatch is routed to. It may be empty: the
-	// legacy asynq transport accepts unplaced runs, and a routing transport is
-	// entitled to reject them. See resultsAPIImpl.placeRun.
+	// RunnerUID is the runner this dispatch is routed to. It may be empty on
+	// rows written before placement existed; the transport rejects those as
+	// unplaced. See resultsAPIImpl.placeRun.
 	RunnerUID manifest.ResourceID `gorm:"index"`
 
 	// Time columns carry no explicit `type:` tag. Postgres must store these as
@@ -88,8 +88,8 @@ type DispatchOutboxEntry struct {
 	// address rather than its subject -- purging by subject would take out every
 	// other run queued for the same runner.
 	//
-	// Zero means "not addressable", which is the honest answer for the legacy
-	// asynq path and costs only the ability to withdraw a stale message early.
+	// Zero means "not addressable" and costs only the ability to withdraw a
+	// stale message early.
 	PublishedSeq uint64
 
 	// RetiredAt marks an entry that will never be published, because the Result

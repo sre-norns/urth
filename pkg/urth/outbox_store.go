@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/sre-norns/wyrd/pkg/dbstore"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -165,38 +164,6 @@ func (s *dispatchOutboxStore) MarkFailed(ctx context.Context, id uint, cause err
 	}
 
 	return nil
-}
-
-// storeResultLoader rehydrates the Result a legacy dispatch needs.
-type storeResultLoader struct {
-	store *dbstore.DBStore
-}
-
-// NewStoreResultLoader reads Results for SchedulerDispatchPublisher.
-func NewStoreResultLoader(store *dbstore.DBStore) ResultLoader {
-	return &storeResultLoader{store: store}
-}
-
-func (l *storeResultLoader) LoadForDispatch(ctx context.Context, entry DispatchOutboxEntry) (Result, error) {
-	var result Result
-	if ok, err := l.store.GetByUID(ctx, &result, entry.ResultUID); err != nil {
-		return result, fmt.Errorf("failed to load result %v for dispatch: %w", entry.ResultUID, err)
-	} else if !ok {
-		// The Result is gone but its dispatch survived. Retrying cannot bring it
-		// back, and publishing a job for a Result nothing can report against
-		// would strand a worker.
-		return result, fmt.Errorf("%w: result %v no longer exists", ErrPermanentDispatch, entry.ResultUID)
-	}
-
-	// A Result written before execution snapshots existed cannot be published to
-	// a transport that carries the job: there is nothing to carry. Permanent, so
-	// the relay retires the entry instead of retrying a row that will never
-	// acquire a snapshot.
-	if result.Spec.Execution.IsZero() {
-		return result, fmt.Errorf("%w: %w: result %v", ErrPermanentDispatch, ErrNoExecutionSnapshot, entry.ResultUID)
-	}
-
-	return result, nil
 }
 
 func (s *dispatchOutboxStore) Stats(ctx context.Context, now time.Time) (DispatchOutboxStats, error) {

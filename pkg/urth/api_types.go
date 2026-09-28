@@ -79,20 +79,6 @@ type (
 		Paused bool `form:"paused" json:"paused" yaml:"paused" xml:"paused"`
 	}
 
-	// AuthJobRequest is a job authorization request: a worker sends it to take
-	// a job, if allowed.
-	//
-	// WorkerID and RunnerID are honoured only on the legacy, unauthenticated
-	// claim route used by the asynq prototype. The session-authenticated route
-	// derives both from the bearer token and ignores whatever is in the body,
-	// because a request body is not evidence of identity.
-	AuthJobRequest struct {
-		WorkerID manifest.VersionedResourceID `form:"workerId" json:"workerId" yaml:"workerId" xml:"workerId"`
-		RunnerID manifest.VersionedResourceID `form:"runnerId" json:"runnerId" yaml:"runnerId" xml:"runnerId"`
-		Timeout  time.Duration                `form:"timeout" json:"timeout" yaml:"timeout" xml:"timeout"`
-		Labels   manifest.Labels              `form:"labels,omitempty" json:"labels,omitempty" yaml:"labels,omitempty" xml:"labels,omitempty"`
-	}
-
 	// ClaimJobRequest is a worker's request to take a dispatched job.
 	//
 	// The worker presents its session as a bearer token and names the dispatch

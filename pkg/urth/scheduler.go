@@ -9,8 +9,6 @@ type RunID string
 
 const InvalidRunID = RunID("")
 
-const RunScenarioTopicName = "scenario:run"
-
 // Scheduler publishes a run to a transport.
 //
 // It takes the Result alone. It used to take the Scenario beside it, and the

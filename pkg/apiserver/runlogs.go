@@ -25,8 +25,9 @@ import (
 // do that reliably anyway, because the run may finish between the check and the
 // request.
 //
-// conn may be nil, when the server is running on the asynq transport. Live
-// tailing is then unavailable and only finished runs can be read.
+// conn may be nil, for a caller that composes the routes without a broker, as
+// some tests do. Live tailing is then unavailable and only finished runs can
+// be read.
 func runLogHandler(srv urth.Service, conn *nats.Conn) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		var request urth.ScenarioRunResultsRequest

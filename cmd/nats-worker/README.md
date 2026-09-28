@@ -4,8 +4,7 @@ Executes Urth scenarios, taking its jobs from a NATS JetStream queue belonging
 to one runner.
 
 This is the worker described by [ADR 0004](../../docs/adr/0004-nats-communication-backbone.md).
-`cmd/asynq-runner` is the earlier prototype and still works; both can run against
-the same API server while the migration proceeds.
+It replaced the Redis/asynq prototype, which has been retired.
 
 Everything below is implemented in [`pkg/worker`](../../pkg/worker): registration,
 session renewal, the pull/claim/ack handshake, execution and reporting. This
@@ -15,15 +14,15 @@ real broker in [`test/integration`](../../test/integration), which is the only
 arrangement that can see a disagreement between the two halves of the claim
 contract.
 
-## What is different from asynq-runner
+## What changed from the asynq prototype
 
 The broker is the least of it.
 
 **It authenticates.** The worker exchanges its enrolment token for a *session*
 credential, and presents that session on every job claim. The API derives which
-worker and which runner is asking from the token. `asynq-runner` sends worker
+worker and which runner is asking from the token. The prototype sent worker
 and runner IDs in the request body against an endpoint with no authentication
-at all, so the server has no way to check them.
+at all, so the server had no way to check them.
 
 **It is told what to run only after it is allowed to.** The queue message
 carries a Result UID, a version, and a dispatch ID — no script, no prob spec, no
@@ -220,6 +219,5 @@ links.
 
 The remaining production work is tracked in the
 [NATS Runner review backlog](../../docs/review-backlog/README.md). It covers
-outbox and reconciliation, scoped NATS credentials, authentication and Runner
-policy, acknowledgement and failure tests, dead letters, placement, and Asynq
-retirement. The task files are the source of truth for scope and ordering.
+scoped NATS credentials, enrolment and Runner policy, and worker identity.
+The task files are the source of truth for scope and ordering.

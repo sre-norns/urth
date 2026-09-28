@@ -26,8 +26,7 @@ import (
 // PlayOption adjusts how a run is executed.
 //
 // Variadic options rather than another parameter, so that adding a way to
-// observe a run does not disturb existing callers -- cmd/asynq-runner passes
-// none of these and continues to work unchanged.
+// observe a run does not disturb existing callers that pass none of them.
 type PlayOption func(*playConfig)
 
 type playConfig struct {

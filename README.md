@@ -194,8 +194,7 @@ when they satisfy the channel's Worker requirements. See
 | Component | Path | Role |
 |---|---|---|
 | **api-server** | [`cmd/api-server`](./cmd/api-server/README.md) | REST API for all resources; hands out jobs. Run several replicas in production. |
-| **nats-worker** | [`cmd/nats-worker`](./cmd/nats-worker/README.md) | Target Worker implementation. Shares its Runner's durable JetStream consumer, authenticates claims, executes probes, and uploads Results and Artifacts. |
-| **asynq-runner** | [`cmd/asynq-runner`](./cmd/asynq-runner/README.md) | Legacy Redis/Asynq Worker retained temporarily during migration. |
+| **nats-worker** | [`cmd/nats-worker`](./cmd/nats-worker/README.md) | The Worker. Shares its Runner's durable JetStream consumer, authenticates claims, executes probes, and uploads Results and Artifacts. |
 | **urthctl** | [`cmd/urthctl`](./cmd/urthctl/README.md) | CLI. Apply manifests, inspect resources, run scenarios locally. |
 | **Web UI** | [`website`](./website) | React front end. |
 
@@ -205,9 +204,8 @@ are recorded in [the architecture decision records](./docs/README.md).
 **Dependencies**
 
 - **Database** — a Postgres-compatible database, for development as well as production.
-- **Job transport** — NATS with JetStream is the accepted target and has a development
-  implementation. Redis via [asynq](https://github.com/hibiken/asynq) remains as the
-  legacy path during migration.
+- **Job transport** — NATS with JetStream. It is the only transport; the Redis/asynq
+  prototype has been retired.
 
 > **Project status.** Urth is under active development and not yet at a stable release.
 > Four things are worth knowing before you start:
@@ -224,9 +222,8 @@ are recorded in [the architecture decision records](./docs/README.md).
 >   finished. Track the ordered work in the
 >   [NATS review backlog](./docs/review-backlog/README.md).
 > - **Authentication is not production-ready.** Enrollment issuance still has an
->   unauthenticated route, NATS authority is not derived from Worker identity, run
->   capabilities need stronger claims, and the insecure legacy Asynq claim remains during
->   migration. Run Urth only in a trusted development environment until the P0 backlog is
+>   unauthenticated route, NATS authority is not derived from Worker identity, and run
+>   capabilities need stronger claims. Run Urth only in a trusted development environment until the P0 backlog is
 >   closed.
 >
 > See [TODO.md](./TODO.md) for the full backlog.
@@ -265,13 +262,13 @@ The channel and executor relationship is defined by
 
 ## Quick start
 
-**Prerequisites:** Go (version per [`go.mod`](./go.mod)), Redis, Postgres, and Node.js
+**Prerequisites:** Go (version per [`go.mod`](./go.mod)), Postgres, NATS, and Node.js
 for the Web UI. Each service below wants its own terminal.
 
 ```bash
-# 1. Start Redis and Postgres
-make run-redis-podman
+# 1. Start Postgres and NATS
 make run-postgres-podman
+make run-nats-podman
 
 # 2. Start the API server on http://localhost:8080
 make run-api-server        # override the database with: make run-api-server store-url=...
@@ -283,7 +280,7 @@ go run ./cmd/urthctl get scenarios -o wide
 
 # 4. Mint a worker token, then start a worker with it
 export RUNNER_TOKEN=$(go run ./cmd/urthctl auth-worker -f ./examples/runner.yaml)
-go run ./cmd/asynq-runner --client.token="$RUNNER_TOKEN"
+make run-nats-worker
 
 # 5. Start the Web UI at http://localhost:3000
 make serve-site
@@ -377,13 +374,14 @@ make build         # build all binaries and the Web UI
 ### Repository layout
 
 ```
-cmd/           api-server, asynq-runner, urthctl
+cmd/           api-server, nats-worker, urthctl
 pkg/urth/      domain model: Scenario, Runner, Result, Artifact
 pkg/prob/      prob registry and the interface probers implement
 pkg/probers/   one package per prob kind
 pkg/runner/    job dispatch, run logging, metrics collection
 pkg/http-parser/  .http / .rest file parser
-pkg/redqueue/  Redis-backed job queue
+pkg/natsq/     NATS/JetStream transport: naming, dispatch, live logs
+pkg/worker/    the worker loop: claims, executes, uploads
 website/       React Web UI
 examples/      example resource manifests
 ```

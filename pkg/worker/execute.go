@@ -175,8 +175,8 @@ func (w *Worker) report(ctx context.Context, envelope natsq.DispatchEnvelope, au
 
 	// The errors are surfaced rather than discarded. A run whose artifacts
 	// failed to upload looks, from the UI, like a run that produced none --
-	// and the asynq worker threw this return value away, so that failure mode
-	// was invisible.
+	// and the retired asynq worker threw this return value away, so that
+	// failure mode was invisible.
 	if err := errors.Join(append(scheduleErrs, wg.Wait())...); err != nil {
 		log.Printf("run %v: failed to report fully: %v", envelope.ResultUID, err)
 		return

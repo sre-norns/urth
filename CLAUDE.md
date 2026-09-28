@@ -26,14 +26,12 @@ cmd/api-server/     the process around it: flags, DB connection, listener, shutd
 pkg/worker/         the worker: claims jobs from JetStream, executes, uploads.
                     This is the one ADR 0004 describes.
 cmd/nats-worker/    the process around it: flags, enrolment secret, API client.
-cmd/asynq-runner/   the Redis/asynq prototype worker. Migration-only; task 015 retires it.
 cmd/urthctl/        CLI (kubectl-shaped), co-equal with the Web UI
 pkg/urth/           domain model + service impl + REST client. The centre of gravity.
 pkg/natsq/          JetStream naming, assets, envelope, publication, live logs
 pkg/prob/           prob registry and the interface probers implement
 pkg/probers/*/      one package per prob kind (http, tcp, dns, icmp, grpc, rest, har, puppeteer…)
 pkg/runner/         probe execution, run logging, worker capability labels
-pkg/redqueue/       legacy asynq transport, retiring with cmd/asynq-runner
 test/integration/   the dispatch path end to end: real Postgres, real broker,
                     real router, real worker loop. See below.
 website/            React UI (webpack, emotion, redux, wouter)
@@ -65,7 +63,7 @@ TODO.md, not fixed because it needs a wyrd change.
 ```bash
 make run-postgres-podman        # or podman run … postgres:15
 make run-nats-podman
-make run-api-server-nats        # passes a Postgres URL explicitly
+make run-api-server            # passes a Postgres URL explicitly
 go run ./cmd/urthctl apply ./examples/runner.yaml
 go run ./cmd/urthctl apply ./examples/scenario.tcp.yaml
 export RUNNER_TOKEN=$(go run ./cmd/urthctl auth-worker -f ./examples/runner.yaml)
@@ -73,9 +71,9 @@ make run-nats-worker            # reads RUNNER_TOKEN
 cd website && npm start         # :3000, proxies /api to :8080
 ```
 
-The asynq path (`make run-redis-podman`, `run-api-server`, `run-asynq-worker`)
-still works and is what `--transport` defaults to, but it is the prototype: no
-authentication, no placement, no outbox.
+NATS is the only transport. The Redis/asynq prototype was retired (task 015);
+`--transport` survives as a hidden flag accepting only `nats`, so old command
+lines keep working.
 
 Trigger a run without the UI:
 
@@ -165,9 +163,8 @@ working) and `status.natsLastSeenTime` are stored and reported separately, and
 `nats-unreachable` / `unknown`. The worker publishes both **unconditionally**: if
 the NATS announcement were skipped when the heartbeat failed, `api-unreachable`
 could never be observed, which is the case the split exists for. `unknown` is a
-real third state — the asynq prototype reports neither signal, and records
-predating this feature have neither — and it is what keeps the reconciler's
-eviction pass off them.
+real third state — records predating this feature have neither signal — and
+it is what keeps the reconciler's eviction pass off them.
 
 **Labels have a grammar and violating it is silent or fatal.** Values must match
 `^[[:alnum:]]$|^[a-zA-Z0-9][a-zA-Z0-9_.\-]*[a-zA-Z0-9]$`. MIME types (`text/plain`),

@@ -1,14 +1,11 @@
 // Package worker executes Urth scenarios, taking its jobs from a NATS JetStream
 // queue owned by one runner.
 //
-// It exists alongside pkg/redqueue and cmd/asynq-runner rather than replacing
-// them: ADR 0004 treats the Redis/asynq transport as the prototype and this as
-// the target, and both need to run during the migration.
-//
-// The important difference is not the broker. This worker authenticates: it
-// exchanges an enrolment secret for a session credential, and every job it
-// claims is authorised against that session. The asynq worker asserts its own
-// identity in the request body, which the server has no way to check.
+// It replaced the Redis/asynq prototype worker (ADR 0004). The important
+// difference was not the broker. This worker authenticates: it exchanges an
+// enrolment secret for a session credential, and every job it claims is
+// authorised against that session. The prototype asserted its own identity in
+// the request body, which the server had no way to check.
 //
 // It is a package rather than a `main` so that the claim handshake can be
 // exercised against a real API server and a real broker at once -- the

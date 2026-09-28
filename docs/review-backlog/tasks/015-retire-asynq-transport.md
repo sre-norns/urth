@@ -4,7 +4,7 @@ Shared context: [`CONTEXT.md`](../CONTEXT.md).
 
 | Field | Value |
 |---|---|
-| Status | `blocked` |
+| Status | `done` |
 | Priority | `P1` |
 | Workstream | Migration |
 | Depends on | 001–013 |
@@ -109,8 +109,33 @@ git diff --check
 
 ## Completion Record
 
+- **Scope decision:** Done ahead of its listed dependencies. Tasks 004, 005, 006 and
+  008 were still `ready`, and 009 `blocked`. The project owner decided that asynq
+  compatibility need not be preserved, because the NATS worker is a complete
+  replacement and no deployment runs on asynq. That waives the drain, recreate and
+  startup-preflight requirements, which exist to protect deployments with legacy
+  queued work. The dependencies were there to make the NATS path production-ready
+  *before* removing a fallback. With no one on the fallback, removing it can only
+  remove attack surface.
 - **Implemented:**
-- **Tests added/updated:**
-- **Documentation updated:**
-- **Validation evidence:**
-- **Follow-ups:**
+  - Removed `cmd/asynq-runner`, `pkg/redqueue`, the `--message-broker-url` flag and
+    the transport switch. `apiserver.New` always composes NATS.
+  - `--transport` stays as a hidden flag accepting only `nats`, so existing command
+    lines keep working.
+  - Removed the unauthenticated `POST /auth/runners` and `POST /auth//scenarios/:id/:runId`
+    routes, the `Auth` service and client methods behind them, and `AuthJobRequest`.
+  - Removed `SchedulerDispatchPublisher`, `ResultLoader`, `NewStoreResultLoader`,
+    `RunScenarioTopicName` and `urth.MarshalJob`/`UnmarshalJob`.
+  - `urth.Job` stays: `pkg/worker` still uses it to label runs through
+    `RunnerConfig.LabelJob`. `urth.Scheduler` stays: the NATS scheduler implements it,
+    and the service uses its presence to decide whether to write outbox rows.
+- **Tests added/updated:** Deleted the four tests that exercised only the asynq
+  publisher adapter: `TestSchedulerPublisher*` and `TestLegacyResultWithoutSnapshotIsNotDispatched`/
+  `TestLegacyDispatchPublishesTheSnapshotNotTheScenario`. Snapshot integrity on the NATS
+  path stays covered at claim by `TestScenarioEditDoesNotChangeAScheduledRun` and
+  `TestLegacyResultWithoutSnapshotFailsClosed`.
+- **Documentation updated:** README, CLAUDE.md, TODO.md, `pkg/README.md`, and the
+  api-server and nats-worker READMEs. Present-tense asynq references in code comments
+  were rewritten.
+- **Follow-ups:** None. Removal of `GET /auth/runners/:id` (unauthenticated enrolment
+  issuance) is covered by ADR 0008 and task 005, not by this task.

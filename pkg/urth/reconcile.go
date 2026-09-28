@@ -556,8 +556,8 @@ func (r *Reconciler) expireAbandonedRuns(ctx context.Context, report *ReconcileR
 // meant to show who is running becomes a history of who ever ran.
 //
 // Two things it deliberately does not do. It never touches a worker that has
-// reported nothing at all: that is `unknown`, the state of the asynq prototype
-// and of every record predating liveness reporting, and deleting on an absence
+// reported nothing at all: that is `unknown`, the state of every record
+// predating liveness reporting, and deleting on an absence
 // of evidence is how you take a working fleet offline. And it requires *both*
 // signals to be silent, so a worker still announcing itself over NATS survives
 // however long its route to the API server has been broken -- that case wants an

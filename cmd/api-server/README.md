@@ -203,16 +203,13 @@ SELECT event_uid, result_uid, retired_at, retired_reason
  ORDER BY retired_at DESC;
 ```
 
-### Transports during migration
+### Transport
 
-Both transports drain the same outbox, so the durability story is one story:
-
-- **NATS** publishes a dispatch envelope built from the row.
-- **Asynq** (legacy) needs the whole job, so an adapter reloads the `Result` at
-  publication time and calls the existing scheduler. It publishes the `Result`'s
-  execution snapshot, never the current `Scenario`. Retiring asynq in
-  [task 015](../../docs/review-backlog/tasks/015-retire-asynq-transport.md)
-  deletes that adapter rather than a second way of dispatching.
+NATS JetStream is the only transport. The relay publishes a dispatch envelope
+built from the outbox row; the worker receives the probe itself only in its claim
+response. The Redis/asynq prototype, which carried the whole job in its queue
+message, was retired in
+[task 015](../../docs/review-backlog/tasks/015-retire-asynq-transport.md).
 
 ## Dead letters
 
@@ -591,8 +588,7 @@ to its queue; either can fail on its own, and which one failed is the diagnosis.
 | **no API contact** | `api-unreachable` — the worker is parked on its queue but cannot reach this server; it will be offered work and can claim none of it | `offline` |
 
 A fifth state, `unknown`, means neither signal has *ever* been seen: a record
-written before this existed, or a worker that does not report — `asynq-runner`
-does not. It is a distinct state rather than a synonym for offline because
+written before this existed. It is a distinct state rather than a synonym for offline because
 asserting a worker dead on no evidence would be a worse answer than the green dot
 this replaced, and because it is what keeps the reconciler from evicting those
 registrations.
