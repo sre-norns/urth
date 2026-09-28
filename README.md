@@ -203,7 +203,8 @@ are recorded in [the architecture decision records](./docs/README.md).
 
 **Dependencies**
 
-- **Database** — a Postgres-compatible database, for development as well as production.
+- **Database** — Postgres 18, for development as well as production. Earlier versions are
+  not supported.
 - **Job transport** — NATS with JetStream. It is the only transport; the Redis/asynq
   prototype has been retired.
 
@@ -262,7 +263,7 @@ The channel and executor relationship is defined by
 
 ## Quick start
 
-**Prerequisites:** Go (version per [`go.mod`](./go.mod)), Postgres, NATS, and Node.js
+**Prerequisites:** Go (version per [`go.mod`](./go.mod)), Postgres 18, NATS, and Node.js
 for the Web UI. Each service below wants its own terminal.
 
 ```bash

@@ -67,7 +67,7 @@ indexed only the first table migrated. A database created before v0.3.0 gains
 `idx_<table>_name` on its next migration and keeps one redundant `idx_name`.
 
 ```bash
-make run-postgres-podman        # or podman run … postgres:15
+make run-postgres-podman        # or podman run … postgres:18
 make run-nats-podman
 make run-api-server            # passes a Postgres URL explicitly
 go run ./cmd/urthctl apply ./examples/runner.yaml
