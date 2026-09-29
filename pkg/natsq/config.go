@@ -1,11 +1,16 @@
 package natsq
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
+	"strings"
+	"sync"
 	"time"
 
+	natsjwt "github.com/nats-io/jwt/v2"
 	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nkeys"
 	"github.com/sre-norns/wyrd/pkg/manifest"
 )
 
@@ -43,21 +48,29 @@ const (
 	JobsStreamName = "URTH_JOBS"
 
 	// JobsSubjectWildcard matches every runner's job subject.
-	JobsSubjectWildcard = SubjectPrefix + ".jobs.*"
+	JobsSubjectWildcard = "urth.v2.jobs.*.*"
 )
 
-// JobSubject returns the subject carrying jobs for one runner.
-//
-// The subject is keyed on the runner's immutable UID, never its name. Deleting
-// a runner and recreating it with the same name must not attach the new
-// runner's workers to the old one's queued messages.
-func JobSubject(runnerUID manifest.ResourceID) string {
-	return fmt.Sprintf("%s.jobs.%s", SubjectPrefix, runnerUID)
+// encodedRunnerName preserves dots as underscores, which cannot occur in a
+// validated resource name. Long names retain a digest within NATS name limits.
+// The ~ marker cannot appear in a short encoded name, so short names cannot
+// impersonate the truncated representation of a long one.
+func encodedRunnerName(name manifest.ResourceName) string {
+	token := strings.ReplaceAll(string(name), ".", "_")
+	if len(token) > 128 {
+		token = fmt.Sprintf("%s~%x", token[:63], sha256.Sum256([]byte(name)))
+	}
+	return token
 }
 
-// RunnerConsumerName returns the durable consumer name for a runner.
-func RunnerConsumerName(runnerUID manifest.ResourceID) string {
-	return fmt.Sprintf("runner-%s", runnerUID)
+// JobSubject is account-qualified; entitlement remains keyed by runner UID.
+func JobSubject(account manifest.ResourceID, name manifest.ResourceName) string {
+	return fmt.Sprintf("urth.v2.jobs.%s.%s", account, encodedRunnerName(name))
+}
+
+// RunnerConsumerName is stable when a runner is recreated within its account.
+func RunnerConsumerName(account manifest.ResourceID, name manifest.ResourceName) string {
+	return fmt.Sprintf("runner-%s-%s", account, encodedRunnerName(name))
 }
 
 // ClientConfig is what any NATS participant needs in order to connect.
@@ -67,7 +80,10 @@ func RunnerConsumerName(runnerUID manifest.ResourceID) string {
 // that appeared to offer them would be advertising authority it does not have,
 // and ADR 0004 is explicit that workers never administer JetStream assets.
 type ClientConfig struct {
-	URL string `help:"NATS server URL(s) to connect to" default:"nats://localhost:4222"`
+	UserCredentials  string        `kong:"-"`
+	InboxPrefix      string        `kong:"-"`
+	CredentialSource func() string `kong:"-"`
+	URL              string        `help:"NATS server URL(s) to connect to" default:"nats://localhost:4222"`
 
 	CredsFile string `help:"Path to a NATS credentials file, when the server requires one" type:"existingfile"`
 }
@@ -79,6 +95,10 @@ type ClientConfig struct {
 // an operator chose; it is one nobody wrote down. Validate refuses the unlimited
 // values rather than passing them through, so the decision has to be made here.
 type Config struct {
+	// Workers receive short-lived user credentials signed by this NATS account.
+	WorkerAccountSeedFile string `help:"File containing the NATS account seed used to sign restricted worker credentials"`
+	AllowInsecureWorkers  bool   `help:"Allow unauthenticated workers for an isolated local development broker" default:"false"`
+
 	ClientConfig `embed:""`
 
 	// Replicas is a server-side concern; a worker never creates streams.
@@ -271,7 +291,40 @@ func (c ClientConfig) Connect(name string) (*nats.Conn, error) {
 		nats.ReconnectWait(2 * time.Second),
 	}
 
-	if c.CredsFile != "" {
+	if c.InboxPrefix != "" {
+		opts = append(opts, nats.CustomInboxPrefix(c.InboxPrefix))
+	}
+	if c.CredentialSource != nil {
+		var mu sync.Mutex
+		var pair nkeys.KeyPair
+		opts = append(opts, nats.UserJWT(func() (string, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			data := []byte(c.CredentialSource())
+			token, err := natsjwt.ParseDecoratedJWT(data)
+			if err != nil {
+				return "", err
+			}
+			next, err := natsjwt.ParseDecoratedUserNKey(data)
+			if err != nil {
+				return "", err
+			}
+			if pair != nil {
+				pair.Wipe()
+			}
+			pair = next
+			return token, nil
+		}, func(nonce []byte) ([]byte, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			if pair == nil {
+				return nil, fmt.Errorf("worker credential unavailable")
+			}
+			return pair.Sign(nonce)
+		}))
+	} else if c.UserCredentials != "" {
+		opts = append(opts, nats.UserCredentialBytes([]byte(c.UserCredentials)))
+	} else if c.CredsFile != "" {
 		opts = append(opts, nats.UserCredentials(c.CredsFile))
 	}
 

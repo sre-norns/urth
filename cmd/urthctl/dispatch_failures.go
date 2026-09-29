@@ -75,7 +75,7 @@ func (c *DeadLetters) Run(cfg *commandContext) error {
 	ctx, cancel := cfg.ClientCallContext()
 	defer cancel()
 
-	resources, _, err := apiClient.DispatchFailures().List(ctx, manifest.SearchQuery{Selector: selector})
+	resources, _, err := collectPages(ctx, manifest.SearchQuery{Selector: selector}, apiClient.DispatchFailures().List)
 	if err != nil {
 		return err
 	}

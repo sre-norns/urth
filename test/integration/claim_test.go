@@ -335,18 +335,16 @@ func TestMisroutedDispatchIsRefusedAndReported(t *testing.T) {
 	failures := h.dispatchFailures()
 	require.Len(t, failures, 1)
 	require.Equal(t, urth.ReasonMisroutedDispatch, failures[0].Spec.Reason)
-	require.Equal(t, run.UID, failures[0].Spec.ResultUID)
+	require.Empty(t, failures[0].Spec.ResultUID)
+	require.Equal(t, segmentA.Account, failures[0].Account)
+	require.Empty(t, failures[0].Project)
 
 	require.EqualValues(t, 0, probeRunCount("misrouted"),
 		"a worker of one runner must never execute another runner's run")
 
-	// Reporting a dead letter strands the run: this dispatch is the one that was
-	// supposed to start it, and the report says it never will. `errored` rather
-	// than `timeout`, because nothing waited and nothing ran out of time -- and
-	// the reason is a label so that triage is a query.
-	stranded := h.result(run.UID)
-	require.Equal(t, urth.JobErrored, stranded.Status.Status)
-	require.NotEmpty(t, stranded.Labels[urth.LabelResultUnschedulable])
+	// A misrouted delivery cannot give the reporting runner authority over
+	// another runner's result. Its real queue still holds the valid dispatch.
+	require.Equal(t, urth.JobPending, h.result(run.UID).Status.Status)
 }
 
 // Placement keeps two segments apart without anything having to refuse a
@@ -411,7 +409,7 @@ func TestUnreadableMessageIsReportedBeforeItIsTerminated(t *testing.T) {
 	ctx, cancel := context.WithTimeout(h.ctx, 10*time.Second)
 	defer cancel()
 
-	_, err := h.jetStream().Publish(ctx, natsq.JobSubject(runner.UID), []byte("this is not a dispatch envelope"))
+	_, err := h.jetStream().Publish(ctx, natsq.JobSubject(runner.Account, runner.Name), []byte("this is not a dispatch envelope"))
 	require.NoError(t, err)
 
 	h.eventually(60*time.Second, "the unreadable message to be reported", func() bool {

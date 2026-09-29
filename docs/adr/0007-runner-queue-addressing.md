@@ -271,3 +271,19 @@ no reaping.
 - `pkg/natsq/config.go`, `pkg/natsq/assets.go` — current addressing and provisioning.
 - `pkg/urth/service.go:656,945,1319` — placement recording, the claim's Runner check, and
   name immutability.
+
+## M4 implementation (2026-09-29)
+
+The implemented subject is `urth.v2.jobs.<accountUID>.<encodedRunnerName>` and
+the consumer is `runner-<accountUID>-<encodedRunnerName>`, as amended by ADR 0008.
+Dots map to underscores; encodings over 128 bytes become their first 63 bytes,
+`~`, and a SHA-256 digest. The marker separates the long-name representation
+from every short-name representation. Digest collision resistance replaces a
+strict mathematical injectivity guarantee for truncated names.
+
+Worker NATS user JWTs authorize only their consumer's pull/info/ack operations,
+runner inbox, logs and presence. Tests use an authenticated broker to verify
+cross-account denials and same-name separation. No v1 drain is implemented
+because no existing installation needs migration. Queue reaping and the
+inherited-message operator view remain follow-up control-loop/UI work; M4
+implements queue addressing and entitlement.

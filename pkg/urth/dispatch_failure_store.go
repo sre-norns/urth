@@ -52,6 +52,9 @@ func recordDispatchFailure(ctx context.Context, store dbstore.TransactionalStore
 	if found, err := store.GetByName(ctx, &existing, name); err != nil {
 		return DispatchFailure{}, false, fmt.Errorf("failed to look up dispatch failure %q: %w", name, err)
 	} else if found {
+		if existing.Spec.RunnerUID != spec.RunnerUID {
+			return DispatchFailure{}, false, claimForbidden("dispatch belongs to another runner")
+		}
 		return existing, false, nil
 	}
 
@@ -63,6 +66,38 @@ func recordDispatchFailure(ctx context.Context, store dbstore.TransactionalStore
 		Spec: spec,
 	}
 
+	if spec.ResultUID != "" {
+		var result Result
+		found, err := store.GetByUID(ctx, &result, spec.ResultUID)
+		if err != nil {
+			return DispatchFailure{}, false, err
+		}
+		if found {
+			if result.Status.Executor.RunnerID != spec.RunnerUID {
+				// A worker can report a bad delivery, but cannot strand or
+				// inspect another runner's result. Keep an account diagnostic.
+				entry.Spec.ResultUID = ""
+				spec.ResultUID = ""
+				found = false
+			}
+			if found {
+				if err := entry.ApplyScope(result.Scope()); err != nil {
+					return DispatchFailure{}, false, err
+				}
+			}
+		}
+	}
+
+	if entry.Account == "" {
+		var runner Runner
+		found, err := store.GetByUID(ctx, &runner, spec.RunnerUID)
+		if err != nil {
+			return DispatchFailure{}, false, err
+		}
+		if found {
+			entry.Account = runner.Account
+		}
+	}
 	tx, err := store.Begin(ctx)
 	if err != nil {
 		return DispatchFailure{}, false, fmt.Errorf("failed to open transaction to record a dispatch failure: %w", err)
@@ -87,6 +122,9 @@ func recordDispatchFailure(ctx context.Context, store dbstore.TransactionalStore
 	// record, not which constraint said so.
 	var raced DispatchFailure
 	if found, lookupErr := store.GetByName(ctx, &raced, name); lookupErr == nil && found {
+		if raced.Spec.RunnerUID != spec.RunnerUID {
+			return DispatchFailure{}, false, claimForbidden("dispatch belongs to another runner")
+		}
 		return raced, false, nil
 	}
 
@@ -230,7 +268,8 @@ func retryDispatchFailure(ctx context.Context, store dbstore.TransactionalStore,
 
 	retry := Result{
 		ObjectMeta: manifest.ObjectMeta{
-			Name:   name,
+			Name:    name,
+			Account: original.Account, Project: original.Project,
 			Labels: retryLabels(original, failure),
 		},
 		Spec: ResultSpec{

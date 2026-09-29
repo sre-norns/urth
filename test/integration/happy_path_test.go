@@ -32,7 +32,8 @@ func TestHappyPathRunExecutesEndToEnd(t *testing.T) {
 
 	instance := h.startWorker(runner.Name)
 
-	run := h.createRun(scenario.Name)
+	run, err := h.client("").Results(scenario.Name).Create(h.ctx, manifest.ResourceManifest{TypeMeta: manifest.TypeMeta{Kind: urth.KindResult}, Spec: &urth.ResultSpec{}})
+	require.NoError(t, err)
 	require.Equal(t, urth.JobPending, run.Status.Status)
 	require.Equal(t, runner.UID, run.Status.Executor.RunnerID,
 		"placement records the runner before the Result is persisted")
@@ -52,6 +53,11 @@ func TestHappyPathRunExecutesEndToEnd(t *testing.T) {
 
 	require.Equal(t, urth.JobCompleted, finished.Status.Status)
 	require.Equal(t, prob.RunFinishedSuccess, finished.Status.Result)
+	visible, found, err := h.client("").AllResults().Get(h.ctx, finished.Name)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, h.scope.Project, visible.Project)
+	require.Equal(t, finished.UID, visible.UID)
 
 	// Executor identity is captured at claim time, which is the only moment the
 	// association is certain.

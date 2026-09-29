@@ -23,6 +23,9 @@ func (s *scheduler) PublishDispatch(ctx context.Context, entry urth.DispatchOutb
 		return urth.DispatchReceipt{}, fmt.Errorf("%w: %w for result %v", urth.ErrPermanentDispatch, ErrNoRunner, entry.ResultUID)
 	}
 
+	if err := validateRunnerAddress(entry.AccountID, entry.RunnerName); err != nil {
+		return urth.DispatchReceipt{}, fmt.Errorf("%w: %w", urth.ErrPermanentDispatch, err)
+	}
 	envelope := DispatchEnvelope{
 		SchemaVersion: DispatchEnvelopeVersion,
 		ResultUID:     entry.ResultUID,
@@ -48,7 +51,7 @@ func (s *scheduler) PublishDispatch(ctx context.Context, entry urth.DispatchOutb
 	// before JetStream has persisted the message would let the relay mark the
 	// entry published when it may never be delivered -- reintroducing, one layer
 	// further down, exactly the lost-dispatch window the outbox closes.
-	ack, err := s.js.Publish(ctx, JobSubject(entry.RunnerUID), data, jetstream.WithMsgID(entry.EventUID))
+	ack, err := s.js.Publish(ctx, JobSubject(entry.AccountID, entry.RunnerName), data, jetstream.WithMsgID(entry.EventUID))
 	if err != nil {
 		s.totalErrors.Add(1)
 		return urth.DispatchReceipt{}, fmt.Errorf("failed to publish dispatch %v: %w", entry.EventUID, err)

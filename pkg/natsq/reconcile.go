@@ -17,7 +17,12 @@ import (
 // every runner as "restored" on every scan, which turns the one number an
 // operator would page on -- a queue that had to be rebuilt -- into noise.
 func (s *scheduler) EnsureRunnerChannel(ctx context.Context, runnerUID manifest.ResourceID) (bool, error) {
-	if _, err := BindRunnerConsumer(ctx, s.js, runnerUID); err == nil {
+	runner, lookupErr := s.lookup(ctx, runnerUID)
+	if lookupErr != nil {
+		return false, lookupErr
+	}
+
+	if _, err := BindRunnerConsumer(ctx, s.js, runner.Account, runner.Name); err == nil {
 		return false, nil
 	} else if !errors.Is(err, ErrNoConsumer) {
 		return false, err
@@ -28,7 +33,7 @@ func (s *scheduler) EnsureRunnerChannel(ctx context.Context, runnerUID manifest.
 	// workers cannot fix this -- ADR 0004 gives them no administration rights, on
 	// purpose -- so if the control plane does not rebuild it, the runner accepts
 	// dispatches and delivers none of them.
-	if _, err := EnsureRunnerConsumer(ctx, s.js, s.cfg, runnerUID); err != nil {
+	if _, err := EnsureRunnerConsumer(ctx, s.js, s.cfg, runner.Account, runner.Name); err != nil {
 		return false, err
 	}
 

@@ -118,7 +118,7 @@ func sqliteOutbox(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("failed to open test database: %v", err)
 	}
-	if err := db.AutoMigrate(&urth.DispatchOutboxEntry{}); err != nil {
+	if err := db.AutoMigrate(&urth.DispatchOutboxEntry{AccountID: "11111111-1111-4111-8111-111111111111", RunnerName: manifest.ResourceName(testRunnerUID)}); err != nil {
 		t.Fatalf("failed to migrate outbox: %v", err)
 	}
 
@@ -128,7 +128,7 @@ func sqliteOutbox(t *testing.T) *gorm.DB {
 func enqueueDispatch(t *testing.T, db *gorm.DB, eventUID string) urth.DispatchOutboxEntry {
 	t.Helper()
 
-	entry := urth.DispatchOutboxEntry{
+	entry := urth.DispatchOutboxEntry{AccountID: "11111111-1111-4111-8111-111111111111", RunnerName: manifest.ResourceName(testRunnerUID),
 		SchemaVersion: urth.DispatchOutboxEntryVersion,
 		EventUID:      eventUID,
 		ResultUID:     "result-1",
@@ -188,7 +188,7 @@ func TestRelayPublishesAfterBrokerRecovers(t *testing.T) {
 	defer cancel()
 
 	cfg := outboxTestConfig(server.url())
-	transport, err := natsq.NewScheduler(ctx, cfg)
+	transport, err := natsq.NewScheduler(ctx, cfg, testRunnerLookup)
 	if err != nil {
 		t.Fatalf("failed to create transport: %v", err)
 	}
@@ -286,7 +286,7 @@ func TestRelayCrashBeforeMarkingDeliversOneJob(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	transport, err := natsq.NewScheduler(ctx, outboxTestConfig(server.url()))
+	transport, err := natsq.NewScheduler(ctx, outboxTestConfig(server.url()), testRunnerLookup)
 	if err != nil {
 		t.Fatalf("failed to create transport: %v", err)
 	}
@@ -340,13 +340,13 @@ func TestPublishUnplacedDispatchIsPermanent(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	transport, err := natsq.NewScheduler(ctx, outboxTestConfig(server.url()))
+	transport, err := natsq.NewScheduler(ctx, outboxTestConfig(server.url()), testRunnerLookup)
 	if err != nil {
 		t.Fatalf("failed to create transport: %v", err)
 	}
 	defer transport.Close()
 
-	_, err = transport.PublishDispatch(ctx, urth.DispatchOutboxEntry{
+	_, err = transport.PublishDispatch(ctx, urth.DispatchOutboxEntry{AccountID: "11111111-1111-4111-8111-111111111111", RunnerName: manifest.ResourceName(testRunnerUID),
 		SchemaVersion: urth.DispatchOutboxEntryVersion,
 		EventUID:      "result-1.1",
 		ResultUID:     "result-1",

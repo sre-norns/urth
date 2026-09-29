@@ -21,7 +21,7 @@ const (
 
 	// DefaultMaxRunnerSeries bounds per-runner cardinality.
 	//
-	// Runner UID is an unbounded label: a deployment that creates runners per
+	// Account-qualified runner name is an unbounded label: a deployment that creates runners per
 	// tenant, per branch, or per test run would otherwise write a time series per
 	// runner into Prometheus forever, and the cost lands on the monitoring system
 	// rather than here. Beyond this many runners, only the busiest are reported
@@ -315,7 +315,7 @@ func (c *JetStreamCollector) reportable(states []runnerState) []runnerState {
 	return states
 }
 
-// runnerFromConsumerName recovers the runner UID from its durable name, so the
+// runnerFromConsumerName recovers the account-qualified runner name from its durable name, so the
 // label reads as the resource an operator knows rather than as JetStream's
 // naming of it.
 func runnerFromConsumerName(name string) string {

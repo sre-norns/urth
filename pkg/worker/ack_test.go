@@ -171,7 +171,7 @@ func queuedJob(t *testing.T, conn *nats.Conn, runnerUID manifest.ResourceID) (je
 	if _, err := natsq.EnsureJobStream(ctx, js, cfg); err != nil {
 		t.Fatalf("failed to provision the jobs stream: %v", err)
 	}
-	if _, err := natsq.EnsureRunnerConsumer(ctx, js, cfg, runnerUID); err != nil {
+	if _, err := natsq.EnsureRunnerConsumer(ctx, js, cfg, "11111111-1111-4111-8111-111111111111", manifest.ResourceName(runnerUID)); err != nil {
 		t.Fatalf("failed to provision the runner consumer: %v", err)
 	}
 
@@ -187,11 +187,11 @@ func queuedJob(t *testing.T, conn *nats.Conn, runnerUID manifest.ResourceID) (je
 		t.Fatalf("failed to encode the dispatch: %v", err)
 	}
 
-	if _, err := js.Publish(ctx, natsq.JobSubject(runnerUID), envelope); err != nil {
+	if _, err := js.Publish(ctx, natsq.JobSubject("11111111-1111-4111-8111-111111111111", manifest.ResourceName(runnerUID)), envelope); err != nil {
 		t.Fatalf("failed to publish the dispatch: %v", err)
 	}
 
-	consumer, err := natsq.BindRunnerConsumer(ctx, js, runnerUID)
+	consumer, err := natsq.BindRunnerConsumer(ctx, js, "11111111-1111-4111-8111-111111111111", manifest.ResourceName(runnerUID))
 	if err != nil {
 		t.Fatalf("failed to bind the runner consumer: %v", err)
 	}

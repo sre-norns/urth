@@ -25,7 +25,7 @@ func newReconcilableTransport(t *testing.T) (natsq.Transport, jetstream.JetStrea
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	transport, err := natsq.NewScheduler(ctx, outboxTestConfig(server.url()))
+	transport, err := natsq.NewScheduler(ctx, outboxTestConfig(server.url()), testRunnerLookup)
 	if err != nil {
 		t.Fatalf("failed to create transport: %v", err)
 	}
@@ -67,10 +67,10 @@ func TestEnsureRunnerChannelRestoresADeletedConsumer(t *testing.T) {
 	}
 
 	// An operator clears up, or a restore predates the runner.
-	if err := js.DeleteConsumer(ctx, natsq.JobsStreamName, natsq.RunnerConsumerName(reconcileRunnerUID)); err != nil {
+	if err := js.DeleteConsumer(ctx, natsq.JobsStreamName, natsq.RunnerConsumerName("11111111-1111-4111-8111-111111111111", manifest.ResourceName(reconcileRunnerUID))); err != nil {
 		t.Fatalf("failed to delete the consumer: %v", err)
 	}
-	if _, err := natsq.BindRunnerConsumer(ctx, js, reconcileRunnerUID); !errors.Is(err, natsq.ErrNoConsumer) {
+	if _, err := natsq.BindRunnerConsumer(ctx, js, "11111111-1111-4111-8111-111111111111", manifest.ResourceName(reconcileRunnerUID)); !errors.Is(err, natsq.ErrNoConsumer) {
 		t.Fatalf("consumer lookup after deletion reported %v, want ErrNoConsumer", err)
 	}
 
@@ -82,7 +82,7 @@ func TestEnsureRunnerChannelRestoresADeletedConsumer(t *testing.T) {
 		t.Fatal("a deleted consumer was not reported as restored")
 	}
 
-	if _, err := natsq.BindRunnerConsumer(ctx, js, reconcileRunnerUID); err != nil {
+	if _, err := natsq.BindRunnerConsumer(ctx, js, "11111111-1111-4111-8111-111111111111", manifest.ResourceName(reconcileRunnerUID)); err != nil {
 		t.Fatalf("the restored consumer could not be bound: %v", err)
 	}
 }
@@ -129,7 +129,7 @@ func TestDropDispatchRemovesOnlyTheStaleMessage(t *testing.T) {
 	}
 
 	// And the one left is the live job, not whichever survived.
-	consumer, err := natsq.EnsureRunnerConsumer(ctx, mustJetStreamFor(t, url), outboxTestConfig(url), testRunnerUID)
+	consumer, err := natsq.EnsureRunnerConsumer(ctx, mustJetStreamFor(t, url), outboxTestConfig(url), "11111111-1111-4111-8111-111111111111", manifest.ResourceName(testRunnerUID))
 	if err != nil {
 		t.Fatalf("failed to bind the runner consumer: %v", err)
 	}
@@ -176,7 +176,7 @@ func TestDropDispatchIsQuietWhenTheMessageIsAlreadyGone(t *testing.T) {
 }
 
 func dispatchEntry(eventUID string, resultUID manifest.ResourceID) urth.DispatchOutboxEntry {
-	return urth.DispatchOutboxEntry{
+	return urth.DispatchOutboxEntry{AccountID: "11111111-1111-4111-8111-111111111111", RunnerName: manifest.ResourceName(testRunnerUID),
 		SchemaVersion: urth.DispatchOutboxEntryVersion,
 		EventUID:      eventUID,
 		ResultUID:     resultUID,

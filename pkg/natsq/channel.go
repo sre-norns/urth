@@ -22,7 +22,12 @@ import (
 // without any cooperation from the worker itself, which is what makes it a
 // useful check on the presence workers report about themselves.
 func (s *scheduler) ObserveRunnerChannel(ctx context.Context, runnerUID manifest.ResourceID) (urth.RunnerChannelStatus, error) {
-	consumer, err := BindRunnerConsumer(ctx, s.js, runnerUID)
+	runner, lookupErr := s.lookup(ctx, runnerUID)
+	if lookupErr != nil {
+		return urth.RunnerChannelStatus{}, lookupErr
+	}
+
+	consumer, err := BindRunnerConsumer(ctx, s.js, runner.Account, runner.Name)
 	if errors.Is(err, ErrNoConsumer) {
 		// The runner has no queue yet -- nothing has registered against it. Not
 		// observed, and not a failure: there is simply nothing to report.

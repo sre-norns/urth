@@ -88,7 +88,7 @@ const (
 	NATSCredentialFile NATSCredentialType = "creds"
 
 	// NATSCredentialJWT is a short-lived NATS user JWT minted by Urth and
-	// scoped to this worker's runner. Not yet issued; see ADR 0004 section 8.
+	// scoped to this worker's runner. Renewed with the worker registration.
 	NATSCredentialJWT NATSCredentialType = "jwt"
 )
 
@@ -114,7 +114,8 @@ const NATSConnectionInfoVersion = 1
 // that computed its own consumer name would be one release away from computing
 // a different one than the server provisioned.
 type NATSConnectionInfo struct {
-	SchemaVersion int `form:"schemaVersion" json:"schemaVersion" yaml:"schemaVersion" xml:"schemaVersion"`
+	InboxPrefix   string `json:"inboxPrefix,omitempty" yaml:"inboxPrefix,omitempty"`
+	SchemaVersion int    `form:"schemaVersion" json:"schemaVersion" yaml:"schemaVersion" xml:"schemaVersion"`
 
 	// URLs of the NATS servers to connect to.
 	URLs []string `form:"urls" json:"urls" yaml:"urls" xml:"urls"`

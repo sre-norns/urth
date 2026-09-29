@@ -12,7 +12,7 @@ import (
 
 // The scrape endpoint is not a resource API.
 //
-// It is registered outside the `/api/v1` group on purpose: bark's content
+// It is registered outside the `/v1` group on purpose: bark's content
 // negotiation lives on that group and answers 406 to any Accept header it does
 // not recognise, which is precisely how the live run log stream became
 // unreachable from a browser (task 019). Prometheus asks for a text exposition
@@ -62,7 +62,7 @@ func TestMetricsEndpointIsAbsentWithoutARegistry(t *testing.T) {
 func TestResourceAPIStillNegotiatesContent(t *testing.T) {
 	router := Routes(nil, nil, prometheus.NewRegistry())
 
-	request := httptest.NewRequest(http.MethodGet, "/api/v1/version", nil)
+	request := httptest.NewRequest(http.MethodGet, "/v1/version", nil)
 	request.Header.Set("Accept", "application/x-yaml")
 
 	recorder := httptest.NewRecorder()

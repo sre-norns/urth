@@ -25,10 +25,12 @@ var (
 )
 
 type APIClientConfig struct {
-	HTTPClient *http.Client `kong:"-"`
+	Account    manifest.ResourceID `help:"Account for runner and worker operations"`
+	Project    manifest.ResourceID `help:"Project for scenarios, runs, artifacts and grants"`
+	HTTPClient *http.Client        `kong:"-"`
 
 	Token            APIToken      `help:"API token to authenticate to the API server"`
-	APIServerAddress string        `help:"URL of the API server" default:"http://localhost:8080/api"`
+	APIServerAddress string        `help:"URL of the API server" default:"http://localhost:8080"`
 	Timeout          time.Duration `help:"Communication timeout for API server" default:"1m"`
 }
 
@@ -206,12 +208,19 @@ func (c *RestAPIClient) delete(ctx context.Context, apiURL *url.URL, extraHeader
 }
 
 func (c *RestAPIClient) requestWithAuth(ctx context.Context, method string, apiURL *url.URL, token string, extraHeaders http.Header, body io.Reader) (*http.Request, error) {
-	request, err := http.NewRequestWithContext(ctx, method, apiURL.String(), body)
+	scopedURL, err := c.scopedURL(ctx, method, apiURL)
+	if err != nil {
+		return nil, err
+	}
+	request, err := http.NewRequestWithContext(ctx, method, scopedURL.String(), body)
 	if err != nil {
 		return nil, err
 	}
 	request.Header.Add("Accept", "application/json")
 	request.Header.Add("Content-Type", "application/json")
+	if token == "" {
+		token = string(c.config.Token)
+	}
 	if token != "" {
 		request.Header.Add("Authorization", fmt.Sprintf("Bearer %v", token))
 	}
@@ -295,39 +304,42 @@ func (c *RestAPIClient) deleteResource(ctx context.Context, uri string, version 
 	return resp.StatusCode == http.StatusNoContent || resp.StatusCode == http.StatusOK, err
 }
 
-func readPaginatedResource[T any](reader io.Reader) (results []T, total int64, err error) {
-	var responseObject bark.PaginatedResponse[T]
+func readPaginatedResource[T any](reader io.Reader) (results []T, page manifest.Page, err error) {
+	var responseObject struct {
+		Items []T `json:"items"`
+		manifest.Page
+	}
 	err = json.NewDecoder(reader).Decode(&responseObject)
 	if err != nil {
 		return
 	}
 
-	return responseObject.Data, responseObject.Total, err
+	return responseObject.Items, responseObject.Page, err
 }
 
-func listResources[T any](ctx context.Context, c *RestAPIClient, targetAPI *url.URL) (results []T, total int64, err error) {
+func listResources[T any](ctx context.Context, c *RestAPIClient, targetAPI *url.URL) (results []T, page manifest.Page, err error) {
 	resp, err := c.get(ctx, targetAPI)
 	if err != nil {
-		return nil, 0, err
+		return nil, manifest.Page{}, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, 0, readAPIError(resp)
+		return nil, manifest.Page{}, readAPIError(resp)
 	}
 
 	return readPaginatedResource[T](resp.Body)
 }
 
-func (c *RestAPIClient) listResources(ctx context.Context, targetAPI *url.URL) (results []manifest.ResourceManifest, total int64, err error) {
+func (c *RestAPIClient) listResources(ctx context.Context, targetAPI *url.URL) (results []manifest.ResourceManifest, page manifest.Page, err error) {
 	resp, err := c.get(ctx, targetAPI)
 	if err != nil {
-		return nil, 0, err
+		return nil, manifest.Page{}, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, 0, readAPIError(resp)
+		return nil, manifest.Page{}, readAPIError(resp)
 	}
 
 	return readPaginatedResource[manifest.ResourceManifest](resp.Body)
@@ -393,7 +405,7 @@ func apiURLForResource(baseURL *url.URL, typeInfo manifest.TypeMeta, resourceNam
 		return nil, ErrUnspecifiedAPIKind
 	}
 
-	return urlForPath(baseURL, path.Join(typeInfo.APIVersion, collection, string(resourceName)), query), nil
+	return urlForPath(baseURL, path.Join("v1", collection, string(resourceName)), query), nil
 }
 
 func urlForPath(baseURL *url.URL, apiPath string, query url.Values) *url.URL {
@@ -410,6 +422,21 @@ func urlForPath(baseURL *url.URL, apiPath string, query url.Values) *url.URL {
 
 func searchToQuery(searchQuery manifest.SearchQuery) url.Values {
 	queryParams := url.Values{}
+	if searchQuery.Name != "" {
+		queryParams.Set("name", searchQuery.Name)
+	}
+	if !searchQuery.FromTime.IsZero() {
+		queryParams.Set("from", searchQuery.FromTime.Format(time.RFC3339Nano))
+	}
+	if !searchQuery.TillTime.IsZero() {
+		queryParams.Set("till", searchQuery.TillTime.Format(time.RFC3339Nano))
+	}
+	if searchQuery.Fields != nil && !searchQuery.Fields.Empty() {
+		queryParams.Set("fields", searchQuery.Fields.String())
+	}
+	if searchQuery.Cursor != "" {
+		queryParams.Set("cursor", searchQuery.Cursor)
+	}
 	if searchQuery.Offset > 0 {
 		queryParams.Set("offset", strconv.FormatUint(uint64(searchQuery.Offset), 10))
 	}
@@ -432,7 +459,7 @@ type workersAPIClient struct {
 }
 
 // List all resources matching given search query
-func (c *workersAPIClient) List(ctx context.Context, searchQuery manifest.SearchQuery) ([]manifest.ResourceManifest, int64, error) {
+func (c *workersAPIClient) List(ctx context.Context, searchQuery manifest.SearchQuery) ([]manifest.ResourceManifest, manifest.Page, error) {
 	targetAPI := urlForPath(c.baseURL, "v1/workers", searchToQuery(searchQuery))
 	return c.listResources(ctx, targetAPI)
 }
@@ -492,7 +519,7 @@ type runnersAPIClient struct {
 }
 
 // List all resources matching given search query
-func (c *runnersAPIClient) List(ctx context.Context, searchQuery manifest.SearchQuery) ([]manifest.ResourceManifest, int64, error) {
+func (c *runnersAPIClient) List(ctx context.Context, searchQuery manifest.SearchQuery) ([]manifest.ResourceManifest, manifest.Page, error) {
 	targetAPI := urlForPath(c.baseURL, "v1/runners", searchToQuery(searchQuery))
 	return c.listResources(ctx, targetAPI)
 }
@@ -550,8 +577,8 @@ func (c *runnersAPIClient) Update(ctx context.Context, id manifest.VersionedReso
 }
 
 func (c *runnersAPIClient) GetToken(ctx context.Context, runnerName manifest.ResourceName) (APIToken, bool, error) {
-	targetAPI := urlForPath(c.baseURL, fmt.Sprintf("v1/auth/runners/%v", runnerName), nil)
-	resp, err := c.getWithAuth(ctx, targetAPI, "", nil)
+	targetAPI := urlForPath(c.baseURL, fmt.Sprintf("v1/runners/%v/tokens", runnerName), nil)
+	resp, err := c.postWithAuth(ctx, targetAPI, "", nil, nil)
 	if err != nil {
 		return APIToken(""), false, err
 	}
@@ -600,7 +627,7 @@ type allResultsAPIClient struct {
 }
 
 // List all resources matching given search query
-func (c *allResultsAPIClient) List(ctx context.Context, searchQuery manifest.SearchQuery) ([]Result, int64, error) {
+func (c *allResultsAPIClient) List(ctx context.Context, searchQuery manifest.SearchQuery) ([]Result, manifest.Page, error) {
 	targetAPI := urlForPath(c.baseURL, "v1/results", searchToQuery(searchQuery))
 	return listResources[Result](ctx, &c.RestAPIClient, targetAPI)
 }
@@ -625,7 +652,7 @@ type resultsAPIRestClient struct {
 }
 
 // List all resources matching given search query
-func (c *resultsAPIRestClient) List(ctx context.Context, searchQuery manifest.SearchQuery) ([]Result, int64, error) {
+func (c *resultsAPIRestClient) List(ctx context.Context, searchQuery manifest.SearchQuery) ([]Result, manifest.Page, error) {
 	targetAPI := urlForPath(c.baseURL, fmt.Sprintf("v1/scenarios/%v/results", c.ScenarioID), searchToQuery(searchQuery))
 	return listResources[Result](ctx, &c.RestAPIClient, targetAPI)
 }
@@ -716,7 +743,7 @@ type labelsAPIRestClient struct {
 	kind manifest.Kind
 }
 
-func (m *labelsAPIRestClient) ListNames(ctx context.Context, searchQuery manifest.SearchQuery) (manifest.StringSet, int64, error) {
+func (m *labelsAPIRestClient) ListNames(ctx context.Context, searchQuery manifest.SearchQuery) (manifest.StringSet, manifest.Page, error) {
 	// "/search/:kind/names"
 	kind := strings.ToLower(string(m.kind))
 	targetAPI := urlForPath(m.baseURL, path.Join("v1", "search", kind, "names"), searchToQuery(searchQuery))
@@ -731,7 +758,7 @@ func (m *labelsAPIRestClient) ListNames(ctx context.Context, searchQuery manifes
 	return result, total, err
 }
 
-func (m *labelsAPIRestClient) ListLabels(ctx context.Context, searchQuery manifest.SearchQuery) (manifest.StringSet, int64, error) {
+func (m *labelsAPIRestClient) ListLabels(ctx context.Context, searchQuery manifest.SearchQuery) (manifest.StringSet, manifest.Page, error) {
 	// "/search/:kind/labels"
 	kind := strings.ToLower(string(m.kind))
 	targetAPI := urlForPath(m.baseURL, path.Join("v1", "search", kind, "labels"), searchToQuery(searchQuery))
@@ -746,7 +773,7 @@ func (m *labelsAPIRestClient) ListLabels(ctx context.Context, searchQuery manife
 	return result, total, err
 }
 
-func (m *labelsAPIRestClient) ListLabelValues(ctx context.Context, label string, searchQuery manifest.SearchQuery) (manifest.StringSet, int64, error) {
+func (m *labelsAPIRestClient) ListLabelValues(ctx context.Context, label string, searchQuery manifest.SearchQuery) (manifest.StringSet, manifest.Page, error) {
 	// "/search/:kind/labels/:id"
 	kind := strings.ToLower(string(m.kind))
 	targetAPI := urlForPath(m.baseURL, path.Join("v1", "search", kind, "labels", label), searchToQuery(searchQuery))
@@ -768,7 +795,7 @@ type artifactAPIClient struct {
 	RestAPIClient
 }
 
-func (c *artifactAPIClient) List(ctx context.Context, searchQuery manifest.SearchQuery) ([]manifest.ResourceManifest, int64, error) {
+func (c *artifactAPIClient) List(ctx context.Context, searchQuery manifest.SearchQuery) ([]manifest.ResourceManifest, manifest.Page, error) {
 	targetAPI := urlForPath(c.baseURL, "v1/artifacts", searchToQuery(searchQuery))
 
 	return c.listResources(ctx, targetAPI)
@@ -806,7 +833,7 @@ type scenariosAPIClient struct {
 	RestAPIClient
 }
 
-func (c *scenariosAPIClient) List(ctx context.Context, searchQuery manifest.SearchQuery) ([]manifest.ResourceManifest, int64, error) {
+func (c *scenariosAPIClient) List(ctx context.Context, searchQuery manifest.SearchQuery) ([]manifest.ResourceManifest, manifest.Page, error) {
 	targetAPI := urlForPath(c.baseURL, "v1/scenarios", searchToQuery(searchQuery))
 
 	return c.listResources(ctx, targetAPI)
@@ -935,7 +962,7 @@ type dispatchFailuresAPIClient struct {
 // The server lists manifests, like every other resource, so these are converted
 // rather than decoded straight into the model -- which would silently produce
 // empty names and labels, since a manifest keeps both under `metadata`.
-func (c *dispatchFailuresAPIClient) List(ctx context.Context, searchQuery manifest.SearchQuery) ([]DispatchFailure, int64, error) {
+func (c *dispatchFailuresAPIClient) List(ctx context.Context, searchQuery manifest.SearchQuery) ([]DispatchFailure, manifest.Page, error) {
 	targetAPI := urlForPath(c.baseURL, "v1/dispatch-failures", searchToQuery(searchQuery))
 
 	resources, total, err := c.listResources(ctx, targetAPI)
@@ -1055,4 +1082,74 @@ func (c *dispatchFailuresAPIClient) Resolve(ctx context.Context, id manifest.Res
 	default:
 		return result, readAPIError(resp)
 	}
+}
+
+// RunnerAuthorizations returns the project's runner grant collection.
+func (c *RestAPIClient) RunnerAuthorizations() RunnerAuthorizationsAPI {
+	return &runnerGrantsClient{RestAPIClient: *c}
+}
+
+type runnerGrantsClient struct{ RestAPIClient }
+
+func (c *runnerGrantsClient) List(ctx context.Context, q manifest.SearchQuery) ([]manifest.ResourceManifest, manifest.Page, error) {
+	return c.listResources(ctx, urlForPath(c.baseURL, "v1/runner-authorizations", searchToQuery(q)))
+}
+func (c *runnerGrantsClient) Get(ctx context.Context, name manifest.ResourceName) (manifest.ResourceManifest, bool, error) {
+	var r manifest.ResourceManifest
+	found, err := c.getResource(ctx, "v1/runner-authorizations/"+url.PathEscape(string(name)), &r)
+	return r, found, err
+}
+func (c *runnerGrantsClient) Create(ctx context.Context, m manifest.ResourceManifest) (manifest.ResourceManifest, error) {
+	return c.CreateFromManifest(ctx, m)
+}
+func (c *runnerGrantsClient) CreateOrUpdate(ctx context.Context, m manifest.ResourceManifest) (manifest.ResourceManifest, bool, error) {
+	return c.ApplyObjectDefinition(ctx, m)
+}
+func (c *runnerGrantsClient) Update(ctx context.Context, id manifest.VersionedResourceID, m manifest.ResourceManifest) (manifest.ResourceManifest, error) {
+	m.Metadata.Version = id.Version
+	r, _, err := c.ApplyObjectDefinition(ctx, m)
+	return r, err
+}
+func (c *runnerGrantsClient) Delete(ctx context.Context, id manifest.VersionedResourceID) (bool, error) {
+	return c.deleteResource(ctx, "v1/runner-authorizations/"+url.PathEscape(string(id.ID)), id.Version)
+}
+
+func (c *RestAPIClient) scopedURL(ctx context.Context, method string, original *url.URL) (*url.URL, error) {
+	prefix, rest, found := strings.Cut("/"+strings.TrimPrefix(original.Path, "/"), "/v1/")
+	if !found || strings.HasPrefix(rest, "auth/") || strings.HasSuffix(rest, "/status") || (method == http.MethodPost && (rest == "artifacts" || rest == "dispatch-failures")) {
+		return original, nil
+	}
+	scope := RequestScope(ctx)
+	if scope.Account == "" {
+		scope.Account = c.config.Account
+	}
+	if scope.Project == "" {
+		scope.Project = c.config.Project
+	}
+	collection := strings.Split(rest, "/")[0]
+	if strings.HasPrefix(rest, "search/runners/") || strings.HasPrefix(rest, "search/workers/") {
+		collection = "runners"
+	}
+	if collection == "dispatch-failures" && scope.Project == "" {
+		collection = "runners"
+	}
+	scopedPath := ""
+	switch collection {
+	case "runners", "workers":
+		if scope.Account == "" {
+			return nil, fmt.Errorf("an account is required")
+		}
+		scopedPath = "accounts/" + url.PathEscape(string(scope.Account)) + "/"
+	case "scenarios", "results", "artifacts", "dispatch-failures", "runner-authorizations", "search":
+		if scope.Project == "" {
+			return nil, fmt.Errorf("a project is required")
+		}
+		scopedPath = "projects/" + url.PathEscape(string(scope.Project)) + "/"
+	default:
+		return original, nil
+	}
+	copy := *original
+	copy.Path = prefix + "/v1/" + scopedPath + rest
+	copy.RawPath = ""
+	return &copy, nil
 }

@@ -124,7 +124,7 @@ func TestMetricsReportStreamCapacityAndBacklog(t *testing.T) {
 	}
 
 	const runnerUID = manifest.ResourceID("runner-1")
-	if _, err := natsq.EnsureRunnerConsumer(ctx, js, cfg, runnerUID); err != nil {
+	if _, err := natsq.EnsureRunnerConsumer(ctx, js, cfg, "11111111-1111-4111-8111-111111111111", manifest.ResourceName(runnerUID)); err != nil {
 		t.Fatalf("failed to provision consumer: %v", err)
 	}
 	for i := range 3 {
@@ -141,7 +141,7 @@ func TestMetricsReportStreamCapacityAndBacklog(t *testing.T) {
 	if got := value(t, families, "urth_jetstream_pending_messages"); got != 3 {
 		t.Errorf("fleet pending is %v, want 3", got)
 	}
-	if got := labelled(t, families, "urth_jetstream_runner_pending_messages")[string(runnerUID)]; got != 3 {
+	if got := labelled(t, families, "urth_jetstream_runner_pending_messages")["11111111-1111-4111-8111-111111111111-"+string(runnerUID)]; got != 3 {
 		t.Errorf("runner pending is %v, want 3", got)
 	}
 	if got := value(t, families, "urth_jetstream_stream_consumers"); got != 1 {
@@ -167,7 +167,7 @@ func TestMetricsReportAckPendingAndRedelivery(t *testing.T) {
 	}
 
 	const runnerUID = manifest.ResourceID("runner-1")
-	consumer, err := natsq.EnsureRunnerConsumer(ctx, js, cfg, runnerUID)
+	consumer, err := natsq.EnsureRunnerConsumer(ctx, js, cfg, "11111111-1111-4111-8111-111111111111", manifest.ResourceName(runnerUID))
 	if err != nil {
 		t.Fatalf("failed to provision consumer: %v", err)
 	}
@@ -234,7 +234,7 @@ func TestMetricsCapPerRunnerCardinality(t *testing.T) {
 
 	// Three runners with different amounts of queued work.
 	for i, jobs := range map[manifest.ResourceID]int{"runner-a": 1, "runner-b": 3, "runner-c": 2} {
-		if _, err := natsq.EnsureRunnerConsumer(ctx, js, cfg, i); err != nil {
+		if _, err := natsq.EnsureRunnerConsumer(ctx, js, cfg, "11111111-1111-4111-8111-111111111111", manifest.ResourceName(i)); err != nil {
 			t.Fatalf("failed to provision consumer: %v", err)
 		}
 		for j := range jobs {
@@ -254,7 +254,7 @@ func TestMetricsCapPerRunnerCardinality(t *testing.T) {
 		t.Fatalf("reported %d runner series, want 1 under the cap: %v", len(perRunner), perRunner)
 	}
 	// The busiest runner is the one worth a series.
-	if got, ok := perRunner["runner-b"]; !ok || got != 3 {
+	if got, ok := perRunner["11111111-1111-4111-8111-111111111111-runner-b"]; !ok || got != 3 {
 		t.Errorf("reported %v, want the busiest runner (runner-b, 3 pending)", perRunner)
 	}
 

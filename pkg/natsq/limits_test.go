@@ -22,7 +22,7 @@ import (
 // publishRaw publishes one job and returns the error, rather than failing the
 // test: these tests are about the errors.
 func publishRaw(ctx context.Context, js jetstream.JetStream, runnerUID manifest.ResourceID, dispatchID string, payload []byte) error {
-	_, err := js.Publish(ctx, natsq.JobSubject(runnerUID), payload, jetstream.WithMsgID(dispatchID))
+	_, err := js.Publish(ctx, natsq.JobSubject("11111111-1111-4111-8111-111111111111", manifest.ResourceName(runnerUID)), payload, jetstream.WithMsgID(dispatchID))
 
 	return err
 }
@@ -93,7 +93,7 @@ func TestPerRunnerLimitDoesNotEvictAnotherRunner(t *testing.T) {
 		t.Fatalf("failed to look up stream: %v", err)
 	}
 
-	msg, err := stream.GetLastMsgForSubject(ctx, natsq.JobSubject(quiet))
+	msg, err := stream.GetLastMsgForSubject(ctx, natsq.JobSubject("11111111-1111-4111-8111-111111111111", manifest.ResourceName(quiet)))
 	if err != nil {
 		t.Fatalf("the quiet runner's job should still be queued: %v", err)
 	}
@@ -214,7 +214,7 @@ func TestConsumerCannotExceedMaxAckPending(t *testing.T) {
 
 	const runnerUID = manifest.ResourceID("runner-1")
 
-	consumer, err := natsq.EnsureRunnerConsumer(ctx, js, cfg, runnerUID)
+	consumer, err := natsq.EnsureRunnerConsumer(ctx, js, cfg, "11111111-1111-4111-8111-111111111111", manifest.ResourceName(runnerUID))
 	if err != nil {
 		t.Fatalf("failed to provision consumer: %v", err)
 	}
@@ -314,7 +314,7 @@ func TestStreamAndConsumerCarryEveryConfiguredLimit(t *testing.T) {
 		}
 	}
 
-	consumer, err := natsq.EnsureRunnerConsumer(ctx, js, cfg, "runner-1")
+	consumer, err := natsq.EnsureRunnerConsumer(ctx, js, cfg, "11111111-1111-4111-8111-111111111111", manifest.ResourceName("runner-1"))
 	if err != nil {
 		t.Fatalf("failed to provision consumer: %v", err)
 	}
