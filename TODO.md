@@ -95,9 +95,7 @@ looks deceptively like passing.
 
 - `Active / Disabled / All` in the scenarios header are dead links
   (`href="#"`). They look like filters and are not.
-- No authentication on non-GET requests. Anyone who can reach the API can
-  disable a runner or drop a worker. Fine for local development, not for the
-  "enterprise friendly" claim.
+- M4 backend authentication and tenancy are implemented; see [M4 notes](docs/m4-backend-tenancy.md). Operator login/mail configuration (M5), CLI login (M6), and website adoption (M7) remain.
 - The UI polls; there is no live update. A run triggered from the UI only
   appears after a refetch. Per ADR 0004, resource changes belong on the durable
   `URTH_EVENTS` JetStream stream used by the scheduler and projections -- do not
@@ -136,7 +134,7 @@ looks deceptively like passing.
 [x] Restore labels API: Extract labels from JSON field
 [x] Create API must return metadata for a newly created object as `names` may be generated.
 [X] For `Create` API set `Location` header to point to a newly created resource as per rest best practice
-[] All non-GET request should require authentication!
+[X] Product reads/writes require shared identity sessions and tenant authority; worker operations require their dedicated credentials (M4).
 [] Artifacts should expire and be removed in accordance with retention policy, unless `pinned`
 
 

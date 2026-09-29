@@ -10,6 +10,16 @@ connection, a listener and a shutdown — and is deliberately thin, because a
 `main` can only be tested by starting it. The dispatch path is exercised whole in
 [`test/integration`](../../test/integration).
 
+## Tenancy and authentication
+
+The backend now serves `/v1` with shared identity authentication, account-owned
+runners and project-owned scenarios/results/artifacts. Lists are cursor-only.
+See [M4 configuration and API notes](../../docs/m4-backend-tenancy.md) for routes,
+runner grants, token issuance and NATS signing credentials. The local Makefile
+explicitly enables an unauthenticated development broker. Production requires
+restricted NATS worker credentials. M5 adds operator bootstrap/login/mail setup;
+M6/M7 bring the CLI login and websites onto these APIs.
+
 ## The dispatch outbox
 
 Creating a run is two durable writes: the `Result` row in Postgres, and the job

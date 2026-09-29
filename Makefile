@@ -10,7 +10,7 @@ store-url ?= postgres://urth:urth@localhost:5432/urth
 
 .PHONY: run-api-server
 run-api-server: # Start API server (needs Postgres and NATS)
-	@go run ./cmd/api-server --store.url="$(store-url)"
+	@go run ./cmd/api-server --store.url="$(store-url)" --nats.allow-insecure-workers
 
 # Kept as an alias: NATS used to be opt-in, and docs and habits still name it.
 .PHONY: run-api-server-nats

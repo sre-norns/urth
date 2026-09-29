@@ -9,8 +9,10 @@ import (
 	"sort"
 	"time"
 
+	identitymodel "github.com/sre-norns/wyrd/identity/model"
 	"github.com/sre-norns/wyrd/pkg/dbstore"
 	"github.com/sre-norns/wyrd/pkg/manifest"
+	"gorm.io/gorm"
 )
 
 // placement answers which runner, if any, may take a run.
@@ -22,7 +24,8 @@ import (
 // implementation of "which runners match" would drift from the first, and the
 // symptom would be a UI that offers a run the server then refuses.
 type placement struct {
-	store dbstore.TransactionalStore
+	identityDB *gorm.DB
+	store      dbstore.TransactionalStore
 
 	// load counts the work already committed to each runner. Nil is tolerated:
 	// placement then degrades to the lowest-UID choice rather than refusing to
@@ -267,7 +270,25 @@ func (p placement) candidates(ctx context.Context, requirements manifest.LabelSe
 		return nil, nil, err
 	}
 
-	if _, err := p.store.Find(ctx, &matching, manifest.SearchQuery{Selector: selector}); err != nil {
+	if p.identityDB != nil {
+		scope := RequestScope(ctx)
+		if err := scope.Validate(manifest.ScopeProject); err != nil {
+			return nil, nil, err
+		}
+		// Fetch the authorized set first. Selectors and capacity cannot widen it.
+		activeMachines := p.identityDB.Model(&identitymodel.AgentIdentity{}).Select("id").Where("account_id = ? AND status = 'active'", scope.Account)
+		grants := p.identityDB.Model(&identitymodel.AgentAuthorization{}).Select("agent_id").Where("account_id = ? AND project_id = ? AND status = 'active' AND roles @> ?::jsonb", scope.Account, scope.Project, `["runner"]`).Where("agent_id IN (?)", activeMachines)
+		if err := p.identityDB.WithContext(ctx).Where("account_id = ? AND CAST(uid AS text) IN (?)", scope.Account, grants).Find(&matching).Error; err != nil {
+			return nil, nil, err
+		}
+		filtered := matching[:0]
+		for _, runner := range matching {
+			if selector.Matches(runner.Labels) {
+				filtered = append(filtered, runner)
+			}
+		}
+		matching = filtered
+	} else if _, err := p.store.Find(ctx, &matching, manifest.SearchQuery{Selector: selector}); err != nil {
 		return nil, nil, fmt.Errorf("failed to list runners to schedule a scenario: %w", err)
 	}
 
@@ -491,6 +512,16 @@ func (p placement) Preview(ctx context.Context, requirements manifest.LabelSelec
 	preview.Schedulable = len(eligible) > 0
 	if !preview.Schedulable {
 		preview.Reason = ReasonNoEligibleRunner
+		if p.identityDB != nil {
+			var count int64
+			scope := RequestScope(ctx)
+			if err := p.identityDB.WithContext(ctx).Model(&identitymodel.AgentAuthorization{}).Where("account_id = ? AND project_id = ? AND status = 'active' AND roles @> ?::jsonb", scope.Account, scope.Project, `["runner"]`).Count(&count).Error; err != nil {
+				return preview, err
+			}
+			if count == 0 {
+				preview.Reason = "no-runner-granted"
+			}
+		}
 	}
 
 	capacity, err := p.capacityOf(ctx, eligible)
@@ -551,7 +582,7 @@ func (p placement) workerCapacity(ctx context.Context, runners []Runner) (map[ma
 	}
 
 	var workers []WorkerInstance
-	if _, err := p.store.Find(ctx, &workers, manifest.SearchQuery{Selector: manifest.NewSelector(requirement)}); err != nil {
+	if _, err := p.store.Find(controlContext(ctx), &workers, manifest.SearchQuery{Selector: manifest.NewSelector(requirement)}); err != nil {
 		return nil, fmt.Errorf("failed to list workers of the eligible runners: %w", err)
 	}
 

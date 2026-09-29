@@ -57,7 +57,8 @@ apiVersion: urth.sre-norns.com/v1
 kind: runner-authorizations
 metadata: {name: edge-eu, project: 91be…}
 spec:
-  runner: 5d2e…   # Runner UID
+  runnerRef: 5d2e…   # Runner UID
+  roles: [runner]
 ```
 
 - **Who may manage grants.** A grant is created or revoked by someone who is both an account
@@ -183,3 +184,14 @@ with machine tokens. That is the one operator-visible step of the upgrade.
   step. Shipping `v2` without the account and then adding it would mean a second drain.
 - Granting is a new administrative step. A new project runs nothing until someone grants it a
   Runner. The UI and `urthctl` need to make that step obvious.
+
+## M4 implementation (2026-09-29)
+
+The backend implements this policy under `/v1`, with `identity/v0.2.1` and
+account-qualified NATS v2 queues. See [the implementation and operator notes](../m4-backend-tenancy.md).
+
+Dispatch failures with an authorized parent run are project-owned. A malformed
+message or a delivery to the wrong runner is instead an account-level diagnostic
+visible only to account administrators. It cannot expose or transition another
+runner's result. This preserves diagnostics without inventing a project for an
+unassignable message.

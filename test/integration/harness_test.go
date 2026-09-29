@@ -31,6 +31,8 @@ import (
 	"github.com/sre-norns/urth/pkg/prob"
 	"github.com/sre-norns/urth/pkg/urth"
 	"github.com/sre-norns/urth/pkg/worker"
+	"github.com/sre-norns/wyrd/identity"
+	im "github.com/sre-norns/wyrd/identity/model"
 	"github.com/sre-norns/wyrd/pkg/manifest"
 )
 
@@ -66,8 +68,10 @@ func TestMain(m *testing.M) {
 // assumed, which is how the two claim contracts drifted apart in the first
 // place.
 type harness struct {
-	t   *testing.T
-	ctx context.Context
+	scope manifest.ScopeRef
+	token urth.APIToken
+	t     *testing.T
+	ctx   context.Context
 
 	// DB is scoped to this test's schema. Nothing it writes is visible to
 	// another test, and its cleanup cannot reach the developer's dev data --
@@ -189,6 +193,20 @@ func newHarness(t *testing.T, options ...harnessOption) *harness {
 	require.NoError(t, err, "failed to compose the API server")
 	t.Cleanup(func() { _ = server.Close() })
 	h.Server = server
+	require.NoError(t, server.Identity.ProvisionUser(h.ctx, "owner@example.test", "strong-password-for-tests", false))
+	var user im.User
+	require.NoError(t, h.DB.Where("email = ?", "owner@example.test").First(&user).Error)
+	var membership im.AccountMembership
+	require.NoError(t, h.DB.Where("user_id = ?", user.ID).First(&membership).Error)
+	principal := im.Principal{Type: "user", Scope: im.ScopeAccount, UserID: user.ID, AccountID: membership.AccountID}
+	h.ctx = identity.WithPrincipal(h.ctx, principal)
+	project, err := server.Identity.Projects().Create(h.ctx, im.Project{Resource: im.Resource{Name: "test-project", AccountID: membership.AccountID}})
+	require.NoError(t, err)
+	h.scope = manifest.ScopeRef{Account: manifest.ResourceID(membership.AccountID), Project: manifest.ResourceID(project.ID)}
+	h.ctx = urth.WithScope(h.ctx, h.scope)
+	session, err := identity.IssueSession(h.ctx, h.DB, identity.DefaultConfig(), user, membership.AccountID, "urthctl")
+	require.NoError(t, err)
+	h.token = urth.APIToken(session["access_token"].(string))
 
 	h.HTTP = httptest.NewServer(server.Router)
 	t.Cleanup(h.HTTP.Close)
@@ -203,7 +221,7 @@ func newHarness(t *testing.T, options ...harnessOption) *harness {
 // the api-server would refuse to start with proves nothing about the shipped
 // system.
 func (h *harness) natsConfig() natsq.Config {
-	cfg := natsq.Config{
+	cfg := natsq.Config{AllowInsecureWorkers: true,
 		ClientConfig: natsq.ClientConfig{URL: h.natsURL()},
 
 		Replicas:         1,
@@ -297,7 +315,11 @@ func (h *harness) stopNATS() {
 func (h *harness) client(token urth.APIToken) *urth.RestAPIClient {
 	h.t.Helper()
 
-	client, err := urth.NewRestAPIClient(h.HTTP.URL+"/api", urth.APIClientConfig{
+	if token == "" {
+		token = h.token
+	}
+	client, err := urth.NewRestAPIClient(h.HTTP.URL, urth.APIClientConfig{
+		Account: h.scope.Account, Project: h.scope.Project,
 		Token:      token,
 		Timeout:    30 * time.Second,
 		HTTPClient: &http.Client{Timeout: 30 * time.Second},
@@ -315,7 +337,10 @@ func (h *harness) applyRunner(name manifest.ResourceName, labels manifest.Labels
 		ObjectMeta: manifest.ObjectMeta{Name: name, Labels: labels},
 		Spec:       urth.RunnerSpec{IsActive: true},
 	}
-	require.NoError(h.t, h.Server.Store.Create(h.ctx, &runner))
+	value, err := h.Server.Service.Runners().Create(h.ctx, runner.ToManifest())
+	require.NoError(h.t, err)
+	runner, err = urth.NewRunner(value)
+	require.NoError(h.t, err)
 
 	return runner
 }
@@ -335,7 +360,18 @@ func (h *harness) applyScenario(name manifest.ResourceName, spec testProbSpec, r
 			},
 		},
 	}
-	require.NoError(h.t, h.Server.Store.Create(h.ctx, &scenario))
+	value, err := h.Server.Service.Scenarios().Create(h.ctx, scenario.ToManifest())
+	require.NoError(h.t, err)
+	scenario, err = urth.NewScenario(value)
+	require.NoError(h.t, err)
+	// Older dispatch scenarios assume an authorized fleet. Make that policy
+	// explicit in the fixture; tenancy scenarios create/revoke their own grants.
+	var runners []urth.Runner
+	require.NoError(h.t, h.DB.Where("account_id = ?", h.scope.Account).Find(&runners).Error)
+	for _, runner := range runners {
+		_, _, err := h.Server.Service.RunnerAuthorizations().CreateOrUpdate(h.ctx, manifest.ResourceManifest{TypeMeta: manifest.TypeMeta{Kind: urth.KindRunnerAuthorization}, Metadata: manifest.ObjectMeta{Name: runner.Name}, Spec: &urth.RunnerAuthorizationSpec{RunnerRef: runner.UID, Roles: []im.RoleType{"runner"}}})
+		require.NoError(h.t, err)
+	}
 
 	return scenario
 }
@@ -438,7 +474,8 @@ func (h *harness) artifacts(resultUID manifest.ResourceID) []manifest.ResourceMa
 func (h *harness) dispatchFailures() []urth.DispatchFailure {
 	h.t.Helper()
 
-	failures, _, err := h.Server.Service.DispatchFailures().List(h.ctx, manifest.SearchQuery{})
+	var failures []urth.DispatchFailure
+	err := h.DB.Find(&failures).Error
 	require.NoError(h.t, err)
 
 	return failures
@@ -493,7 +530,7 @@ func (h *harness) consumerInfo(runnerUID manifest.ResourceID) *jetstream.Consume
 	ctx, cancel := context.WithTimeout(h.ctx, 10*time.Second)
 	defer cancel()
 
-	consumer, err := h.jetStream().Consumer(ctx, natsq.JobsStreamName, natsq.RunnerConsumerName(runnerUID))
+	consumer, err := h.jetStream().Consumer(ctx, natsq.JobsStreamName, natsq.RunnerConsumerName(h.scope.Account, h.runnerName(runnerUID)))
 	require.NoError(h.t, err)
 
 	info, err := consumer.Info(ctx)
@@ -530,7 +567,7 @@ func (h *harness) redeliver(entry urth.DispatchOutboxEntry, onto manifest.Resour
 	ctx, cancel := context.WithTimeout(h.ctx, 10*time.Second)
 	defer cancel()
 
-	_, err = h.jetStream().Publish(ctx, natsq.JobSubject(onto), data,
+	_, err = h.jetStream().Publish(ctx, natsq.JobSubject(h.scope.Account, h.runnerName(onto)), data,
 		jetstream.WithMsgID(fmt.Sprintf("%s.redelivery.%s", entry.EventUID, randomSuffix())))
 	require.NoError(h.t, err)
 }
@@ -935,4 +972,11 @@ func randomSuffix() string {
 	}
 
 	return hex.EncodeToString(buf[:])
+}
+
+func (h *harness) runnerName(uid manifest.ResourceID) manifest.ResourceName {
+	h.t.Helper()
+	var runner urth.Runner
+	require.NoError(h.t, h.DB.Where("uid = ?", uid).First(&runner).Error)
+	return runner.Name
 }

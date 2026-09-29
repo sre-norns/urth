@@ -43,6 +43,8 @@ var ErrNoExecutionSnapshot = errors.New("result carries no execution snapshot")
 // logged. That is why ResultSpec hides it from serialization rather than relying
 // on callers to remember.
 type ExecutionSnapshot struct {
+	Account manifest.ResourceID `json:"account,omitempty"`
+	Project manifest.ResourceID `json:"project,omitempty"`
 	// ScenarioUID identifies the scenario this run was created from. It is the
 	// UID rather than the name because a name can be reused.
 	ScenarioUID manifest.ResourceID `json:"scenarioUid,omitempty"`
@@ -74,6 +76,7 @@ type ExecutionSnapshot struct {
 // to do. Validate rejects that rather than persisting it.
 func NewExecutionSnapshot(scenario Scenario) ExecutionSnapshot {
 	return ExecutionSnapshot{
+		Account: scenario.Account, Project: scenario.Project,
 		ScenarioUID:     scenario.UID,
 		ScenarioName:    scenario.Name,
 		ScenarioVersion: scenario.Version,

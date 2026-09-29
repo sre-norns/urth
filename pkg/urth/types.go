@@ -1,6 +1,7 @@
 package urth
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -344,12 +345,12 @@ type Artifact manifest.ResourceModel[ArtifactSpec]
 type Result manifest.StatefulResource[ResultSpec, ResultStatus]
 
 func init() {
-	manifest.MustRegisterManifest(KindWorkerInstance, &WorkerInstanceSpec{}, &WorkerInstanceStatus{})
-	manifest.MustRegisterManifest(KindRunner, &RunnerSpec{}, &RunnerStatus{})
-	manifest.MustRegisterManifest(KindResult, &ResultSpec{}, &ResultStatus{})
-	manifest.MustRegisterManifest(KindScenario, &ScenarioSpec{}, &ScenarioStatus{})
-	manifest.MustRegisterManifest(KindDispatchFailure, &DispatchFailureSpec{}, &DispatchFailureStatus{})
-	manifest.MustRegisterKind(KindArtifact, &ArtifactSpec{})
+	manifest.MustRegisterManifest(KindWorkerInstance, &WorkerInstanceSpec{}, &WorkerInstanceStatus{}, manifest.WithScope(manifest.ScopeAccount))
+	manifest.MustRegisterManifest(KindRunner, &RunnerSpec{}, &RunnerStatus{}, manifest.WithScope(manifest.ScopeAccount))
+	manifest.MustRegisterManifest(KindResult, &ResultSpec{}, &ResultStatus{}, manifest.WithScope(manifest.ScopeProject))
+	manifest.MustRegisterManifest(KindScenario, &ScenarioSpec{}, &ScenarioStatus{}, manifest.WithScope(manifest.ScopeProject))
+	manifest.MustRegisterManifest(KindDispatchFailure, &DispatchFailureSpec{}, &DispatchFailureStatus{}, manifest.WithScope(manifest.ScopeProject))
+	manifest.MustRegisterKind(KindArtifact, &ArtifactSpec{}, manifest.WithScope(manifest.ScopeProject))
 }
 
 func NewWorkerInstance(m manifest.ResourceManifest) (WorkerInstance, error) {
@@ -497,3 +498,20 @@ func (r *Result) AfterFind(tx *gorm.DB) (err error) {
 
 	return
 }
+
+// MarshalJSON uses the same manifest envelope as every other product resource.
+func (r Result) MarshalJSON() ([]byte, error) { return json.Marshal(r.ToManifest()) }
+func (r *Result) UnmarshalJSON(data []byte) error {
+	var m manifest.ResourceManifest
+	if err := json.Unmarshal(data, &m); err != nil {
+		return err
+	}
+	value, err := NewResult(m)
+	if err == nil {
+		*r = value
+	}
+	return err
+}
+
+// MarshalYAML keeps CLI Result output in the resource envelope too.
+func (r Result) MarshalYAML() (any, error) { return r.ToManifest(), nil }

@@ -38,7 +38,12 @@ type Transport interface {
 	urth.RunnerChannelObserver
 }
 
+// RunnerLookup resolves current runner identity for queue administration.
+type RunnerLookup func(context.Context, manifest.ResourceID) (urth.Runner, error)
+
 type scheduler struct {
+	lookup RunnerLookup
+
 	conn *nats.Conn
 	js   jetstream.JetStream
 	cfg  Config
@@ -52,7 +57,13 @@ type scheduler struct {
 // Stream provisioning happens here, at startup, rather than lazily on first
 // dispatch: a misconfigured JetStream should stop an API server from coming up,
 // not surface later as the first scenario run of the day failing.
-func NewScheduler(ctx context.Context, cfg Config) (Transport, error) {
+func NewScheduler(ctx context.Context, cfg Config, lookup RunnerLookup) (Transport, error) {
+	if cfg.WorkerAccountSeedFile == "" && !cfg.AllowInsecureWorkers {
+		return nil, fmt.Errorf("worker NATS signing seed is required (or explicitly enable insecure workers on an isolated development broker)")
+	}
+	if lookup == nil {
+		return nil, fmt.Errorf("runner lookup is required")
+	}
 	conn, err := cfg.Connect("urth-api-server")
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to NATS: %w", err)
@@ -69,7 +80,7 @@ func NewScheduler(ctx context.Context, cfg Config) (Transport, error) {
 		return nil, err
 	}
 
-	return &scheduler{conn: conn, js: js, cfg: cfg}, nil
+	return &scheduler{conn: conn, js: js, cfg: cfg, lookup: lookup}, nil
 }
 
 // PublishStats implements PublishCounters.
@@ -130,29 +141,25 @@ func DispatchIDFor(uid manifest.ResourceID, version manifest.Version) string {
 // would otherwise have jobs published to a subject nothing is bound to. Calling
 // it on every registration is cheap and idempotent.
 func (s *scheduler) ConnectionInfoFor(ctx context.Context, runnerUID manifest.ResourceID) (urth.NATSConnectionInfo, error) {
-	if _, err := EnsureRunnerConsumer(ctx, s.js, s.cfg, runnerUID); err != nil {
+	runner, err := s.lookup(ctx, runnerUID)
+	if err != nil {
 		return urth.NATSConnectionInfo{}, err
 	}
-
-	credential := urth.NATSCredential{Type: urth.NATSCredentialNone}
-	if s.cfg.CredsFile != "" {
-		// The worker is told to use a credentials file it already has. Urth is
-		// not yet an issuer of NATS identities -- ADR 0004 leaves the choice
-		// between Auth Callout and minted NKey/JWT open -- so this is the
-		// operator's provisioning, surfaced through the same field that a
-		// minted credential will eventually use.
-		credential = urth.NATSCredential{
-			Type:  urth.NATSCredentialFile,
-			Value: s.cfg.CredsFile,
-		}
+	if _, err := EnsureRunnerConsumer(ctx, s.js, s.cfg, runner.Account, runner.Name); err != nil {
+		return urth.NATSConnectionInfo{}, err
+	}
+	credential, err := s.workerCredential(runner)
+	if err != nil {
+		return urth.NATSConnectionInfo{}, err
 	}
 
 	return urth.NATSConnectionInfo{
 		SchemaVersion:    urth.NATSConnectionInfoVersion,
 		URLs:             strings.Split(s.cfg.URL, ","),
 		Stream:           JobsStreamName,
-		Consumer:         RunnerConsumerName(runnerUID),
-		Subject:          JobSubject(runnerUID),
+		InboxPrefix:      "_INBOX." + string(runner.UID),
+		Consumer:         RunnerConsumerName(runner.Account, runner.Name),
+		Subject:          JobSubject(runner.Account, runner.Name),
 		LogSubjectPrefix: RunnerLogSubjectPrefix(runnerUID),
 		Credential:       credential,
 	}, nil

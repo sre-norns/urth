@@ -3,6 +3,7 @@ package natsq_test
 import (
 	"context"
 	"errors"
+	"github.com/sre-norns/wyrd/pkg/manifest"
 	"strings"
 	"testing"
 	"time"
@@ -149,14 +150,14 @@ func TestEnsureRunnerConsumerRepairsTheSubjectFilter(t *testing.T) {
 
 	// A consumer under the name this runner uses, bound to the wrong subject.
 	if _, err := js.CreateConsumer(ctx, natsq.JobsStreamName, jetstream.ConsumerConfig{
-		Durable:       natsq.RunnerConsumerName(runnerUID),
-		FilterSubject: natsq.JobSubject("some-other-runner"),
+		Durable:       natsq.RunnerConsumerName("11111111-1111-4111-8111-111111111111", manifest.ResourceName(runnerUID)),
+		FilterSubject: natsq.JobSubject("11111111-1111-4111-8111-111111111111", manifest.ResourceName("some-other-runner")),
 		AckPolicy:     jetstream.AckExplicitPolicy,
 	}); err != nil {
 		t.Fatalf("failed to create the pre-existing consumer: %v", err)
 	}
 
-	consumer, err := natsq.EnsureRunnerConsumer(ctx, js, cfg, runnerUID)
+	consumer, err := natsq.EnsureRunnerConsumer(ctx, js, cfg, "11111111-1111-4111-8111-111111111111", manifest.ResourceName(runnerUID))
 	if err != nil {
 		t.Fatalf("a consumer with the wrong filter must be repaired, not refused: %v", err)
 	}
@@ -165,7 +166,7 @@ func TestEnsureRunnerConsumerRepairsTheSubjectFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to read consumer info: %v", err)
 	}
-	if want := natsq.JobSubject(runnerUID); info.Config.FilterSubject != want {
+	if want := natsq.JobSubject("11111111-1111-4111-8111-111111111111", manifest.ResourceName(runnerUID)); info.Config.FilterSubject != want {
 		t.Errorf("consumer filter is %q, want %q", info.Config.FilterSubject, want)
 	}
 	if info.Config.MaxAckPending != cfg.MaxAckPending {

@@ -28,7 +28,9 @@ import (
 	"github.com/sre-norns/urth/pkg/controllers"
 	"github.com/sre-norns/urth/pkg/natsq"
 	"github.com/sre-norns/urth/pkg/urth"
+	"github.com/sre-norns/wyrd/identity"
 	"github.com/sre-norns/wyrd/pkg/dbstore"
+	"github.com/sre-norns/wyrd/pkg/manifest"
 
 	"github.com/gin-gonic/gin"
 
@@ -59,6 +61,8 @@ import (
 // parses an imported struct exactly as it parsed the one that used to live in
 // cmd/api-server, so moving this here does not rename a single flag.
 type Config struct {
+	// Identity overrides the branded defaults for an embedded host. M5 adds operator flags.
+	Identity       *identity.Config `kong:"-"`
 	dbstore.Config `help:"Persistent storage URL" embed:"" prefix:"store."`
 
 	// Named rather than embedded: both of these are called Config, and
@@ -129,7 +133,8 @@ type Server struct {
 	// Service is the domain service the router is built over. Exposed because a
 	// test driving the API in-process has no reason to go through HTTP for the
 	// setup it is not testing.
-	Service urth.Service
+	Service  urth.Service
+	Identity *identity.Service
 
 	// Router serves the REST API. A caller owns the listener.
 	Router *gin.Engine
@@ -176,6 +181,22 @@ func New(ctx context.Context, db *gorm.DB, cfg Config, options ...Option) (*Serv
 		option(&opts)
 	}
 
+	if err := urth.RegisterIdentity(db); err != nil {
+		return nil, err
+	}
+	if err := identity.Migrate(db); err != nil {
+		return nil, err
+	}
+	identityService := identity.NewService(db)
+	identityConfig := identity.DefaultConfig()
+	identityConfig.ProductName, identityConfig.WebClientID = "Urth", "urth-web"
+	identityConfig.Clients = map[string][]string{"urthctl": {}, "urth-web": {"http://localhost:8080/oauth/callback"}}
+	if cfg.Identity != nil {
+		identityConfig = *cfg.Identity
+	}
+	if err := identityService.Configure(identityConfig); err != nil {
+		return nil, err
+	}
 	store, err := dbstore.NewDBStore(db, dbstore.ManifestModel)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open the resource store: %w", err)
@@ -198,6 +219,7 @@ func New(ctx context.Context, db *gorm.DB, cfg Config, options ...Option) (*Serv
 
 	serviceOptions := []urth.ServiceOption{
 		urth.WithSigningKeys(keys),
+		urth.WithIdentity(db, identityService),
 		urth.WithSessionTTL(cfg.SessionTTL),
 		urth.WithMaxRunDuration(cfg.MaxRunDuration),
 		urth.WithWorkerPresence(presence),
@@ -212,12 +234,17 @@ func New(ctx context.Context, db *gorm.DB, cfg Config, options ...Option) (*Serv
 	}
 
 	server := &Server{
-		Store: store,
-		DB:    db,
-		cfg:   cfg,
+		Store:    store,
+		Identity: identityService,
+		DB:       db,
+		cfg:      cfg,
 	}
 
-	natsScheduler, err := natsq.NewScheduler(ctx, cfg.NATS)
+	natsScheduler, err := natsq.NewScheduler(ctx, cfg.NATS, func(ctx context.Context, uid manifest.ResourceID) (urth.Runner, error) {
+		var runner urth.Runner
+		err := db.WithContext(ctx).Where("uid = ?", uid).First(&runner).Error
+		return runner, err
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to NATS: %w", err)
 	}
@@ -300,7 +327,7 @@ func New(ctx context.Context, db *gorm.DB, cfg Config, options ...Option) (*Serv
 
 	server.Service = urth.NewService(store, server.scheduler, serviceOptions...)
 	server.Metrics = metricsRegistry(db, server.scheduler, placementMetrics)
-	server.Router = Routes(server.Service, server.natsConn, server.Metrics)
+	server.Router = Routes(server.Service, server.natsConn, server.Metrics, identityService)
 
 	return server, nil
 }
@@ -309,7 +336,8 @@ func New(ctx context.Context, db *gorm.DB, cfg Config, options ...Option) (*Serv
 // the listener belongs to the caller, which is what lets a test drive the router
 // through httptest and a command through http.Server.
 func (s *Server) Start(ctx context.Context) {
-	s.Loops.Start(ctx)
+	// Control loops operate across tenants; an administrator session never receives this authority.
+	s.Loops.Start(identity.WithServicePrincipal(ctx))
 
 	if names := s.Loops.Names(); len(names) > 0 {
 		log.Printf("control loops running in this process: %v", names)

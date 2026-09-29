@@ -24,8 +24,8 @@ func fetchRunner(ctx context.Context, apiClient *urth.RestAPIClient, id manifest
 	return result, err
 }
 
-func fetchRunners(ctx context.Context, apiClient *urth.RestAPIClient, q manifest.SearchQuery) ([]urth.Runner, int64, error) {
-	resources, total, err := apiClient.Runners().List(ctx, q)
+func fetchRunners(ctx context.Context, apiClient *urth.RestAPIClient, q manifest.SearchQuery) ([]urth.Runner, manifest.Page, error) {
+	resources, total, err := collectPages(ctx, q, apiClient.Runners().List)
 	if err != nil {
 		return nil, total, fmt.Errorf("failed to fetch batch: %w", err)
 	}
@@ -54,8 +54,8 @@ func fetchScenario(ctx context.Context, apiClient *urth.RestAPIClient, id manife
 	return result, err
 }
 
-func fetchScenarios(ctx context.Context, apiClient *urth.RestAPIClient, q manifest.SearchQuery) ([]urth.Scenario, int64, error) {
-	resources, total, err := apiClient.Scenarios().List(ctx, q)
+func fetchScenarios(ctx context.Context, apiClient *urth.RestAPIClient, q manifest.SearchQuery) ([]urth.Scenario, manifest.Page, error) {
+	resources, total, err := collectPages(ctx, q, apiClient.Scenarios().List)
 	if err != nil {
 		return nil, total, fmt.Errorf("failed to fetch batch: %w", err)
 	}
@@ -72,8 +72,8 @@ func fetchScenarios(ctx context.Context, apiClient *urth.RestAPIClient, q manife
 	return results, total, nil
 }
 
-func fetchResults(ctx context.Context, apiClient *urth.RestAPIClient, scenarioID manifest.ResourceName, q manifest.SearchQuery) ([]urth.Result, int64, error) {
-	resources, total, err := apiClient.Results(scenarioID).List(ctx, q)
+func fetchResults(ctx context.Context, apiClient *urth.RestAPIClient, scenarioID manifest.ResourceName, q manifest.SearchQuery) ([]urth.Result, manifest.Page, error) {
+	resources, total, err := collectPages(ctx, q, apiClient.Results(scenarioID).List)
 	if err != nil {
 		return nil, total, fmt.Errorf("failed to fetch batch: %w", err)
 	}
@@ -144,9 +144,7 @@ func fetchLogs(ctx context.Context, apiClient *urth.RestAPIClient, resultsName m
 	// }
 
 	selector := manifest.NewSelector(requirements...)
-	resources, _, err := apiClient.Artifacts().List(ctx, manifest.SearchQuery{
-		Selector: selector,
-	})
+	resources, _, err := collectPages(ctx, manifest.SearchQuery{Selector: selector}, apiClient.Artifacts().List)
 	if err != nil {
 		return nil, err
 	}
@@ -167,4 +165,24 @@ func fetchLogs(ctx context.Context, apiClient *urth.RestAPIClient, resultsName m
 	}()
 
 	return logStream, err
+}
+
+// CLI collection commands traverse all cursor pages, preserving their existing
+// promise to list every matching resource.
+func collectPages[T any](ctx context.Context, q manifest.SearchQuery, list func(context.Context, manifest.SearchQuery) ([]T, manifest.Page, error)) ([]T, manifest.Page, error) {
+	var all []T
+	for {
+		rows, page, err := list(ctx, q)
+		if err != nil {
+			return nil, page, err
+		}
+		all = append(all, rows...)
+		if page.Next == "" {
+			return all, page, nil
+		}
+		if page.Next == q.Cursor {
+			return nil, page, fmt.Errorf("server repeated a page cursor")
+		}
+		q.Cursor = page.Next
+	}
 }

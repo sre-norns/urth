@@ -46,6 +46,10 @@ var ErrDispatchUnplaced = errors.New("result has no runner assigned")
 // re-encodes the envelope at publication time rather than replaying a stale wire
 // format. The event UID is what must not be regenerated, and it is persisted.
 type DispatchOutboxEntry struct {
+	AccountID  manifest.ResourceID `gorm:"index"`
+	ProjectID  manifest.ResourceID `gorm:"index"`
+	RunnerName manifest.ResourceName
+
 	// ID is the table's own key. The outbox is not a manifest resource: it is
 	// internal plumbing with no name, no labels, and no REST surface, so it does
 	// not embed manifest.ObjectMeta.
@@ -144,6 +148,7 @@ func DispatchEventUID(uid manifest.ResourceID, version manifest.Version) string 
 // identity, so building it any earlier would key it on zeroes.
 func NewDispatchOutboxEntry(result Result, now time.Time) DispatchOutboxEntry {
 	return DispatchOutboxEntry{
+		AccountID: result.Account, ProjectID: result.Project, RunnerName: result.Status.Executor.RunnerName,
 		SchemaVersion: DispatchOutboxEntryVersion,
 		EventUID:      DispatchEventUID(result.UID, result.Version),
 		ResultUID:     result.UID,

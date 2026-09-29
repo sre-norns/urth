@@ -13,21 +13,24 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/sre-norns/urth/pkg/prob"
+	"github.com/sre-norns/wyrd/identity"
 	"github.com/sre-norns/wyrd/pkg/bark"
 	"github.com/sre-norns/wyrd/pkg/dbstore"
 	"github.com/sre-norns/wyrd/pkg/manifest"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // LabelsAPI models helper APIs to access resource names and label to power search
 type LabelsAPI interface {
-	ListNames(ctx context.Context, searchQuery manifest.SearchQuery) (result manifest.StringSet, total int64, err error)
-	ListLabels(ctx context.Context, searchQuery manifest.SearchQuery) (result manifest.StringSet, total int64, err error)
-	ListLabelValues(ctx context.Context, label string, searchQuery manifest.SearchQuery) (result manifest.StringSet, total int64, err error)
+	ListNames(ctx context.Context, searchQuery manifest.SearchQuery) (result manifest.StringSet, page manifest.Page, err error)
+	ListLabels(ctx context.Context, searchQuery manifest.SearchQuery) (result manifest.StringSet, page manifest.Page, err error)
+	ListLabelValues(ctx context.Context, label string, searchQuery manifest.SearchQuery) (result manifest.StringSet, page manifest.Page, err error)
 }
 
 type ReadableResourceAPI[T any] interface {
 	// List all resources matching given search query
-	List(ctx context.Context, searchQuery manifest.SearchQuery) (result []T, total int64, err error)
+	List(ctx context.Context, searchQuery manifest.SearchQuery) (result []T, page manifest.Page, err error)
 
 	// Get a single resource given its unique ID,
 	// Returns a resource if it exists, false, if resource doesn't exists
@@ -53,7 +56,7 @@ type RunnersAPI interface {
 	ReadableResourceAPI[manifest.ResourceManifest]
 	ManageableResourceAPI
 
-	// GetToken generates a JWT token for a worker instance to auth as a Runner
+	// GetToken issues a revocable machine token for runner enrolment.
 	GetToken(ctx context.Context, runID manifest.ResourceName) (APIToken, bool, error)
 
 	// AuthWorker registers a worker, returning its assigned identity, a session
@@ -177,6 +180,7 @@ type Service interface {
 	Labels(manifest.Kind) LabelsAPI
 
 	Runners() RunnersAPI
+	RunnerAuthorizations() RunnerAuthorizationsAPI
 	Workers() WorkersAPI
 	Scenarios() ScenarioAPI
 	Results(scenarioName manifest.ResourceName) RunResultAPI
@@ -313,8 +317,10 @@ func NewService(store *dbstore.DBStore, scheduler Scheduler, options ...ServiceO
 
 type (
 	serviceImpl struct {
-		store     *dbstore.DBStore
-		scheduler Scheduler
+		store      *dbstore.DBStore
+		identityDB *gorm.DB
+		identity   *identity.Service
+		scheduler  Scheduler
 
 		keys           SigningKeys
 		transport      WorkerTransportProvider
@@ -351,6 +357,8 @@ func (s *serviceImpl) workerHeartbeatInterval() time.Duration {
 
 func (s *serviceImpl) Runners() RunnersAPI {
 	return &runnersAPIImpl{
+		identity:         s.identity,
+		identityDB:       s.identityDB,
 		store:            s.store,
 		hmacSampleSecret: s.keys.Enrolment,
 		keys:             s.keys,
@@ -379,6 +387,7 @@ func (s *serviceImpl) Workers() WorkersAPI {
 func (s *serviceImpl) newPlacement() placement {
 	return placement{
 		store:        s.store,
+		identityDB:   s.identityDB,
 		load:         s.runnerLoad,
 		offlineAfter: s.workerOfflineAfter(),
 		decisions:    s.placementCounter,
@@ -394,6 +403,7 @@ func (s *serviceImpl) Scenarios() ScenarioAPI {
 
 func (s *serviceImpl) Results(scenarioName manifest.ResourceName) RunResultAPI {
 	return &resultsAPIImpl{
+		identityDB: s.identityDB,
 		store:      s.store,
 		scenarioID: scenarioName,
 		scheduler:  s.scheduler,
@@ -438,14 +448,17 @@ func (s *serviceImpl) Labels(k manifest.Kind) LabelsAPI {
 // / Scenarios API
 // ------------------------------
 type scenarioAPIImpl struct {
-	store     dbstore.TransactionalStore
+	store     resourceStore
 	placement placement
 }
 
-func (m *scenarioAPIImpl) List(ctx context.Context, query manifest.SearchQuery) (results []manifest.ResourceManifest, total int64, err error) {
+func (m *scenarioAPIImpl) List(ctx context.Context, query manifest.SearchQuery) (results []manifest.ResourceManifest, page manifest.Page, err error) {
+	if err = offsetError(query); err != nil {
+		return
+	}
 	var models []Scenario
 
-	total, err = m.store.Find(ctx, &models, query, dbstore.OrderByCreatedAt(dbstore.OrderAscending)) //, dbstore.Expand("Results", manifest.SearchQuery{
+	page, err = m.store.FindPage(ctx, &models, query) //, dbstore.Expand("Results", manifest.SearchQuery{
 	// Limit: 1,
 	// })) // , dbstore.Omit("Prob.Spec")) - omit doesn't work on a json serialized field
 	if err != nil {
@@ -476,6 +489,9 @@ func (m *scenarioAPIImpl) Get(ctx context.Context, id manifest.ResourceName) (re
 }
 
 func (m *scenarioAPIImpl) CreateOrUpdate(ctx context.Context, newEntry manifest.ResourceManifest) (manifest.ResourceManifest, bool, error) {
+	if err := applyRequestScope(ctx, &newEntry.Metadata, manifest.ScopeProject); err != nil {
+		return manifest.ResourceManifest{}, false, err
+	}
 	scenario, err := NewScenario(newEntry)
 	if err != nil {
 		return manifest.ResourceManifest{}, false, err
@@ -498,7 +514,7 @@ func (m *scenarioAPIImpl) create(ctx context.Context, newEntry Scenario) (Scenar
 		return newEntry, err
 	}
 
-	err := m.store.Create(ctx, &newEntry)
+	err := m.store.Create(ctx, &newEntry, dbstore.Omit(clause.Associations))
 	return newEntry, err
 }
 
@@ -558,6 +574,9 @@ func (m *scenarioAPIImpl) update(ctx context.Context, id manifest.VersionedResou
 }
 
 func (m *scenarioAPIImpl) Create(ctx context.Context, newEntry manifest.ResourceManifest) (manifest.ResourceManifest, error) {
+	if err := applyRequestScope(ctx, &newEntry.Metadata, manifest.ScopeProject); err != nil {
+		return manifest.ResourceManifest{}, err
+	}
 	entry, err := NewScenario(newEntry)
 	if err != nil {
 		return manifest.ResourceManifest{}, err
@@ -568,6 +587,9 @@ func (m *scenarioAPIImpl) Create(ctx context.Context, newEntry manifest.Resource
 }
 
 func (m *scenarioAPIImpl) Update(ctx context.Context, id manifest.VersionedResourceID, newEntry manifest.ResourceManifest) (manifest.ResourceManifest, error) {
+	if err := applyRequestScope(ctx, &newEntry.Metadata, manifest.ScopeProject); err != nil {
+		return manifest.ResourceManifest{}, err
+	}
 	entry, err := NewScenario(newEntry)
 	if err != nil {
 		return manifest.ResourceManifest{}, err
@@ -618,6 +640,7 @@ func (m *scenarioAPIImpl) UpdateScript(ctx context.Context, id manifest.Versione
 // / Scenarios run results
 // ------------------------------
 type resultsAPIImpl struct {
+	identityDB *gorm.DB
 	store      *dbstore.DBStore
 	scenarioID manifest.ResourceName
 	scheduler  Scheduler
@@ -631,19 +654,33 @@ type resultsAPIImpl struct {
 	presence WorkerPresenceStore
 }
 
-func (m *resultsAPIImpl) List(ctx context.Context, searchQuery manifest.SearchQuery) (results []Result, total int64, err error) {
+func (m *resultsAPIImpl) List(ctx context.Context, searchQuery manifest.SearchQuery) (results []Result, page manifest.Page, err error) {
+	if err = offsetError(searchQuery); err != nil {
+		return
+	}
 	var scenario Scenario
 	if exist, err := m.store.GetByName(ctx, &scenario, m.scenarioID); err != nil {
-		return nil, 0, fmt.Errorf("failed to load required scenario: %w", err)
+		return nil, manifest.Page{}, fmt.Errorf("failed to load required scenario: %w", err)
 	} else if !exist {
-		return nil, 0, bark.ErrResourceNotFound
+		return nil, manifest.Page{}, bark.ErrResourceNotFound
 	}
 
-	total, err = m.store.FindLinked(ctx, &results, "Results", &scenario, searchQuery)
+	fields := "scenario_id=" + string(scenario.UID)
+	if searchQuery.Fields != nil && !searchQuery.Fields.Empty() {
+		fields += "," + searchQuery.Fields.String()
+	}
+	searchQuery.Fields, err = manifest.ParseSelector(fields)
+	if err != nil {
+		return nil, manifest.Page{}, err
+	}
+	page, err = m.store.FindPage(ctx, &results, searchQuery, dbstore.Fields(dbstore.FieldColumns{"scenario_id": "scenario_id"}))
 	return
 }
 
 func (m *resultsAPIImpl) Create(ctx context.Context, newEntry manifest.ResourceManifest) (Result, error) {
+	if err := applyRequestScope(ctx, &newEntry.Metadata, manifest.ScopeProject); err != nil {
+		return Result{}, err
+	}
 	// scenarioIdLabelValue := string(m.scenarioId)
 	// // Validate that the Result is labeled with the correct Scenario ID, if any
 	// if v, ok := newEntry.Metadata.Labels[LabelScenarioId]; ok && v != scenarioIdLabelValue {
@@ -694,6 +731,10 @@ func (m *resultsAPIImpl) Create(ctx context.Context, newEntry manifest.ResourceM
 	// not change what the run does, and deleting the scenario must not make a
 	// scheduled run unrunnable. Both were true while the claim path reloaded the
 	// scenario by UID, and neither left any trace in the Result's history.
+	if err := entry.ApplyScope(entry.Spec.Scenario.Scope()); err != nil {
+		return Result{}, err
+	}
+	ctx = WithScope(ctx, entry.Scope())
 	snapshot := NewExecutionSnapshot(entry.Spec.Scenario)
 
 	// Validated before it is persisted, so that a stored pending Result is always
@@ -704,6 +745,7 @@ func (m *resultsAPIImpl) Create(ctx context.Context, newEntry manifest.ResourceM
 		return Result{}, bark.ErrForbidden
 	}
 
+	entry.Spec.ScenarioID = entry.Spec.Scenario.UID
 	entry.Spec.Execution = snapshot
 	entry.Spec.ProbKind = snapshot.Prob.Kind
 
@@ -789,7 +831,7 @@ func (m *resultsAPIImpl) createWithDispatch(ctx context.Context, entry *Result) 
 	// so this covers every early return without a flag to track.
 	defer tx.Rollback()
 
-	if err := tx.Create(entry); err != nil {
+	if err := tx.Create(entry, dbstore.Omit(clause.Associations)); err != nil {
 		return err
 	}
 
@@ -883,6 +925,32 @@ func isReclaim(entry Result, workerUID manifest.ResourceID, dispatchID string) b
 }
 
 func (m *resultsAPIImpl) ClaimRun(ctx context.Context, resultUID manifest.ResourceID, session APIToken, request ClaimJobRequest) (AuthJobResponse, error) {
+	if m.identityDB == nil {
+		return m.claimRun(ctx, resultUID, session, request)
+	}
+	var response AuthJobResponse
+	var claimErr error
+	err := m.identityDB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		copy := *m
+		copy.identityDB = tx
+		store, err := dbstore.NewDBStore(tx, dbstore.ManifestModel)
+		if err != nil {
+			return err
+		}
+		copy.store = store.WithVisibility(scopedVisibility{DB: tx})
+		response, claimErr = copy.claimRun(ctx, resultUID, session, request)
+		// Obsolete claims can intentionally record a terminal unschedulable run.
+		// Commit those writes too; failed SQL still makes the transaction fail.
+		return nil
+	})
+	if err != nil {
+		return AuthJobResponse{}, claimUnavailable("commit claim transaction", err)
+	}
+	return response, claimErr
+}
+
+func (m *resultsAPIImpl) claimRun(ctx context.Context, resultUID manifest.ResourceID, session APIToken, request ClaimJobRequest) (AuthJobResponse, error) {
+	ctx = controlContext(ctx)
 	claims, err := ParseWorkerSession(m.keys, session)
 	if err != nil {
 		return AuthJobResponse{}, claimForbidden("invalid worker session")
@@ -986,6 +1054,18 @@ func (m *resultsAPIImpl) ClaimRun(ctx context.Context, resultUID manifest.Resour
 		return AuthJobResponse{}, claimObsolete("result is not pending")
 	}
 
+	if m.identityDB != nil {
+		scope := manifest.ScopeRef{Account: entry.Spec.Execution.Account, Project: entry.Spec.Execution.Project}
+		granted, err := runnerGranted(ctx, m.identityDB, runner, scope)
+		if err != nil {
+			return AuthJobResponse{}, claimUnavailable("read runner grant", err)
+		}
+		if !granted || scope != entry.Scope() {
+			m.markUnschedulable(ctx, entry, "runner-not-authorized")
+			return AuthJobResponse{}, claimObsolete("runner is no longer granted to this project")
+		}
+	}
+
 	// Business Rule: the server sets the deadline. A worker may ask for less
 	// time than the server allows -- and often should, so a hung probe fails
 	// rather than holding a slot -- but the ceiling is not negotiable. The
@@ -1014,7 +1094,7 @@ func (m *resultsAPIImpl) ClaimRun(ctx context.Context, resultUID manifest.Resour
 	// between two workers reaching for the same run: the loser's version is
 	// stale and its update does not apply. Do not convert this to saveResource
 	// -- that path uses gorm Save, which would let both writes succeed.
-	if ok, err := m.store.Update(ctx, &entry, entry.UID, dbstore.WithVersion(entry.Version)); err != nil {
+	if ok, err := m.store.Update(ctx, &entry, entry.UID, dbstore.WithVersion(entry.Version), dbstore.Omit(clause.Associations)); err != nil {
 		return AuthJobResponse{}, claimUnavailable("commit claim", err)
 	} else if !ok {
 		// The version guard rejected the write: another worker committed its
@@ -1094,7 +1174,7 @@ func (m *resultsAPIImpl) markUnschedulable(ctx context.Context, entry Result, re
 	putLabel(labels, LabelResultUnschedulable, reason)
 	entry.Labels = manifest.MergeLabels(entry.Labels, labels)
 
-	if ok, err := m.store.Update(ctx, &entry, entry.UID, dbstore.WithVersion(entry.Version)); err != nil {
+	if ok, err := m.store.Update(ctx, &entry, entry.UID, dbstore.WithVersion(entry.Version), dbstore.Omit(clause.Associations)); err != nil {
 		log.Printf("failed to mark run %q unschedulable (%v): %v", entry.Name, reason, err)
 	} else if !ok {
 		// Someone else moved the Result on. Whatever they did to it is newer
@@ -1205,6 +1285,7 @@ func (m *resultsAPIImpl) validateUpdateRequest(_ context.Context, entry Result, 
 }
 
 func (m *resultsAPIImpl) UpdateStatus(ctx context.Context, id manifest.VersionedResourceID, token APIToken, runResults ResultStatus) (bark.CreatedResponse, error) {
+	ctx = controlContext(ctx)
 	var entry Result
 	if ok, err := m.store.GetByUID(ctx, &entry, id.ID, dbstore.WithVersion(id.Version)); err != nil {
 		return bark.CreatedResponse{}, bark.ErrResourceNotFound
@@ -1233,7 +1314,7 @@ func (m *resultsAPIImpl) UpdateStatus(ctx context.Context, id manifest.Versioned
 		},
 	)
 
-	if ok, err := m.store.Update(ctx, &entry, entry.UID, dbstore.WithVersion(entry.Version)); err != nil {
+	if ok, err := m.store.Update(ctx, &entry, entry.UID, dbstore.WithVersion(entry.Version), dbstore.Omit(clause.Associations)); err != nil {
 		return bark.CreatedResponse{}, err
 	} else if !ok {
 		return bark.CreatedResponse{}, bark.ErrResourceVersionConflict
@@ -1254,7 +1335,9 @@ func (m *resultsAPIImpl) Get(ctx context.Context, id manifest.ResourceName) (res
 // / Runners resources API
 // ------------------------------
 type runnersAPIImpl struct {
-	store            dbstore.TransactionalStore
+	identity         *identity.Service
+	identityDB       *gorm.DB
+	store            resourceStore
 	hmacSampleSecret []byte
 
 	keys       SigningKeys
@@ -1290,9 +1373,12 @@ func (m *runnersAPIImpl) observeChannel(ctx context.Context, runnerUID manifest.
 // runnerChannelObserveTimeout bounds the broker round trip a runner page makes.
 const runnerChannelObserveTimeout = 2 * time.Second
 
-func (m *runnersAPIImpl) List(ctx context.Context, searchQuery manifest.SearchQuery) (results []manifest.ResourceManifest, total int64, err error) {
+func (m *runnersAPIImpl) List(ctx context.Context, searchQuery manifest.SearchQuery) (results []manifest.ResourceManifest, page manifest.Page, err error) {
+	if err = offsetError(searchQuery); err != nil {
+		return
+	}
 	var models []Runner
-	total, err = m.store.Find(ctx, &models, searchQuery, dbstore.OrderByCreatedAt(dbstore.OrderAscending))
+	page, err = m.store.FindPage(ctx, &models, searchQuery)
 	if err != nil {
 		return
 	}
@@ -1320,6 +1406,9 @@ func (m *runnersAPIImpl) Get(ctx context.Context, id manifest.ResourceName) (res
 }
 
 func (m *runnersAPIImpl) CreateOrUpdate(ctx context.Context, newEntry manifest.ResourceManifest) (manifest.ResourceManifest, bool, error) {
+	if err := applyRequestScope(ctx, &newEntry.Metadata, manifest.ScopeAccount); err != nil {
+		return manifest.ResourceManifest{}, false, err
+	}
 	runner, err := NewRunner(newEntry)
 	if err != nil {
 		return manifest.ResourceManifest{}, false, err
@@ -1347,7 +1436,10 @@ func (m *runnersAPIImpl) create(ctx context.Context, newEntry Runner) (Runner, e
 		return newEntry, fmt.Errorf("runner's requirements are invalid: %v", err)
 	}
 
-	err := m.store.Create(ctx, &newEntry)
+	if m.identity != nil {
+		return m.createIdentityRunner(ctx, newEntry)
+	}
+	err := m.store.Create(ctx, &newEntry, dbstore.Omit(clause.Associations))
 	return newEntry, err
 }
 func (m *runnersAPIImpl) update(ctx context.Context, id manifest.VersionedResourceID, newEntry Runner) (Runner, error) {
@@ -1385,6 +1477,9 @@ func (m *runnersAPIImpl) update(ctx context.Context, id manifest.VersionedResour
 }
 
 func (m *runnersAPIImpl) Create(ctx context.Context, newEntry manifest.ResourceManifest) (manifest.ResourceManifest, error) {
+	if err := applyRequestScope(ctx, &newEntry.Metadata, manifest.ScopeAccount); err != nil {
+		return manifest.ResourceManifest{}, err
+	}
 	entry, err := NewRunner(newEntry)
 	if err != nil {
 		return manifest.ResourceManifest{}, err
@@ -1395,6 +1490,9 @@ func (m *runnersAPIImpl) Create(ctx context.Context, newEntry manifest.ResourceM
 }
 
 func (m *runnersAPIImpl) Update(ctx context.Context, id manifest.VersionedResourceID, newEntry manifest.ResourceManifest) (manifest.ResourceManifest, error) {
+	if err := applyRequestScope(ctx, &newEntry.Metadata, manifest.ScopeAccount); err != nil {
+		return manifest.ResourceManifest{}, err
+	}
 	entry, err := NewRunner(newEntry)
 	if err != nil {
 		return manifest.ResourceManifest{}, err
@@ -1418,8 +1516,11 @@ type allResultsAPIImpl struct {
 // List returns runs newest first. A run list is read to find what just happened,
 // so the most recent runs belong at the top -- unlike the resource lists, which
 // are ordered oldest first because their order is meant to be stable.
-func (m *allResultsAPIImpl) List(ctx context.Context, searchQuery manifest.SearchQuery) (results []Result, total int64, err error) {
-	total, err = m.store.Find(ctx, &results, searchQuery, dbstore.OrderByCreatedAt(dbstore.OrderDescending))
+func (m *allResultsAPIImpl) List(ctx context.Context, searchQuery manifest.SearchQuery) (results []Result, page manifest.Page, err error) {
+	if err = offsetError(searchQuery); err != nil {
+		return
+	}
+	page, err = m.store.FindPage(ctx, &results, searchQuery)
 	return
 }
 
@@ -1454,9 +1555,12 @@ func (m *workersAPIImpl) withPresence(model WorkerInstance, now time.Time) manif
 	return model.ToManifest()
 }
 
-func (m *workersAPIImpl) List(ctx context.Context, searchQuery manifest.SearchQuery) (results []manifest.ResourceManifest, total int64, err error) {
+func (m *workersAPIImpl) List(ctx context.Context, searchQuery manifest.SearchQuery) (results []manifest.ResourceManifest, page manifest.Page, err error) {
+	if err = offsetError(searchQuery); err != nil {
+		return
+	}
 	var models []WorkerInstance
-	total, err = m.store.Find(ctx, &models, searchQuery, dbstore.OrderByCreatedAt(dbstore.OrderAscending))
+	page, err = m.store.FindPage(ctx, &models, searchQuery)
 	if err != nil {
 		return
 	}
@@ -1489,6 +1593,7 @@ func (m *workersAPIImpl) Get(ctx context.Context, id manifest.ResourceName) (res
 // request body is not evidence of identity, and presence that any caller could
 // assert for any worker would be worth nothing.
 func (m *workersAPIImpl) Heartbeat(ctx context.Context, session APIToken, request WorkerHeartbeatRequest) (WorkerHeartbeatResponse, error) {
+	ctx = controlContext(ctx)
 	claims, err := ParseWorkerSession(m.keys, session)
 	if err != nil {
 		return WorkerHeartbeatResponse{}, err
@@ -1553,7 +1658,7 @@ func (m *workersAPIImpl) SetPaused(ctx context.Context, id manifest.ResourceName
 	// operator toggling one worker that is an acceptable trade -- and arguably
 	// the right one, since a pause should not fail because the worker happened to
 	// re-register a moment earlier.
-	if _, err := m.store.CreateOrUpdate(ctx, &worker); err != nil {
+	if _, err := m.store.CreateOrUpdate(ctx, &worker, dbstore.Omit(clause.Associations)); err != nil {
 		return manifest.ResourceManifest{}, false, err
 	}
 
@@ -1586,7 +1691,7 @@ type resourceSaver interface {
 // uses a version-guarded Update, because two workers reaching for the same run
 // is exactly the case it has to lose.
 func saveResource(ctx context.Context, store resourceSaver, value any) error {
-	_, err := store.CreateOrUpdate(ctx, value)
+	_, err := store.CreateOrUpdate(ctx, value, dbstore.Omit(clause.Associations))
 	return err
 }
 
@@ -1619,6 +1724,9 @@ func (m *runnersAPIImpl) GetToken(ctx context.Context, runnerName manifest.Resou
 		return APIToken(""), false, nil
 	}
 
+	if m.identity != nil {
+		return m.machineToken(ctx, runner)
+	}
 	now := time.Now()
 	// Generate JWT with valid-until clause, to give worker a time to post
 	claims := &jwt.RegisteredClaims{
@@ -1700,23 +1808,35 @@ func (m *runnersAPIImpl) admitWorker(ctx context.Context, apiToken APIToken, new
 	var result Runner
 	var registered WorkerInstance
 
-	token, err := jwt.Parse(string(apiToken), func(token *jwt.Token) (any, error) {
-		// Don't forget to validate the alg is what you expect:
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+	var tokenSubj string
+	if m.identity != nil {
+		uid, err := m.machineRunner(ctx, apiToken)
+		if err != nil {
+			return result, registered, err
+		}
+		tokenSubj = string(uid)
+	} else {
+		token, err := jwt.Parse(string(apiToken), func(token *jwt.Token) (any, error) {
+			// Don't forget to validate the alg is what you expect:
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			}
+
+			// hmacSampleSecret is a []byte containing your secret, e.g. []byte("my_secret_key")
+			return m.hmacSampleSecret, nil
+		})
+		if err != nil {
+			return result, registered, bark.ErrResourceUnauthorized
 		}
 
-		// hmacSampleSecret is a []byte containing your secret, e.g. []byte("my_secret_key")
-		return m.hmacSampleSecret, nil
-	})
-	if err != nil {
-		return result, registered, bark.ErrResourceUnauthorized
-	}
+		subject, err := token.Claims.GetSubject()
+		if err != nil {
+			return result, registered, bark.ErrResourceUnauthorized
+		}
 
-	tokenSubj, err := token.Claims.GetSubject()
-	if err != nil {
-		return result, registered, bark.ErrResourceUnauthorized
+		tokenSubj = subject
 	}
+	ctx = controlContext(ctx)
 
 	var runner Runner
 	if ok, err := m.store.GetByUID(ctx, &runner, manifest.ResourceID(tokenSubj),
@@ -1738,6 +1858,10 @@ func (m *runnersAPIImpl) admitWorker(ctx context.Context, apiToken APIToken, new
 
 	worker, err := NewWorkerInstance(newEntry)
 	if err != nil {
+		return result, registered, err
+	}
+
+	if err := worker.ApplyScope(runner.Scope()); err != nil {
 		return result, registered, err
 	}
 
@@ -1766,6 +1890,7 @@ func (m *runnersAPIImpl) admitWorker(ctx context.Context, apiToken APIToken, new
 	// TODO: Should do min with pre-set TTL
 	worker.Status.TTL = worker.Spec.RequestedTTL
 	worker.Spec.Runner = runner
+	worker.Spec.RunnerID = runner.UID
 
 	log.Printf("Runner has %d workers matches", len(runner.Status.Instances))
 	if len(runner.Status.Instances) > 0 && runner.Status.Instances[0].Name == worker.Name {
@@ -1781,7 +1906,7 @@ func (m *runnersAPIImpl) admitWorker(ctx context.Context, apiToken APIToken, new
 		worker.Spec.RunnerID = existingWorkerRecord.Spec.RunnerID
 		existingWorkerRecord.Spec = worker.Spec
 
-		_, err = m.store.Update(ctx, &existingWorkerRecord, existingWorkerRecord.UID, dbstore.WithVersion(existingWorkerRecord.Version))
+		_, err = m.store.Update(ctx, &existingWorkerRecord, existingWorkerRecord.UID, dbstore.WithVersion(existingWorkerRecord.Version), dbstore.Omit(clause.Associations))
 		registered = existingWorkerRecord
 	} else {
 		// Business Rule: Runner can only have a number of new worker up-to-a limit, if limit is set
@@ -1791,7 +1916,7 @@ func (m *runnersAPIImpl) admitWorker(ctx context.Context, apiToken APIToken, new
 
 		worker.Labels = manifest.MergeLabels(worker.Labels, workerLabels(runner))
 
-		err = m.store.Create(ctx, &worker)
+		err = m.store.Create(ctx, &worker, dbstore.Omit(clause.Associations))
 		runner.Status.Instances = append(runner.Status.Instances, worker)
 		registered = worker
 	}
@@ -1803,14 +1928,17 @@ func (m *runnersAPIImpl) admitWorker(ctx context.Context, apiToken APIToken, new
 // / ArtifactsApis implementation
 // ------------------------------
 type artifactAPIImp struct {
-	store dbstore.TransactionalStore
+	store resourceStore
 
 	resultsSigningKey []byte
 }
 
-func (m *artifactAPIImp) List(ctx context.Context, query manifest.SearchQuery) (results []manifest.ResourceManifest, total int64, err error) {
+func (m *artifactAPIImp) List(ctx context.Context, query manifest.SearchQuery) (results []manifest.ResourceManifest, page manifest.Page, err error) {
+	if err = offsetError(query); err != nil {
+		return
+	}
 	var models []Artifact
-	total, err = m.store.Find(ctx, &models, query, dbstore.Omit("Content"), dbstore.OrderByCreatedAt(dbstore.OrderAscending))
+	page, err = m.store.FindPage(ctx, &models, query, dbstore.Omit("Content"))
 	if err != nil {
 		return
 	}
@@ -1878,6 +2006,7 @@ func artifactLabels(workerLabels manifest.Labels, spec ArtifactSpec, result Resu
 }
 
 func (m *artifactAPIImp) Create(ctx context.Context, apiToken APIToken, newEntry manifest.ResourceManifest) (manifest.ResourceManifest, error) {
+	ctx = controlContext(ctx)
 	token, err := jwt.Parse(string(apiToken), func(token *jwt.Token) (any, error) {
 		// Don't forget to validate the alg is what you expect:
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -1911,7 +2040,11 @@ func (m *artifactAPIImp) Create(ctx context.Context, apiToken APIToken, newEntry
 		log.Printf("Failed to convert Artifact Manifest into a model: %v", err)
 		return manifest.ResourceManifest{}, err
 	}
+	if err := entry.ApplyScope(result.Scope()); err != nil {
+		return manifest.ResourceManifest{}, err
+	}
 	entry.Spec.Result = result
+	entry.Spec.ResultID = result.UID
 
 	if entry.Spec.Artifact.Rel == "" {
 		return manifest.ResourceManifest{}, bark.ErrNotAcceptableMediaType
@@ -1928,7 +2061,7 @@ func (m *artifactAPIImp) Create(ctx context.Context, apiToken APIToken, newEntry
 	}
 
 	//////////////////
-	err = m.store.Create(ctx, &entry)
+	err = m.store.Create(ctx, &entry, dbstore.Omit(clause.Associations))
 	return entry.ToManifest(), err
 }
 
@@ -1963,34 +2096,45 @@ type labelsAPIImpl struct {
 	kind  manifest.Kind
 }
 
-func (m *labelsAPIImpl) ListNames(ctx context.Context, searchQuery manifest.SearchQuery) (result manifest.StringSet, total int64, err error) {
-	model, found := kindToModel(m.kind)
-	if !found {
-		return nil, 0, manifest.ErrUnknownKind
+func cataloguePage(values manifest.StringSet, q manifest.SearchQuery, err error) (manifest.StringSet, manifest.Page, error) {
+	if err != nil {
+		return nil, manifest.Page{}, err
 	}
-
-	result, err = m.store.FindNames(ctx, model, searchQuery)
-	return
+	rows, page, err := dbstore.PageSlice(values.Slice(), q, dbstore.Keyset[string]{Columns: []dbstore.KeyColumn{{Expr: "value", Kind: dbstore.KeyString}}, Key: func(s *string) []any { return []any{*s} }})
+	return manifest.NewStringSet(rows...), page, err
 }
 
-func (m *labelsAPIImpl) ListLabels(ctx context.Context, searchQuery manifest.SearchQuery) (result manifest.StringSet, total int64, err error) {
+func (m *labelsAPIImpl) catalogue(ctx context.Context, q manifest.SearchQuery, mode, label string) (manifest.StringSet, manifest.Page, error) {
+	if err := offsetError(q); err != nil {
+		return nil, manifest.Page{}, err
+	}
 	model, found := kindToModel(m.kind)
 	if !found {
-		return nil, 0, manifest.ErrUnknownKind
+		return nil, manifest.Page{}, manifest.ErrUnknownKind
 	}
-
-	result, err = m.store.FindLabels(ctx, model, searchQuery)
-	return
+	all := q
+	all.Limit = 0
+	all.Cursor = ""
+	var values manifest.StringSet
+	var err error
+	switch mode {
+	case "names":
+		values, err = m.store.FindNames(ctx, model, all)
+	case "labels":
+		values, err = m.store.FindLabels(ctx, model, all)
+	default:
+		values, err = m.store.FindLabelValues(ctx, model, label, all)
+	}
+	return cataloguePage(values, q, err)
 }
-
-func (m *labelsAPIImpl) ListLabelValues(ctx context.Context, label string, searchQuery manifest.SearchQuery) (result manifest.StringSet, total int64, err error) {
-	model, found := kindToModel(m.kind)
-	if !found {
-		return nil, 0, manifest.ErrUnknownKind
-	}
-
-	result, err = m.store.FindLabelValues(ctx, model, label, searchQuery)
-	return
+func (m *labelsAPIImpl) ListNames(ctx context.Context, q manifest.SearchQuery) (manifest.StringSet, manifest.Page, error) {
+	return m.catalogue(ctx, q, "names", "")
+}
+func (m *labelsAPIImpl) ListLabels(ctx context.Context, q manifest.SearchQuery) (manifest.StringSet, manifest.Page, error) {
+	return m.catalogue(ctx, q, "labels", "")
+}
+func (m *labelsAPIImpl) ListLabelValues(ctx context.Context, label string, q manifest.SearchQuery) (manifest.StringSet, manifest.Page, error) {
+	return m.catalogue(ctx, q, "values", label)
 }
 
 // ------------------------------
@@ -2005,8 +2149,11 @@ type dispatchFailuresAPIImpl struct {
 
 // List returns failures newest first. A dead-letter list is read to find what
 // just broke, so the same ordering as runs applies: most recent at the top.
-func (m *dispatchFailuresAPIImpl) List(ctx context.Context, searchQuery manifest.SearchQuery) (results []DispatchFailure, total int64, err error) {
-	total, err = m.store.Find(ctx, &results, searchQuery, dbstore.OrderByCreatedAt(dbstore.OrderDescending))
+func (m *dispatchFailuresAPIImpl) List(ctx context.Context, searchQuery manifest.SearchQuery) (results []DispatchFailure, page manifest.Page, err error) {
+	if err = offsetError(searchQuery); err != nil {
+		return
+	}
+	page, err = m.store.FindPage(ctx, &results, searchQuery)
 	return
 }
 
@@ -2023,6 +2170,7 @@ func (m *dispatchFailuresAPIImpl) Get(ctx context.Context, id manifest.ResourceN
 // the work. The worker and runner come from the session; the request body says
 // only what happened.
 func (m *dispatchFailuresAPIImpl) Report(ctx context.Context, session APIToken, request ReportDispatchFailureRequest) (DispatchFailure, error) {
+	ctx = controlContext(ctx)
 	claims, err := ParseWorkerSession(m.keys, session)
 	if err != nil {
 		return DispatchFailure{}, claimForbidden("invalid worker session")
@@ -2066,7 +2214,7 @@ func (m *dispatchFailuresAPIImpl) Report(ctx context.Context, session APIToken, 
 	// on which scenario a run belongs to.
 	if spec.ResultUID != "" {
 		var result Result
-		if ok, err := m.store.GetByUID(ctx, &result, spec.ResultUID); err == nil && ok {
+		if ok, err := m.store.GetByUID(ctx, &result, spec.ResultUID); err == nil && ok && result.Status.Executor.RunnerID == runner.UID {
 			spec.ScenarioName = result.Spec.Execution.ScenarioName
 		}
 	}
@@ -2141,4 +2289,8 @@ func (m *dispatchFailuresAPIImpl) Resolve(ctx context.Context, id manifest.Resou
 	updated, _, err := resolveDispatchFailure(ctx, m.store, failure, time.Now())
 
 	return updated, err
+}
+
+func (s *serviceImpl) RunnerAuthorizations() RunnerAuthorizationsAPI {
+	return &runnerGrantsAPI{db: s.identityDB, identity: s.identity}
 }

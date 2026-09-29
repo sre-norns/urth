@@ -6,8 +6,11 @@ import (
 	"log"
 	"net/http"
 	"reflect"
+	"sort"
 
 	"github.com/sre-norns/urth/pkg/urth"
+	"github.com/sre-norns/wyrd/identity"
+	"github.com/sre-norns/wyrd/identity/httpapi"
 	"github.com/sre-norns/wyrd/pkg/bark"
 	"github.com/sre-norns/wyrd/pkg/manifest"
 
@@ -186,11 +189,18 @@ func statusForResourceError(err error) int {
 // it: every claim disposition this system depends on is expressed as an HTTP
 // status, and a test that never builds a route is asserting the mapping it
 // assumed rather than the one that ships. See test/integration.
-func Routes(srv urth.Service, natsConn *nats.Conn, metrics *prometheus.Registry) *gin.Engine {
+func Routes(srv urth.Service, natsConn *nats.Conn, metrics *prometheus.Registry, identities ...*identity.Service) *gin.Engine {
 	router := gin.Default()
 	router.UseRawPath = true
+	var identityService *identity.Service
+	if len(identities) > 0 {
+		identityService = identities[0]
+	}
+	if identityService != nil {
+		httpapi.Mount(router, identityService, httpapi.Config{ProductName: "Urth", PrivacyURL: "/privacy"})
+	}
 
-	// Deliberately outside the /api/v1 group. Prometheus asks for a text exposition
+	// Deliberately outside the /v1 group. Prometheus asks for a text exposition
 	// format, and bark's content negotiation on that group answers anything it does
 	// not recognise with 406 -- which is how the live run log stream came to be
 	// unreachable from a browser (task 019). A scrape endpoint is not a resource
@@ -205,28 +215,33 @@ func Routes(srv urth.Service, natsConn *nats.Conn, metrics *prometheus.Registry)
 	}
 
 	// Simple group: v1
-	v1 := router.Group("/api/v1", bark.ContentTypeAPI())
+	v1 := router.Group("/v1", bark.ContentTypeAPI())
+	account := v1.Group("/accounts/:id", userAuthentication(identityService), requestScope(identityService, false))
+	project := v1.Group("/projects/:id", userAuthentication(identityService), requestScope(identityService, true))
 	{
 		v1.GET("/version", func(ctx *gin.Context) {
 			bark.Ok(ctx, bark.NewVersionResponse())
 		})
 
-		search := v1.Group("/search/:kind", KindAPI(), bark.SearchableAPI(paginationLimit))
-		{
-			search.GET("/names", func(ctx *gin.Context) {
-				results, total, err := srv.Labels(RequireKind(ctx)).ListNames(ctx.Request.Context(), bark.RequireSearchQuery(ctx))
-				bark.FoundOrNot(ctx, err, results.Slice(), total)
-			})
-			// Support search by listing all possible labels
-			search.GET("/labels", func(ctx *gin.Context) {
-				results, total, err := srv.Labels(RequireKind(ctx)).ListLabels(ctx.Request.Context(), bark.RequireSearchQuery(ctx))
-				bark.FoundOrNot(ctx, err, results.Slice(), total)
-			})
-			// Support search by listing all values of a given label
-			search.GET("/labels/:id", bark.ResourceAPI(), func(ctx *gin.Context) {
-				results, total, err := srv.Labels(RequireKind(ctx)).ListLabelValues(ctx.Request.Context(), string(bark.RequireResourceID(ctx)), bark.RequireSearchQuery(ctx))
-				bark.FoundOrNot(ctx, err, results.Slice(), total)
-			})
+		for _, group := range []*gin.RouterGroup{project, account} {
+			search := group.Group("/search/:kind", KindAPI(), bark.CursorSearchableAPI(bark.DefaultPageLimits))
+			{
+				search.GET("/names", func(ctx *gin.Context) {
+					results, total, err := srv.Labels(RequireKind(ctx)).ListNames(ctx.Request.Context(), bark.RequireSearchQuery(ctx))
+					bark.WithContext[string](ctx).Page(sortedCatalogue(results), total, err)
+				})
+				// Support search by listing all possible labels
+				search.GET("/labels", func(ctx *gin.Context) {
+					results, total, err := srv.Labels(RequireKind(ctx)).ListLabels(ctx.Request.Context(), bark.RequireSearchQuery(ctx))
+					bark.WithContext[string](ctx).Page(sortedCatalogue(results), total, err)
+				})
+				// Support search by listing all values of a given label
+				search.GET("/labels/:resource", bark.ResourceAPI(), func(ctx *gin.Context) {
+					results, total, err := srv.Labels(RequireKind(ctx)).ListLabelValues(ctx.Request.Context(), string(bark.RequireResourceID(ctx)), bark.RequireSearchQuery(ctx))
+					bark.WithContext[string](ctx).Page(sortedCatalogue(results), total, err)
+				})
+			}
+
 		}
 
 		//------------
@@ -312,12 +327,11 @@ func Routes(srv urth.Service, natsConn *nats.Conn, metrics *prometheus.Registry)
 			bark.Ok(ctx, resource)
 		})
 
-		// Request a JWT token to be used by workers to Auth as a Runner instance
-		v1.GET("/auth/runners/:id" /*bark.AuthBearerAPI(),*/, bark.ResourceAPI(), func(ctx *gin.Context) {
+		// Issue a revocable machine token for runner enrolment.
+		account.POST("/runners/:resource/tokens", bark.ResourceAPI(), func(ctx *gin.Context) {
 			ctx.Header(bark.HTTPHeaderCacheControl, "no-store")
 
-			// TODO: Validate user's credentials and ACL
-			// token := bark.RequireBearerToken(ctx)
+			// Scoped runner reads require account administration.
 			token, found, err := srv.Runners().GetToken(ctx.Request.Context(), bark.RequireResourceName(ctx))
 			if err != nil {
 				bark.AbortWithError(ctx, http.StatusBadRequest, err)
@@ -327,35 +341,35 @@ func Routes(srv urth.Service, natsConn *nats.Conn, metrics *prometheus.Registry)
 				return
 			}
 
-			ctx.Header(bark.HTTPHeaderContentType, "application/jwt")
+			ctx.Header(bark.HTTPHeaderContentType, "text/plain; charset=utf-8")
 			ctx.Writer.Write([]byte(token))
 		})
 
 		//------------
 		// Runners API
 		//------------
-		v1.GET("/runners", bark.SearchableAPI(paginationLimit), func(ctx *gin.Context) {
-			bark.Manifest(ctx).List(srv.Runners().List(ctx.Request.Context(), bark.RequireSearchQuery(ctx)))
+		account.GET("/runners", bark.CursorSearchableAPI(bark.DefaultPageLimits), func(ctx *gin.Context) {
+			bark.Manifest(ctx).Page(srv.Runners().List(ctx.Request.Context(), bark.RequireSearchQuery(ctx)))
 		})
-		v1.POST("/runners", bark.ManifestAPI(urth.KindRunner), func(ctx *gin.Context) {
+		account.POST("/runners", bark.ManifestAPI(urth.KindRunner), func(ctx *gin.Context) {
 			bark.Manifest(ctx).Created(srv.Runners().Create(ctx.Request.Context(), bark.RequireManifest(ctx)))
 		})
-		v1.GET("/runners/:id", bark.ResourceAPI(), func(ctx *gin.Context) {
+		account.GET("/runners/:resource", bark.ResourceAPI(), func(ctx *gin.Context) {
 			bark.Manifest(ctx).Found(srv.Runners().Get(ctx.Request.Context(), bark.RequireResourceName(ctx)))
 		})
 		// Create or Update existing resource
 		// bark.VersionedResourceAPI()
-		v1.PUT("/runners/:id", bark.ResourceAPI(), bark.ManifestAPI(urth.KindRunner), func(ctx *gin.Context) {
+		account.PUT("/runners/:resource", bark.ResourceAPI(), bark.ManifestAPI(urth.KindRunner), func(ctx *gin.Context) {
 			// 	versionedId := bark.RequireVersionedResource(ctx)
 			bark.Manifest(ctx).CreatedOrUpdated(srv.Runners().CreateOrUpdate(ctx.Request.Context(), bark.RequireManifest(ctx)))
 		})
-		v1.DELETE("/runners/:id", bark.ResourceAPI(), bark.VersionedResourceAPI(), func(ctx *gin.Context) {
+		account.DELETE("/runners/:resource", bark.ResourceAPI(), bark.VersionedResourceAPI(), func(ctx *gin.Context) {
 			bark.Manifest(ctx).Deleted(srv.Runners().Delete(ctx.Request.Context(), bark.RequireVersionedResource(ctx)))
 		})
 		// The kinds of prob a scenario may declare. Read by clients offering a
 		// choice, so that the list comes from the server rather than being
 		// duplicated and drifting.
-		v1.GET("/probs", func(ctx *gin.Context) {
+		v1.GET("/probs", userAuthentication(identityService), func(ctx *gin.Context) {
 			ctx.JSON(http.StatusOK, gin.H{"data": urth.ListProbKinds()})
 		})
 		//------------
@@ -364,29 +378,26 @@ func Routes(srv urth.Service, natsConn *nats.Conn, metrics *prometheus.Registry)
 		// Distinct from /scenarios/:id/results, which is scoped to one scenario.
 		// This answers "what has run recently, anywhere", which is how a failure
 		// is found when its scenario is not known yet.
-		v1.GET("/results", bark.SearchableAPI(paginationLimit), func(ctx *gin.Context) {
-			bark.WithContext[urth.Result](ctx).List(srv.AllResults().List(ctx.Request.Context(), bark.RequireSearchQuery(ctx)))
+		project.GET("/results", bark.CursorSearchableAPI(bark.DefaultPageLimits), func(ctx *gin.Context) {
+			bark.WithContext[urth.Result](ctx).Page(srv.AllResults().List(ctx.Request.Context(), bark.RequireSearchQuery(ctx)))
 		})
-		v1.GET("/results/:id", bark.ResourceAPI(), func(ctx *gin.Context) {
+		project.GET("/results/:resource", bark.ResourceAPI(), func(ctx *gin.Context) {
 			bark.WithContext[urth.Result](ctx).Found(srv.AllResults().Get(ctx.Request.Context(), bark.RequireResourceName(ctx)))
 		})
 		//------------
 		// Dispatch failures (dead letters)
 		//------------
-		// The operational answer to "why did this run never start". Reads are
-		// open like any other resource; the write paths are asymmetric on
+		// The operational answer to "why did this run never start". Reads require project membership; the write paths are asymmetric on
 		// purpose -- reporting is a worker talking about work it was handed,
 		// while retrying and resolving are operator actions.
 		// Listed as manifests rather than as the model, so an entry has its name
 		// and labels under `metadata` exactly as every other resource does.
-		// Serializing the model directly is what makes a `Result` come back flat
-		// and forces the UI to special-case it; there is no reason to grow a
-		// second resource with that shape.
-		v1.GET("/dispatch-failures", bark.SearchableAPI(paginationLimit), func(ctx *gin.Context) {
+		// Results and dispatch failures share the standard resource envelope.
+		project.GET("/dispatch-failures", bark.CursorSearchableAPI(bark.DefaultPageLimits), func(ctx *gin.Context) {
 			failures, total, err := srv.DispatchFailures().List(ctx.Request.Context(), bark.RequireSearchQuery(ctx))
-			bark.Manifest(ctx).List(dispatchFailureManifests(failures), total, err)
+			bark.Manifest(ctx).Page(dispatchFailureManifests(failures), total, err)
 		})
-		v1.GET("/dispatch-failures/:id", bark.ResourceAPI(), func(ctx *gin.Context) {
+		project.GET("/dispatch-failures/:resource", bark.ResourceAPI(), func(ctx *gin.Context) {
 			failure, found, err := srv.DispatchFailures().Get(ctx.Request.Context(), bark.RequireResourceName(ctx))
 			bark.Manifest(ctx).Found(failure.ToManifest(), found, err)
 		})
@@ -413,7 +424,7 @@ func Routes(srv urth.Service, natsConn *nats.Conn, metrics *prometheus.Registry)
 			bark.Ok(ctx, failure.ToManifest())
 		})
 
-		v1.POST("/dispatch-failures/:id/retry", bark.ResourceAPI(), func(ctx *gin.Context) {
+		project.POST("/dispatch-failures/:resource/retry", bark.ResourceAPI(), func(ctx *gin.Context) {
 			var request urth.RetryDispatchFailureRequest
 			// An empty body is the common case -- "retry this, with the
 			// defaults" -- so a body that will not bind is only an error when
@@ -438,7 +449,7 @@ func Routes(srv urth.Service, natsConn *nats.Conn, metrics *prometheus.Registry)
 			})
 		})
 
-		v1.POST("/dispatch-failures/:id/resolve", bark.ResourceAPI(), func(ctx *gin.Context) {
+		project.POST("/dispatch-failures/:resource/resolve", bark.ResourceAPI(), func(ctx *gin.Context) {
 			failure, err := srv.DispatchFailures().Resolve(ctx.Request.Context(), bark.RequireResourceName(ctx))
 			if err != nil {
 				bark.AbortWithError(ctx, statusForResourceError(err), err)
@@ -454,16 +465,16 @@ func Routes(srv urth.Service, natsConn *nats.Conn, metrics *prometheus.Registry)
 		// Worker instances are created by registration, not by an operator, so
 		// there is no POST here. These endpoints exist to see who has registered
 		// against a runner and to take one out of service.
-		v1.GET("/workers", bark.SearchableAPI(paginationLimit), func(ctx *gin.Context) {
-			bark.Manifest(ctx).List(srv.Workers().List(ctx.Request.Context(), bark.RequireSearchQuery(ctx)))
+		account.GET("/workers", bark.CursorSearchableAPI(bark.DefaultPageLimits), func(ctx *gin.Context) {
+			bark.Manifest(ctx).Page(srv.Workers().List(ctx.Request.Context(), bark.RequireSearchQuery(ctx)))
 		})
-		v1.GET("/workers/:id", bark.ResourceAPI(), func(ctx *gin.Context) {
+		account.GET("/workers/:resource", bark.ResourceAPI(), func(ctx *gin.Context) {
 			bark.Manifest(ctx).Found(srv.Workers().Get(ctx.Request.Context(), bark.RequireResourceName(ctx)))
 		})
 		// Pause or resume a single worker. Separate from a resource update
 		// because a worker rewrites its own record on every registration; an
 		// operator's decision has to land somewhere the worker cannot reach.
-		v1.PUT("/workers/:id/paused", bark.ResourceAPI(), func(ctx *gin.Context) {
+		account.PUT("/workers/:resource/paused", bark.ResourceAPI(), func(ctx *gin.Context) {
 			var request urth.SetPausedRequest
 			if err := ctx.ShouldBindJSON(&request); err != nil {
 				bark.AbortWithError(ctx, http.StatusBadRequest, err)
@@ -475,40 +486,40 @@ func Routes(srv urth.Service, natsConn *nats.Conn, metrics *prometheus.Registry)
 			)
 		})
 		// Revoke a worker's registration.
-		v1.DELETE("/workers/:id", bark.ResourceAPI(), bark.VersionedResourceAPI(), func(ctx *gin.Context) {
+		account.DELETE("/workers/:resource", bark.ResourceAPI(), bark.VersionedResourceAPI(), func(ctx *gin.Context) {
 			bark.Manifest(ctx).Deleted(srv.Workers().Delete(ctx.Request.Context(), bark.RequireVersionedResource(ctx)))
 		})
 		//------------
 		// Scenarios API
 		//------------
-		v1.GET("/scenarios", bark.SearchableAPI(paginationLimit), func(ctx *gin.Context) {
-			bark.Manifest(ctx).List(srv.Scenarios().List(ctx.Request.Context(), bark.RequireSearchQuery(ctx)))
+		project.GET("/scenarios", bark.CursorSearchableAPI(bark.DefaultPageLimits), func(ctx *gin.Context) {
+			bark.Manifest(ctx).Page(srv.Scenarios().List(ctx.Request.Context(), bark.RequireSearchQuery(ctx)))
 		})
-		v1.POST("/scenarios", bark.ManifestAPI(urth.KindScenario), func(ctx *gin.Context) {
+		project.POST("/scenarios", bark.ManifestAPI(urth.KindScenario), func(ctx *gin.Context) {
 			bark.Manifest(ctx).Created(srv.Scenarios().Create(ctx.Request.Context(), bark.RequireManifest(ctx)))
 		})
-		v1.GET("/scenarios/:id", bark.ResourceAPI(), func(ctx *gin.Context) {
+		project.GET("/scenarios/:resource", bark.ResourceAPI(), func(ctx *gin.Context) {
 			bark.Manifest(ctx).Found(srv.Scenarios().Get(ctx.Request.Context(), bark.RequireResourceName(ctx)))
 		})
 		// Create or Update existing resource
 		// bark.VersionedResourceAPI(
-		v1.PUT("/scenarios/:id", bark.ResourceAPI(), bark.ManifestAPI(urth.KindScenario), func(ctx *gin.Context) {
+		project.PUT("/scenarios/:resource", bark.ResourceAPI(), bark.ManifestAPI(urth.KindScenario), func(ctx *gin.Context) {
 			// 	versionedId := bark.RequireVersionedResource(ctx)
 			bark.Manifest(ctx).CreatedOrUpdated(srv.Scenarios().CreateOrUpdate(ctx.Request.Context(), bark.RequireManifest(ctx)))
 		})
-		v1.DELETE("/scenarios/:id", bark.ResourceAPI(), bark.VersionedResourceAPI(), func(ctx *gin.Context) {
+		project.DELETE("/scenarios/:resource", bark.ResourceAPI(), bark.VersionedResourceAPI(), func(ctx *gin.Context) {
 			bark.Manifest(ctx).Deleted(srv.Scenarios().Delete(ctx.Request.Context(), bark.RequireVersionedResource(ctx)))
 		})
 
 		// Where a run of this scenario would go, without creating one. Read
 		// before offering to trigger a run: a scenario whose requirements match
 		// no active runner produces a run that is terminal the moment it exists.
-		v1.GET("/scenarios/:id/placement", bark.ResourceAPI(), func(ctx *gin.Context) {
+		project.GET("/scenarios/:resource/placement", bark.ResourceAPI(), func(ctx *gin.Context) {
 			preview, exists, err := srv.Scenarios().Placement(ctx.Request.Context(), bark.RequireResourceName(ctx))
 			bark.MaybeGotOne(ctx, preview, exists, err)
 		})
 
-		v1.GET("/scenarios/:id/script", bark.ResourceAPI(), func(ctx *gin.Context) {
+		project.GET("/scenarios/:resource/script", bark.ResourceAPI(), func(ctx *gin.Context) {
 			resource, exists, err := srv.Scenarios().Get(ctx.Request.Context(), bark.RequireResourceName(ctx))
 			if err != nil {
 				bark.AbortWithError(ctx, http.StatusBadRequest, err)
@@ -539,14 +550,14 @@ func Routes(srv urth.Service, natsConn *nats.Conn, metrics *prometheus.Registry)
 		// Scenario run Results API
 		//------------
 
-		v1.GET("/scenarios/:id/results", bark.SearchableAPI(paginationLimit), bark.ResourceAPI(), func(ctx *gin.Context) {
-			bark.WithContext[urth.Result](ctx).List(srv.Results(bark.RequireResourceName(ctx)).List(ctx.Request.Context(), bark.RequireSearchQuery(ctx)))
+		project.GET("/scenarios/:resource/results", bark.CursorSearchableAPI(bark.DefaultPageLimits), bark.ResourceAPI(), func(ctx *gin.Context) {
+			bark.WithContext[urth.Result](ctx).Page(srv.Results(bark.RequireResourceName(ctx)).List(ctx.Request.Context(), bark.RequireSearchQuery(ctx)))
 		})
 		// AuthBearerAPI: Who is authorized to create new results ???
-		v1.POST("/scenarios/:id/results", bark.ResourceAPI(), bark.ManifestAPI(urth.KindResult), func(ctx *gin.Context) {
+		project.POST("/scenarios/:resource/results", bark.ResourceAPI(), bark.ManifestAPI(urth.KindResult), func(ctx *gin.Context) {
 			bark.WithContext[urth.Result](ctx).Created(srv.Results(bark.RequireResourceName(ctx)).Create(ctx.Request.Context(), bark.RequireManifest(ctx)))
 		})
-		v1.GET("/scenarios/:id/results/:runId", func(ctx *gin.Context) {
+		project.GET("/scenarios/:resource/results/:runId", func(ctx *gin.Context) {
 			var resourceRequest urth.ScenarioRunResultsRequest
 			if err := ctx.BindUri(&resourceRequest); err != nil {
 				bark.AbortWithError(ctx, http.StatusNotFound, err)
@@ -557,7 +568,7 @@ func Routes(srv urth.Service, natsConn *nats.Conn, metrics *prometheus.Registry)
 		})
 		// Live run log, falling back to the stored artifact once the run has
 		// finished, so one URL serves a run whether or not it is still going.
-		v1.GET("/scenarios/:id/results/:runId/logs", runLogHandler(srv, natsConn))
+		project.GET("/scenarios/:resource/results/:runId/logs", runLogHandler(srv, natsConn))
 		v1.PUT("/scenarios/:id/results/:runId/status", bark.AuthBearerAPI(), bark.VersionedResourceAPI(), func(ctx *gin.Context) {
 			var resourceRequest urth.ScenarioRunResultsRequest
 			if err := ctx.ShouldBindUri(&resourceRequest); err != nil {
@@ -586,8 +597,8 @@ func Routes(srv urth.Service, natsConn *nats.Conn, metrics *prometheus.Registry)
 		//------------
 		// Artifacts API
 		//------------
-		v1.GET("/artifacts", bark.SearchableAPI(paginationLimit), func(ctx *gin.Context) {
-			bark.Manifest(ctx).List(srv.Artifacts().List(ctx.Request.Context(), bark.RequireSearchQuery(ctx)))
+		project.GET("/artifacts", bark.CursorSearchableAPI(bark.DefaultPageLimits), func(ctx *gin.Context) {
+			bark.Manifest(ctx).Page(srv.Artifacts().List(ctx.Request.Context(), bark.RequireSearchQuery(ctx)))
 		})
 
 		// FIXME: Require valid worker auth / JWT
@@ -596,10 +607,10 @@ func Routes(srv urth.Service, natsConn *nats.Conn, metrics *prometheus.Registry)
 			token := bark.RequireBearerToken(ctx)
 			bark.Manifest(ctx).Created(srv.Artifacts().Create(ctx.Request.Context(), urth.APIToken(token), bark.RequireManifest(ctx)))
 		})
-		v1.GET("/artifacts/:id", bark.ResourceAPI(), func(ctx *gin.Context) {
+		project.GET("/artifacts/:resource", bark.ResourceAPI(), func(ctx *gin.Context) {
 			bark.Manifest(ctx).Found(srv.Artifacts().Get(ctx.Request.Context(), bark.RequireResourceName(ctx)))
 		})
-		v1.GET("/artifacts/:id/content", bark.ResourceAPI(), func(ctx *gin.Context) {
+		project.GET("/artifacts/:resource/content", bark.ResourceAPI(), func(ctx *gin.Context) {
 			resource, exists, err := srv.Artifacts().GetContent(ctx.Request.Context(), bark.RequireResourceName(ctx))
 			if err != nil {
 				bark.AbortWithError(ctx, http.StatusBadRequest, err)
@@ -616,10 +627,45 @@ func Routes(srv urth.Service, natsConn *nats.Conn, metrics *prometheus.Registry)
 		// TODO: POST("/artifacts/:id/content") ???
 
 		// FIXME: Should you be able to delete an artifact. It should auto-expire
-		v1.DELETE("/artifacts/:id", bark.ResourceAPI(), bark.VersionedResourceAPI(), func(ctx *gin.Context) {
+		project.DELETE("/artifacts/:resource", bark.ResourceAPI(), bark.VersionedResourceAPI(), func(ctx *gin.Context) {
 			bark.Manifest(ctx).Deleted(srv.Artifacts().Delete(ctx.Request.Context(), bark.RequireVersionedResource(ctx)))
 		})
 	}
 
+	project.GET("/runner-authorizations", bark.CursorSearchableAPI(bark.DefaultPageLimits), func(ctx *gin.Context) {
+		bark.Manifest(ctx).Page(srv.RunnerAuthorizations().List(ctx.Request.Context(), bark.RequireSearchQuery(ctx)))
+	})
+	project.GET("/runner-authorizations/:resource", bark.ResourceAPI(), func(ctx *gin.Context) {
+		bark.Manifest(ctx).Found(srv.RunnerAuthorizations().Get(ctx.Request.Context(), bark.RequireResourceName(ctx)))
+	})
+	project.POST("/runner-authorizations", bark.ManifestAPI(urth.KindRunnerAuthorization), func(ctx *gin.Context) {
+		bark.Manifest(ctx).Created(srv.RunnerAuthorizations().Create(ctx.Request.Context(), bark.RequireManifest(ctx)))
+	})
+	project.PUT("/runner-authorizations/:resource", bark.ResourceAPI(), bark.ManifestAPI(urth.KindRunnerAuthorization), func(ctx *gin.Context) {
+		bark.Manifest(ctx).CreatedOrUpdated(srv.RunnerAuthorizations().CreateOrUpdate(ctx.Request.Context(), bark.RequireManifest(ctx)))
+	})
+	project.DELETE("/runner-authorizations/:resource", bark.ResourceAPI(), bark.VersionedResourceAPI(), func(ctx *gin.Context) {
+		bark.Manifest(ctx).Deleted(srv.RunnerAuthorizations().Delete(ctx.Request.Context(), bark.RequireVersionedResource(ctx)))
+	})
+
+	account.GET("/dispatch-failures", bark.CursorSearchableAPI(bark.DefaultPageLimits), func(ctx *gin.Context) {
+		rows, page, err := srv.DispatchFailures().List(ctx.Request.Context(), bark.RequireSearchQuery(ctx))
+		bark.Manifest(ctx).Page(dispatchFailureManifests(rows), page, err)
+	})
+	account.GET("/dispatch-failures/:resource", bark.ResourceAPI(), func(ctx *gin.Context) {
+		row, found, err := srv.DispatchFailures().Get(ctx.Request.Context(), bark.RequireResourceName(ctx))
+		bark.Manifest(ctx).Found(row.ToManifest(), found, err)
+	})
+	account.POST("/dispatch-failures/:resource/resolve", bark.ResourceAPI(), func(ctx *gin.Context) {
+		row, err := srv.DispatchFailures().Resolve(ctx.Request.Context(), bark.RequireResourceName(ctx))
+		bark.Manifest(ctx).Found(row.ToManifest(), err == nil, err)
+	})
+
 	return router
+}
+
+func sortedCatalogue(values manifest.StringSet) []string {
+	rows := values.Slice()
+	sort.Strings(rows)
+	return rows
 }

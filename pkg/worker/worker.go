@@ -143,9 +143,10 @@ func WithProbeRunner(fn ProbeRunner) Option {
 
 // Worker holds the identity and connections established at startup.
 type Worker struct {
-	config    *Config
-	apiClient urth.Service
-	token     urth.APIToken
+	natsCredentials string
+	config          *Config
+	apiClient       urth.Service
+	token           urth.APIToken
 
 	// Guards the session, which the renewal goroutine replaces while job
 	// handlers read it.
@@ -259,6 +260,10 @@ func (w *Worker) register(ctx context.Context) (urth.WorkerRegistrationResponse,
 	w.mu.Lock()
 	w.session = registration.Session
 	w.sessionUntil = registration.SessionExpiresAt
+	w.natsCredentials = registration.NATS.Credential.Value
+	if expiry := registration.NATS.Credential.ExpiresAt; !expiry.IsZero() && expiry.Before(w.sessionUntil) {
+		w.sessionUntil = expiry
+	}
 	w.runnerMeta = runnerResource.ObjectMeta
 	w.workerMeta = workerResource.ObjectMeta
 	w.runnerUID = runnerResource.UID
@@ -315,10 +320,18 @@ func (w *Worker) connect(ctx context.Context, info urth.NATSConnectionInfo) (jet
 		// would otherwise sit connected to a queue that never fills.
 		cfg.URL = strings.Join(info.URLs, ",")
 	}
+	if info.Credential.Type == urth.NATSCredentialJWT {
+		cfg.UserCredentials = info.Credential.Value
+		cfg.CredsFile = ""
+	}
 	if info.Credential.Type == urth.NATSCredentialFile && info.Credential.Value != "" {
 		cfg.CredsFile = info.Credential.Value
 	}
 
+	if info.Credential.Type == urth.NATSCredentialJWT {
+		cfg.CredentialSource = func() string { w.mu.RLock(); defer w.mu.RUnlock(); return w.natsCredentials }
+		cfg.InboxPrefix = info.InboxPrefix
+	}
 	conn, err := cfg.Connect(fmt.Sprintf("urth-worker-%s", w.workerMeta.Name))
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to NATS: %w", err)
@@ -333,7 +346,7 @@ func (w *Worker) connect(ctx context.Context, info urth.NATSConnectionInfo) (jet
 	// Bind, never create. A worker that provisions its own consumer has stepped
 	// outside the permission model ADR 0004 sets out, and on a work-queue
 	// stream would likely collide with the real one.
-	consumer, err := natsq.BindRunnerConsumer(ctx, js, w.runnerUID)
+	consumer, err := js.Consumer(ctx, info.Stream, info.Consumer)
 	if err != nil {
 		return nil, err
 	}

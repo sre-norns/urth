@@ -55,7 +55,7 @@ func startNATS(t *testing.T) *nats.Conn {
 // combination the api-server would refuse to start with proves nothing about
 // the shipped system.
 func testConfig() natsq.Config {
-	return natsq.Config{
+	return natsq.Config{AllowInsecureWorkers: true,
 		Replicas:         1,
 		MaxJobs:          64,
 		MaxBytes:         1 << 20,
@@ -99,7 +99,7 @@ func publishJob(t *testing.T, js jetstream.JetStream, runnerUID manifest.Resourc
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if _, err = js.Publish(ctx, natsq.JobSubject(runnerUID), data, jetstream.WithMsgID(dispatchID)); err != nil {
+	if _, err = js.Publish(ctx, natsq.JobSubject("11111111-1111-4111-8111-111111111111", manifest.ResourceName(runnerUID)), data, jetstream.WithMsgID(dispatchID)); err != nil {
 		t.Fatalf("failed to publish job: %v", err)
 	}
 
@@ -123,7 +123,7 @@ func TestWorkerDiesBeforeClaimRedelivers(t *testing.T) {
 	}
 
 	const runnerUID = manifest.ResourceID("runner-a")
-	consumer, err := natsq.EnsureRunnerConsumer(ctx, js, cfg, runnerUID)
+	consumer, err := natsq.EnsureRunnerConsumer(ctx, js, cfg, "11111111-1111-4111-8111-111111111111", manifest.ResourceName(runnerUID))
 	if err != nil {
 		t.Fatalf("failed to ensure consumer: %v", err)
 	}
@@ -181,7 +181,7 @@ func TestAckedJobIsNotRedelivered(t *testing.T) {
 	}
 
 	const runnerUID = manifest.ResourceID("runner-b")
-	consumer, err := natsq.EnsureRunnerConsumer(ctx, js, cfg, runnerUID)
+	consumer, err := natsq.EnsureRunnerConsumer(ctx, js, cfg, "11111111-1111-4111-8111-111111111111", manifest.ResourceName(runnerUID))
 	if err != nil {
 		t.Fatalf("failed to ensure consumer: %v", err)
 	}
@@ -233,7 +233,7 @@ func TestNakedJobIsRedelivered(t *testing.T) {
 	}
 
 	const runnerUID = manifest.ResourceID("runner-nak")
-	consumer, err := natsq.EnsureRunnerConsumer(ctx, js, cfg, runnerUID)
+	consumer, err := natsq.EnsureRunnerConsumer(ctx, js, cfg, "11111111-1111-4111-8111-111111111111", manifest.ResourceName(runnerUID))
 	if err != nil {
 		t.Fatalf("failed to ensure consumer: %v", err)
 	}
@@ -290,7 +290,7 @@ func TestDuplicatePublishIsSuppressed(t *testing.T) {
 	}
 
 	const runnerUID = manifest.ResourceID("runner-c")
-	consumer, err := natsq.EnsureRunnerConsumer(ctx, js, cfg, runnerUID)
+	consumer, err := natsq.EnsureRunnerConsumer(ctx, js, cfg, "11111111-1111-4111-8111-111111111111", manifest.ResourceName(runnerUID))
 	if err != nil {
 		t.Fatalf("failed to ensure consumer: %v", err)
 	}
@@ -334,11 +334,11 @@ func TestRunnersDoNotSeeEachOthersJobs(t *testing.T) {
 	const runnerOne = manifest.ResourceID("runner-one")
 	const runnerTwo = manifest.ResourceID("runner-two")
 
-	consumerOne, err := natsq.EnsureRunnerConsumer(ctx, js, cfg, runnerOne)
+	consumerOne, err := natsq.EnsureRunnerConsumer(ctx, js, cfg, "11111111-1111-4111-8111-111111111111", manifest.ResourceName(runnerOne))
 	if err != nil {
 		t.Fatalf("failed to ensure consumer one: %v", err)
 	}
-	consumerTwo, err := natsq.EnsureRunnerConsumer(ctx, js, cfg, runnerTwo)
+	consumerTwo, err := natsq.EnsureRunnerConsumer(ctx, js, cfg, "11111111-1111-4111-8111-111111111111", manifest.ResourceName(runnerTwo))
 	if err != nil {
 		t.Fatalf("failed to ensure consumer two: %v", err)
 	}
@@ -398,7 +398,7 @@ func TestBindRunnerConsumerRefusesMissing(t *testing.T) {
 		t.Fatalf("failed to ensure stream: %v", err)
 	}
 
-	_, err := natsq.BindRunnerConsumer(ctx, js, "never-provisioned")
+	_, err := natsq.BindRunnerConsumer(ctx, js, "11111111-1111-4111-8111-111111111111", manifest.ResourceName("never-provisioned"))
 	if err == nil {
 		t.Fatal("binding a consumer that does not exist succeeded, want failure")
 	}

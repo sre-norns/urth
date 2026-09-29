@@ -68,6 +68,10 @@ DNS and ICMP semantics should be familiar if you already run it.
 
 ---
 
+The backend tenancy/API transition is documented in [M4 notes](docs/m4-backend-tenancy.md).
+It uses authenticated, scoped `/v1` routes and cursor lists; the website and CLI
+login migrations follow in M5–M7.
+
 ## Concepts
 
 | Concept | What it is |

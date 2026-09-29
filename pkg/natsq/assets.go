@@ -194,7 +194,10 @@ func EnsureJobStream(ctx context.Context, js jetstream.JetStream, cfg Config) (j
 // Idempotent: called both when a runner is created and again at dispatch time,
 // so that a runner created before this code shipped -- or one whose consumer an
 // operator removed -- still gets a queue rather than silently dropping jobs.
-func EnsureRunnerConsumer(ctx context.Context, js jetstream.JetStream, cfg Config, runnerUID manifest.ResourceID) (jetstream.Consumer, error) {
+func EnsureRunnerConsumer(ctx context.Context, js jetstream.JetStream, cfg Config, account manifest.ResourceID, name manifest.ResourceName) (jetstream.Consumer, error) {
+	if err := validateRunnerAddress(account, name); err != nil {
+		return nil, err
+	}
 	// No pre-flight drift check here, unlike the stream, and not by oversight.
 	// There is nothing on a consumer of *this* stream that JetStream refuses to
 	// change in place: a work-queue stream will not accept a consumer with any
@@ -204,12 +207,12 @@ func EnsureRunnerConsumer(ctx context.Context, js jetstream.JetStream, cfg Confi
 	// CreateOrUpdateConsumer without touching the messages queued under it.
 	// Guarding against drift that cannot happen would only block the repair.
 	consumer, err := js.CreateOrUpdateConsumer(ctx, JobsStreamName, jetstream.ConsumerConfig{
-		Durable: RunnerConsumerName(runnerUID),
+		Durable: RunnerConsumerName(account, name),
 
 		// Exactly one subject. A wildcard here would overlap other runners'
 		// subjects, which a work-queue stream rejects outright -- and if it did
 		// not, would let one runner's workers drain another's queue.
-		FilterSubject: JobSubject(runnerUID),
+		FilterSubject: JobSubject(account, name),
 
 		AckPolicy: jetstream.AckExplicitPolicy,
 
@@ -233,7 +236,7 @@ func EnsureRunnerConsumer(ctx context.Context, js jetstream.JetStream, cfg Confi
 		// runner they belong to.
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to provision consumer for runner %q: %w", runnerUID, err)
+		return nil, fmt.Errorf("failed to provision consumer for runner %q: %w", name, err)
 	}
 
 	return consumer, nil
@@ -245,13 +248,13 @@ func EnsureRunnerConsumer(ctx context.Context, js jetstream.JetStream, cfg Confi
 // A missing consumer means the worker has been pointed at a runner the control
 // plane has not provisioned, which is a configuration error worth failing on
 // rather than papering over.
-func BindRunnerConsumer(ctx context.Context, js jetstream.JetStream, runnerUID manifest.ResourceID) (jetstream.Consumer, error) {
-	consumer, err := js.Consumer(ctx, JobsStreamName, RunnerConsumerName(runnerUID))
+func BindRunnerConsumer(ctx context.Context, js jetstream.JetStream, account manifest.ResourceID, name manifest.ResourceName) (jetstream.Consumer, error) {
+	consumer, err := js.Consumer(ctx, JobsStreamName, RunnerConsumerName(account, name))
 	if errors.Is(err, jetstream.ErrConsumerNotFound) {
-		return nil, fmt.Errorf("%w: runner %q", ErrNoConsumer, runnerUID)
+		return nil, fmt.Errorf("%w: runner %q", ErrNoConsumer, name)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to bind consumer for runner %q: %w", runnerUID, err)
+		return nil, fmt.Errorf("failed to bind consumer for runner %q: %w", name, err)
 	}
 
 	return consumer, nil

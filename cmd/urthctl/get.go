@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -368,14 +369,15 @@ func (c *Labels) Run(cfg *commandContext) error {
 	ctx, cancel := cfg.ClientCallContext()
 	defer cancel()
 
-	labels, _, err := apiClient.Labels(kind).ListLabels(ctx, manifest.SearchQuery{
-		Selector: selector,
+	labels, _, err := collectPages(ctx, manifest.SearchQuery{Selector: selector}, func(ctx context.Context, q manifest.SearchQuery) ([]string, manifest.Page, error) {
+		values, page, err := apiClient.Labels(kind).ListLabels(ctx, q)
+		return values.Slice(), page, err
 	})
 	if err != nil {
 		return err
 	}
 
-	for kv := range labels {
+	for _, kv := range labels {
 		fmt.Println(kv)
 		// fmt.Printf("%v=%v\n", kv.Key, kv.Value)
 	}
