@@ -14,9 +14,15 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+// registeringRunner marks the context of createIdentityRunner, the one place a
+// machine identity may be created. See the machine identity rule in
+// RegisterIdentity.
+type registeringRunner struct{}
+
 // createIdentityRunner creates the runner and its machine identity atomically.
 // Both have the same UID, so grants and revocable tokens need no lookup alias.
 func (m *runnersAPIImpl) createIdentityRunner(ctx context.Context, runner Runner) (Runner, error) {
+	ctx = context.WithValue(ctx, registeringRunner{}, true)
 	if runner.UID != "" {
 		return runner, identityError(identity.Invalid("A new runner must not supply a UID."))
 	}

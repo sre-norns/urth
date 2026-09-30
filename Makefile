@@ -8,9 +8,36 @@ website-experiment-dist = website-experiment/dist
 # supported (TIMESTAMPTZ columns cannot be read back), so Postgres is passed here.
 store-url ?= postgres://urth:urth@localhost:5432/urth
 
+# Local identity: the issuer is the browser-facing origin -- website-experiment's
+# dev server, which proxies the API -- because emailed links are built from it
+# and sign-in forms are only accepted from it. Mail is written as .eml files to
+# .dev/mail. The bootstrap user owns an account, so it can sign straight in.
+# Variables already set in the environment win. A test checks each of these is
+# a flag's environment variable (pkg/apiserver/identity_test.go).
 .PHONY: run-api-server
+run-api-server: export URTH_DEVELOPMENT ?= true
+run-api-server: export URTH_ISSUER ?= http://localhost:3001
+run-api-server: export URTH_WEB_REDIRECT_URI ?= http://localhost:3001/oauth/callback
+run-api-server: export URTH_MAIL_PROVIDER ?= development
+run-api-server: export URTH_AUTH_MAIL_DIR ?= $(CURDIR)/.dev/mail
+run-api-server: export URTH_BOOTSTRAP_EMAIL ?= admin@urth.example
+run-api-server: export URTH_BOOTSTRAP_PASSWORD ?= urth-dev-password
 run-api-server: # Start API server (needs Postgres and NATS)
 	@go run ./cmd/api-server --store.url="$(store-url)" --nats.allow-insecure-workers
+
+# The same, with sign-in through the fake identity provider as a generic OIDC
+# provider. Start it first with `make run-fake-idp`.
+.PHONY: run-api-server-fake-idp
+run-api-server-fake-idp: export URTH_OIDC_ISSUER_URL ?= http://127.0.0.1:18090/google
+run-api-server-fake-idp: export URTH_OIDC_CLIENT_ID ?= fake-client
+run-api-server-fake-idp: export URTH_OIDC_CLIENT_SECRET ?= fake-secret
+run-api-server-fake-idp: run-api-server
+
+# A local fake Google/GitHub/OIDC provider on 127.0.0.1:18090. Never contacts a
+# real provider; development and browser tests only.
+.PHONY: run-fake-idp
+run-fake-idp: # Start the fake identity provider
+	@go run github.com/sre-norns/wyrd/identity/cmd/fake-idp
 
 # Kept as an alias: NATS used to be opt-in, and docs and habits still name it.
 .PHONY: run-api-server-nats

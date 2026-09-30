@@ -17,8 +17,49 @@ runners and project-owned scenarios/results/artifacts. Lists are cursor-only.
 See [M4 configuration and API notes](../../docs/m4-backend-tenancy.md) for routes,
 runner grants, token issuance and NATS signing credentials. The local Makefile
 explicitly enables an unauthenticated development broker. Production requires
-restricted NATS worker credentials. M5 adds operator bootstrap/login/mail setup;
-M6/M7 bring the CLI login and websites onto these APIs.
+restricted NATS worker credentials. M6/M7 bring the CLI login and websites onto
+these APIs.
+
+### Identity: issuer, sign-in, mail and the first user
+
+Every identity flag has an environment variable named `URTH_` plus the option's
+own name, **without** an `IDENTITY_` segment: kong's `prefix` renames flags only.
+
+| Flag | Environment | Default | Purpose |
+|---|---|---|---|
+| `--identity.issuer` | `URTH_ISSUER` | `http://localhost:8080` | Public origin the browser uses. Emailed links are built from it and sign-in forms are accepted only from it. HTTPS except on localhost. |
+| `--identity.web-redirect-uri` (repeatable) | `URTH_WEB_REDIRECT_URI` (comma-separated) | `http://localhost:8080/oauth/callback` | Exact redirect URIs of the `urth-web` client. `urthctl` uses the device grant. |
+| `--identity.privacy-url` | `URTH_PRIVACY_URL` | none | Privacy notice the sign-in pages link to. No link unless set. |
+| `--identity.account-provisioning` | `URTH_ACCOUNT_PROVISIONING` | `self-service` | `system-admin-only` turns off self-registration. |
+| `--identity.development` | `URTH_DEVELOPMENT` | off | Allows local HTTP issuers and the file mailer. Never in production. |
+| `--identity.mail-provider` | `URTH_MAIL_PROVIDER` | `auto` | `smtp`, `mailgun`, `development` or `auto` (whichever is configured, else no mail). |
+| `--identity.mail-directory` | `URTH_AUTH_MAIL_DIR` | none | Development mailer: writes `.eml` files here (created `0700`). |
+| `--identity.mail-from`, `--identity.smtp-*`, `--identity.mailgun-*` | `URTH_MAIL_FROM`, `URTH_SMTP_*`, `URTH_MAILGUN_*` | none | SMTP (STARTTLS) or Mailgun delivery. |
+| `--identity.google-*`, `--identity.github-*`, `--identity.oidc-*` | `URTH_GOOGLE_*`, `URTH_GITHUB_*`, `URTH_OIDC_*` | none | Upstream sign-in; a provider is enabled when its client ID and secret are set. |
+| `--bootstrap.email`, `--bootstrap.password` | `URTH_BOOTSTRAP_EMAIL`, `URTH_BOOTSTRAP_PASSWORD` | none | Creates this user **and an account it owns** if the user does not exist. The password must be 12 to 72 bytes. |
+| `--bootstrap.system-admin` | `URTH_BOOTSTRAP_SYSTEM_ADMIN` | off | Provisions a system administrator instead: system authority and **no account**. Urth has no system console yet. |
+
+Bootstrap runs on every start and does nothing once the user exists. It does not
+recreate an account deleted since.
+
+**Mail.** Without a provider, email invitations answer `503` and the invitation
+and project-access mail workers are not started. With one, both run as supervised
+loops beside the relay and reconciler, and stop with them.
+
+**Runners own their identities.** A Runner's machine identity is created with it,
+by `POST /v1/accounts/:account/runners`, and shares its UID. The shared identity
+routes refuse to create a machine identity on its own, and refuse to rename one
+away from its Runner, because the Runner's name is its queue address. Suspending a
+runner's identity through them stays allowed.
+
+**Local development.** `make run-api-server` sets the development values: the
+issuer and redirect URI are `website-experiment`'s origin (`http://localhost:3001`),
+because that dev server fronts the API; mail goes to `.dev/mail`; and it
+bootstraps `admin@urth.example` (password `urth-dev-password`) as an account
+owner. Sign-in forms are then accepted only through that origin, not directly on
+`:8080`. For sign-in through an upstream provider, run `make run-fake-idp` and
+then `make run-api-server-fake-idp`, which enables the fake as the `oidc`
+provider.
 
 ## The dispatch outbox
 

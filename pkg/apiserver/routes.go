@@ -183,21 +183,26 @@ func statusForResourceError(err error) int {
 	}
 }
 
+// IdentityRoutes pairs the shared identity service Routes mounts with the
+// branding of the pages it serves.
+type IdentityRoutes struct {
+	Service *identity.Service
+	Pages   httpapi.Config
+}
+
 // Routes builds the API server's route table.
 //
 // Exported so that a test can drive the real router rather than a stand-in for
 // it: every claim disposition this system depends on is expressed as an HTTP
 // status, and a test that never builds a route is asserting the mapping it
 // assumed rather than the one that ships. See test/integration.
-func Routes(srv urth.Service, natsConn *nats.Conn, metrics *prometheus.Registry, identities ...*identity.Service) *gin.Engine {
+func Routes(srv urth.Service, natsConn *nats.Conn, metrics *prometheus.Registry, identities ...IdentityRoutes) *gin.Engine {
 	router := gin.Default()
 	router.UseRawPath = true
 	var identityService *identity.Service
-	if len(identities) > 0 {
-		identityService = identities[0]
-	}
-	if identityService != nil {
-		httpapi.Mount(router, identityService, httpapi.Config{ProductName: "Urth", PrivacyURL: "/privacy"})
+	if len(identities) > 0 && identities[0].Service != nil {
+		identityService = identities[0].Service
+		httpapi.Mount(router, identityService, identities[0].Pages)
 	}
 
 	// Deliberately outside the /v1 group. Prometheus asks for a text exposition
