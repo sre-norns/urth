@@ -36,12 +36,16 @@ function ProjectFrame({projectId, children}: {projectId: string; children: React
   )
 }
 
+export function ProjectRunnersPage() {
+  return <ProjectPage kind="machines" />
+}
+
 /** A project's access: its members and its runners, as two views. */
-export function ProjectPage({kind}: {kind: 'members' | 'machines'}) {
+export function ProjectPage({kind = 'members'}: {kind?: 'members' | 'machines'}) {
   const {projectId = ''} = useParams()
   const {links} = useIdentity()
   const navigate = useNavigate()
-  const base = links.project(projectId)
+  const base = links.project(projectId).replace(/\/members$/, '')
   return (
     <ProjectFrame projectId={projectId}>
       <Tabs
@@ -51,7 +55,7 @@ export function ProjectPage({kind}: {kind: 'members' | 'machines'}) {
           {value: 'members', label: 'Members'},
           {value: 'machines', label: 'Runners'},
         ]}
-        onChange={(next) => navigate(next === 'machines' ? `${base}/runners` : base)}
+        onChange={(next) => navigate(next === 'machines' ? `${base}/runners` : `${base}/members`)}
       />
       <ProjectAccess projectId={projectId} kind={kind} key={kind} />
     </ProjectFrame>
@@ -75,9 +79,10 @@ export function RunnerPage() {
 }
 
 export function NotFound() {
+  const {links} = useIdentity()
   return (
     <EmptyState title="Page not found">
-      <Link to="/projects">Return to projects</Link>
+      <Link to={links.projects()}>Return to projects</Link>
     </EmptyState>
   )
 }
