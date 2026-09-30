@@ -147,10 +147,16 @@ func (g *runnerGrantsAPI) CreateOrUpdate(ctx context.Context, body manifest.Reso
 		return manifest.ResourceManifest{}, false, err
 	}
 	if !found {
+		if err := missingForIfMatch(ctx); err != nil {
+			return manifest.ResourceManifest{}, false, err
+		}
 		result, err := g.Create(ctx, body)
 		return result, true, err
 	}
-	result, err := g.Update(ctx, existing.Metadata.GetVersionedID(), body)
+	// identity checks the version inside its mutation transaction.
+	id := existing.Metadata.GetVersionedID()
+	id.Version = expectedVersion(ctx, id.Version)
+	result, err := g.Update(ctx, id, body)
 	return result, false, err
 }
 func (g *runnerGrantsAPI) Delete(ctx context.Context, id manifest.VersionedResourceID) (bool, error) {

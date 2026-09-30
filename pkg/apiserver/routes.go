@@ -357,16 +357,15 @@ func Routes(srv urth.Service, natsConn *nats.Conn, metrics *prometheus.Registry,
 			bark.Manifest(ctx).Page(srv.Runners().List(ctx.Request.Context(), bark.RequireSearchQuery(ctx)))
 		})
 		account.POST("/runners", bark.ManifestAPI(urth.KindRunner), func(ctx *gin.Context) {
-			bark.Manifest(ctx).Created(srv.Runners().Create(ctx.Request.Context(), bark.RequireManifest(ctx)))
+			bark.Manifest(ctx).Created(created(ctx)(srv.Runners().Create(ctx.Request.Context(), bark.RequireManifest(ctx))))
 		})
 		account.GET("/runners/:resource", bark.ResourceAPI(), func(ctx *gin.Context) {
 			bark.Manifest(ctx).Found(srv.Runners().Get(ctx.Request.Context(), bark.RequireResourceName(ctx)))
 		})
-		// Create or Update existing resource
-		// bark.VersionedResourceAPI()
-		account.PUT("/runners/:resource", bark.ResourceAPI(), bark.ManifestAPI(urth.KindRunner), func(ctx *gin.Context) {
-			// 	versionedId := bark.RequireVersionedResource(ctx)
-			bark.Manifest(ctx).CreatedOrUpdated(srv.Runners().CreateOrUpdate(ctx.Request.Context(), bark.RequireManifest(ctx)))
+		// Create or update: If-Match names the version the update is based on,
+		// or `*` for an unconditional write. See conditional.
+		account.PUT("/runners/:resource", bark.ResourceAPI(), bark.RequireIfMatch(), bark.ManifestAPI(urth.KindRunner), func(ctx *gin.Context) {
+			bark.Manifest(ctx).CreatedOrUpdated(written(ctx)(srv.Runners().CreateOrUpdate(conditional(ctx), bark.RequireManifest(ctx))))
 		})
 		account.DELETE("/runners/:resource", bark.ResourceAPI(), bark.VersionedResourceAPI(), func(ctx *gin.Context) {
 			bark.Manifest(ctx).Deleted(srv.Runners().Delete(ctx.Request.Context(), bark.RequireVersionedResource(ctx)))
@@ -501,16 +500,14 @@ func Routes(srv urth.Service, natsConn *nats.Conn, metrics *prometheus.Registry,
 			bark.Manifest(ctx).Page(srv.Scenarios().List(ctx.Request.Context(), bark.RequireSearchQuery(ctx)))
 		})
 		project.POST("/scenarios", bark.ManifestAPI(urth.KindScenario), func(ctx *gin.Context) {
-			bark.Manifest(ctx).Created(srv.Scenarios().Create(ctx.Request.Context(), bark.RequireManifest(ctx)))
+			bark.Manifest(ctx).Created(created(ctx)(srv.Scenarios().Create(ctx.Request.Context(), bark.RequireManifest(ctx))))
 		})
 		project.GET("/scenarios/:resource", bark.ResourceAPI(), func(ctx *gin.Context) {
 			bark.Manifest(ctx).Found(srv.Scenarios().Get(ctx.Request.Context(), bark.RequireResourceName(ctx)))
 		})
-		// Create or Update existing resource
-		// bark.VersionedResourceAPI(
-		project.PUT("/scenarios/:resource", bark.ResourceAPI(), bark.ManifestAPI(urth.KindScenario), func(ctx *gin.Context) {
-			// 	versionedId := bark.RequireVersionedResource(ctx)
-			bark.Manifest(ctx).CreatedOrUpdated(srv.Scenarios().CreateOrUpdate(ctx.Request.Context(), bark.RequireManifest(ctx)))
+		// Create or update, as runners: If-Match is required. See conditional.
+		project.PUT("/scenarios/:resource", bark.ResourceAPI(), bark.RequireIfMatch(), bark.ManifestAPI(urth.KindScenario), func(ctx *gin.Context) {
+			bark.Manifest(ctx).CreatedOrUpdated(written(ctx)(srv.Scenarios().CreateOrUpdate(conditional(ctx), bark.RequireManifest(ctx))))
 		})
 		project.DELETE("/scenarios/:resource", bark.ResourceAPI(), bark.VersionedResourceAPI(), func(ctx *gin.Context) {
 			bark.Manifest(ctx).Deleted(srv.Scenarios().Delete(ctx.Request.Context(), bark.RequireVersionedResource(ctx)))
@@ -644,10 +641,10 @@ func Routes(srv urth.Service, natsConn *nats.Conn, metrics *prometheus.Registry,
 		bark.Manifest(ctx).Found(srv.RunnerAuthorizations().Get(ctx.Request.Context(), bark.RequireResourceName(ctx)))
 	})
 	project.POST("/runner-authorizations", bark.ManifestAPI(urth.KindRunnerAuthorization), func(ctx *gin.Context) {
-		bark.Manifest(ctx).Created(srv.RunnerAuthorizations().Create(ctx.Request.Context(), bark.RequireManifest(ctx)))
+		bark.Manifest(ctx).Created(created(ctx)(srv.RunnerAuthorizations().Create(ctx.Request.Context(), bark.RequireManifest(ctx))))
 	})
-	project.PUT("/runner-authorizations/:resource", bark.ResourceAPI(), bark.ManifestAPI(urth.KindRunnerAuthorization), func(ctx *gin.Context) {
-		bark.Manifest(ctx).CreatedOrUpdated(srv.RunnerAuthorizations().CreateOrUpdate(ctx.Request.Context(), bark.RequireManifest(ctx)))
+	project.PUT("/runner-authorizations/:resource", bark.ResourceAPI(), bark.RequireIfMatch(), bark.ManifestAPI(urth.KindRunnerAuthorization), func(ctx *gin.Context) {
+		bark.Manifest(ctx).CreatedOrUpdated(written(ctx)(srv.RunnerAuthorizations().CreateOrUpdate(conditional(ctx), bark.RequireManifest(ctx))))
 	})
 	project.DELETE("/runner-authorizations/:resource", bark.ResourceAPI(), bark.VersionedResourceAPI(), func(ctx *gin.Context) {
 		bark.Manifest(ctx).Deleted(srv.RunnerAuthorizations().Delete(ctx.Request.Context(), bark.RequireVersionedResource(ctx)))

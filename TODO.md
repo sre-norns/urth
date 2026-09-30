@@ -99,6 +99,13 @@ looks deceptively like passing.
 - `urthctl` takes `--token/--account/--project` only as flags, so the token sits in
   shell history, and gets it from a hand-run device grant (README quick start).
   M6's `auth login` and profiles replace both.
+- wyrd `bark`'s response helpers (`Created`, `CreatedOrUpdated`, `Found`, …)
+  answer any error that is not a `bark.ErrorResponse` with their default 400,
+  including a `manifest.StatusError` that carries its own status. Urth's
+  `identityError` and version refusals now return `ErrorResponse`s, so 403 and
+  412 arrive as such, but the fix belongs in bark (it would also change
+  Exp-Bench's statuses, so release it deliberately).
+- Deletes are guarded by `?version=`, not `If-Match` (ADR 0001 §5 names both).
 - Deleting a Runner leaves its machine identity behind (M4). It can still be
   suspended through the identity routes; nothing removes or suspends it
   automatically.

@@ -19,6 +19,19 @@ not grant access. Product storage enforces these checks on reads, writes and
 label catalogues, including UID lookups. The route scope is authoritative and a
 conflicting scope in a submitted manifest is rejected.
 
+Edits are optimistic (ADR 0001 §5). A read carries the resource's version as
+its `ETag`, and so does the reply to a create or update. A `PUT` of a scenario,
+runner or runner authorization must send `If-Match`: the version it was based
+on, or `*` for an unconditional write. It gets `428` without one and `400` for
+a malformed one. A superseded version gets `412` and changes nothing, and the
+write itself is guarded, so of several edits of one version exactly one lands.
+A version sent for a resource that does not exist gets `412`; `*` may create it.
+Deletes keep their `?version=` guard. Pausing a worker takes none: a worker
+rewrites its own spec on each registration, and a pause should not fail
+because of that. `urthctl apply` sends the manifest's own `metadata.version`
+when it has one, so applying a stale copy from `get` is refused. Without one
+it sends `*`.
+
 Resources use the manifest envelope (`apiVersion`, `kind`, `metadata`, `spec`,
 `status` where applicable), including Results. Lists return
 `{items, limit, next?, total?}`. Pass `cursor=next` to continue. Nonzero offsets

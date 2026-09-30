@@ -501,11 +501,14 @@ func (m *scenarioAPIImpl) CreateOrUpdate(ctx context.Context, newEntry manifest.
 	if exist, err := m.store.GetByName(ctx, &existEntry, newEntry.Metadata.Name); err != nil {
 		return manifest.ResourceManifest{}, false, err
 	} else if !exist { // Easy-peasy - such name is not takes, try to create a new entry
+		if err := missingForIfMatch(ctx); err != nil {
+			return manifest.ResourceManifest{}, false, err
+		}
 		result, err := m.create(ctx, scenario)
 		return result.ToManifest(), !exist, err
 	}
 
-	result, err := m.update(ctx, existEntry.GetVersionedID(), scenario)
+	result, err := m.update(ctx, manifest.NewVersionedID(existEntry.UID, expectedVersion(ctx, existEntry.Version)), scenario)
 	return result.ToManifest(), false, err
 }
 
@@ -539,7 +542,7 @@ func (m *scenarioAPIImpl) update(ctx context.Context, id manifest.VersionedResou
 	if ok, err := m.store.GetByUID(ctx, &result, id.ID, dbstore.WithVersion(id.Version)); err != nil {
 		return result, err
 	} else if !ok {
-		return result, bark.ErrResourceNotFound
+		return result, staleVersion(ctx)
 	}
 
 	// FIXME: Move to a metadata update util function in wyrd/manifest
@@ -564,9 +567,9 @@ func (m *scenarioAPIImpl) update(ctx context.Context, id manifest.VersionedResou
 	)
 
 	log.Printf("updating scenario: prod.kind: %q, prod.type %q", result.Spec.Prob.Kind, reflect.TypeOf(result.Spec.Prob.Spec))
-	// saveResource, not Update: a scenario being switched to active=false is a
-	// zero value, which Update drops. See saveResource.
-	if err := saveResource(ctx, m.store, &result); err != nil {
+	// A save, not Update: a scenario being switched to active=false is a zero
+	// value, which Update drops. See saveResource.
+	if err := saveResourceAt(ctx, m.store, &result, id.Version); err != nil {
 		return result, err
 	}
 
@@ -1418,11 +1421,14 @@ func (m *runnersAPIImpl) CreateOrUpdate(ctx context.Context, newEntry manifest.R
 	if exist, err := m.store.GetByName(ctx, &existEntry, runner.Name); err != nil {
 		return manifest.ResourceManifest{}, false, err
 	} else if !exist { // Easy-peasy - such name is not takes, try to create a new entry
+		if err := missingForIfMatch(ctx); err != nil {
+			return manifest.ResourceManifest{}, false, err
+		}
 		result, err := m.create(ctx, runner)
 		return result.ToManifest(), true, err
 	}
 
-	result, err := m.update(ctx, existEntry.GetVersionedID(), runner)
+	result, err := m.update(ctx, manifest.NewVersionedID(existEntry.UID, expectedVersion(ctx, existEntry.Version)), runner)
 	return result.ToManifest(), false, err
 }
 
@@ -1447,7 +1453,7 @@ func (m *runnersAPIImpl) update(ctx context.Context, id manifest.VersionedResour
 	if ok, err := m.store.GetByUID(ctx, &result, id.ID, dbstore.WithVersion(id.Version)); err != nil {
 		return result, err
 	} else if !ok {
-		return result, bark.ErrResourceVersionConflict
+		return result, staleVersion(ctx)
 	}
 
 	// Identity check
@@ -1467,9 +1473,9 @@ func (m *runnersAPIImpl) update(ctx context.Context, id manifest.VersionedResour
 	// Note: workers of a disabled runner are stopped at the point they try to
 	// claim a job, rather than by disabling each instance here. See Results.Auth.
 
-	// Persist changes. saveResource, not Update: a runner being switched to
+	// Persist changes. A save, not Update: a runner being switched to
 	// active=false is a zero value, which Update drops. See saveResource.
-	if err := saveResource(ctx, m.store, &result); err != nil {
+	if err := saveResourceAt(ctx, m.store, &result, id.Version); err != nil {
 		return result, err
 	}
 
@@ -1684,15 +1690,25 @@ type resourceSaver interface {
 // string set to "" or number set to 0 is silently dropped -- which is why
 // disabling a scenario or a runner appeared to succeed and changed nothing.
 //
-// The optimistic version check moves to the read: callers load with
-// dbstore.WithVersion, so a write against a stale version is rejected there.
-// That is a narrower guarantee than a version-guarded write, so this is for
-// resource edits, not for status transitions that race -- claiming a job still
-// uses a version-guarded Update, because two workers reaching for the same run
-// is exactly the case it has to lose.
+// Resource edits made through the API use saveResourceAt instead, which also
+// guards the write with the version the edit was based on: a save alone checks
+// nothing, and two edits of the same version would both land. Claiming a job
+// still uses a version-guarded Update, because two workers reaching for the
+// same run is exactly the case it has to lose.
 func saveResource(ctx context.Context, store resourceSaver, value any) error {
-	_, err := store.CreateOrUpdate(ctx, value, dbstore.Omit(clause.Associations))
+	_, err := store.CreateOrUpdate(ctx, value, saveOptions(0)...)
 	return err
+}
+
+// saveOptions are the options of a whole-resource save; a nonzero version
+// guards it (dbstore v0.6.1 refuses a stale versioned save rather than
+// upserting over it).
+func saveOptions(version manifest.Version) []dbstore.Option {
+	options := []dbstore.Option{dbstore.Omit(clause.Associations)}
+	if version != 0 {
+		options = append(options, dbstore.WithVersion(version))
+	}
+	return options
 }
 
 func manifestMatch(entry manifest.ObjectMeta) manifest.SearchQuery {
