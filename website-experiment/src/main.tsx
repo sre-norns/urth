@@ -12,6 +12,7 @@ import '@fontsource/jetbrains-mono/400.css'
 import '@fontsource/jetbrains-mono/500.css'
 import '@sre-norns/components/styles.css'
 import '@sre-norns/components/themes/urth.css'
+import './monitoring/monitoring.css'
 
 const links = scopedLinks(session.accountId)
 const router = createBrowserRouter(routes)

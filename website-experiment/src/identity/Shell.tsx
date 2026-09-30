@@ -4,7 +4,7 @@ import {
   IdentityUserMenu, isAccountAdmin, PrincipalProvider, useAccountId, useIdentity,
   useIdentityQuery, useIdentityShell, useSessionEpoch, useSessionScope, wire,
 } from '@sre-norns/components/identity'
-import {Activity, AlertTriangle, FolderKanban, MailPlus, Server, Settings, Users, Cpu} from 'lucide-react'
+import {Activity, AlertTriangle, FolderKanban, MailPlus, Server, Settings, Users, Cpu, ListChecks, Play, FileBox} from 'lucide-react'
 import {Navigate, NavLink, Outlet, useLocation, useNavigate, useParams} from 'react-router-dom'
 import {accountPath, projectPath} from './links'
 
@@ -68,6 +68,12 @@ export function Shell() {
         navigation={(close) => <>
           <NavLink to={links.projects()} onClick={close}><FolderKanban size={18} />Projects</NavLink>
           {projectId && <><NavLabel>Project</NavLabel>
+            {principal.projectIds.includes(projectId) && <>
+            <NavLink to={`${projectPath(account, projectId)}/scenarios`} onClick={close}><ListChecks size={18} />Scenarios</NavLink>
+            <NavLink to={`${projectPath(account, projectId)}/runs`} onClick={close}><Play size={18} />Runs</NavLink>
+            <NavLink to={`${projectPath(account, projectId)}/artifacts`} onClick={close}><FileBox size={18} />Artifacts</NavLink>
+            <NavLink to={`${projectPath(account, projectId)}/dead-letters`} onClick={close}><AlertTriangle size={18} />Project dead letters</NavLink>
+            </>}
             <NavLink to={`${projectPath(account, projectId)}/members`} onClick={close}><Users size={18} />Project members</NavLink>
             <NavLink to={`${projectPath(account, projectId)}/runners`} onClick={close}><Server size={18} />Project runners</NavLink>
           </>}

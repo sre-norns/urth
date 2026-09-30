@@ -60,7 +60,7 @@ describe('scoped product requests', () => {
     expect(url.searchParams.has('offset')).toBe(false)
   })
   it('requires manifest results and cursor pages; total is optional', () => {
-    const result = {apiVersion: 'v1', kind: 'results', metadata: {uid: 'run-1', name: 'check-1', version: 1}, spec: {}, status: {status: 'pending'}}
+    const result = {kind: 'results', metadata: {uid: 'run-1', name: 'check-1', version: 1}, spec: {}, status: {status: 'pending'}}
     expect(page(run).parse({items: [result], limit: 20, next: 'opaque'}).next).toBe('opaque')
     expect(run.safeParse({name: 'old-flat-run', spec: {}, status: {status: 'pending'}}).success).toBe(false)
   })

@@ -1,0 +1,8 @@
+/* Product-specific log and manifest surfaces; controls and theme come from the kit. */
+.monitoring { display: grid; gap: 1.5rem; min-width: 0; }
+.monitoring .page-heading, .monitoring .actions { margin-block: 0; }
+.monitoring pre, dialog pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 30rem; overflow: auto; font-family: var(--font-metric); font-size: .8125rem; line-height: 1.65; }
+.monitoring .run-log { background: var(--surface-container-lowest); padding: 1rem; min-height: 8rem; }
+.monitoring .artifact-image { display: block; max-width: 100%; max-height: 36rem; object-fit: contain; }
+.monitoring .tags { display: flex; flex-wrap: wrap; gap: .375rem; }
+.sidebar { overflow-y: auto; }
