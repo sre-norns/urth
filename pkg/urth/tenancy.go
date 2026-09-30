@@ -48,6 +48,9 @@ func RegisterIdentity(db *gorm.DB) error {
 		AuxiliaryTables: []string{"dispatch_outbox"},
 		GrantRoles:      []im.RoleType{"runner"},
 		Auditor: identity.AuditorFunc(func(ctx context.Context, tx *gorm.DB, a identity.Audit) error {
+			if machine, ok := a.Resource.(*im.AgentIdentity); ok {
+				return admitRunnerIdentity(ctx, tx, a.Action, machine)
+			}
 			if grant, ok := a.Resource.(*im.AgentAuthorization); ok {
 				if !identity.AccountAdmin(ctx, tx, grant.AccountID) || !identity.ProjectAdmin(ctx, tx, grant.ProjectID) {
 					return identity.Forbidden()
@@ -60,6 +63,36 @@ func RegisterIdentity(db *gorm.DB) error {
 			return nil
 		}),
 	})
+}
+
+// admitRunnerIdentity keeps every machine identity paired with its Runner.
+//
+// In Urth a machine identity is a Runner's credential holder: the two are
+// created together, share one UID, and the Runner's name is its queue address.
+// The shared identity routes would otherwise let an account administrator
+// create an identity with no Runner behind it, or rename one away from its
+// Runner. Status changes -- suspending a runner's identity -- stay allowed,
+// including for an identity whose Runner was deleted: suspending that leftover
+// is exactly what an administrator should be able to do.
+func admitRunnerIdentity(ctx context.Context, tx *gorm.DB, action string, machine *im.AgentIdentity) error {
+	if action == "create-AgentIdentity" {
+		if registering, _ := ctx.Value(registeringRunner{}).(bool); registering {
+			return nil
+		}
+		return identity.Invalid("Register a runner through /v1/accounts/:account/runners; it creates the runner's identity.")
+	}
+	var runner Runner
+	err := tx.Where("uid = ? AND account_id = ?", machine.ID, machine.AccountID).First(&runner).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil // no runner left to drift from
+	}
+	if err != nil {
+		return err
+	}
+	if string(runner.Name) != machine.Name {
+		return identity.Invalid("A runner's identity keeps the runner's name, which is its queue address.")
+	}
+	return nil
 }
 
 // WithIdentity enables the shared, fail-closed identity policy on the service.

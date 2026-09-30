@@ -44,3 +44,6 @@ website-experiment/playwright-report/
 # as a missing package in CI.
 /worker/
 /worker.*
+
+# Local development state: captured mail (make run-api-server)
+/.dev/

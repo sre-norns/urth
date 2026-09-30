@@ -108,6 +108,13 @@ type harnessOption func(*harnessSettings)
 
 type harnessSettings struct {
 	serverOptions []apiserver.Option
+	configure     []func(*apiserver.Config)
+}
+
+// withConfig adjusts the server's configuration before it is composed, for a
+// scenario about configuration itself: identity options, bootstrap.
+func withConfig(fn func(*apiserver.Config)) harnessOption {
+	return func(s *harnessSettings) { s.configure = append(s.configure, fn) }
 }
 
 // withPublisherDecorator wraps the transport publisher the relay is handed.
@@ -187,6 +194,10 @@ func newHarness(t *testing.T, options ...harnessOption) *harness {
 
 			ShutdownTimeout: 15 * time.Second,
 		},
+	}
+
+	for _, configure := range settings.configure {
+		configure(&h.Config)
 	}
 
 	server, err := apiserver.New(h.ctx, h.DB, h.Config, settings.serverOptions...)

@@ -181,8 +181,8 @@ github.com/rogpeppe/go-internal v1.14.1 h1:UQB4HGPB6osV0SQTLymcB4TgvyWu6ZyliaW0t
 github.com/rogpeppe/go-internal v1.14.1/go.mod h1:MaRKkUm5W0goXpeCfT7UZI6fk/L7L7so1lCWt35ZSgc=
 github.com/sre-norns/wyrd v0.6.0 h1:8puYIgXRtEDVkapOpyQI28NgWgjdMrlPOftNlupczCc=
 github.com/sre-norns/wyrd v0.6.0/go.mod h1:/0xWq8o75O415pwHhBJbMrRzV6y+1yQg7xLIXAswoYI=
-github.com/sre-norns/wyrd/identity v0.3.0 h1:YD1aKwH86dUxgsxl3mrlLv0gV7FdAztXfCEE+X01csk=
-github.com/sre-norns/wyrd/identity v0.3.0/go.mod h1:NuRJwCXhuG24omYd0qFMljKLOIEp7mjEZ+LsaW1H3Bw=
+github.com/sre-norns/wyrd/identity v0.5.0 h1:YdcPeSBwlMjWbX2qKwrNMrMOWfHD9l2MWvUpzHOOE9A=
+github.com/sre-norns/wyrd/identity v0.5.0/go.mod h1:NuRJwCXhuG24omYd0qFMljKLOIEp7mjEZ+LsaW1H3Bw=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/objx v0.4.0/go.mod h1:YvHI0jy2hoMjB+UWwv71VJQ9isScKT/TqJzVSSt89Yw=
 github.com/stretchr/objx v0.5.0/go.mod h1:Yh+to48EsGEfYuaHDzXPcE3xhTkx73EhmCGUpEOglKo=

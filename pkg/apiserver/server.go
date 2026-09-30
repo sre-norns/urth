@@ -29,6 +29,7 @@ import (
 	"github.com/sre-norns/urth/pkg/natsq"
 	"github.com/sre-norns/urth/pkg/urth"
 	"github.com/sre-norns/wyrd/identity"
+	"github.com/sre-norns/wyrd/identity/pages"
 	"github.com/sre-norns/wyrd/pkg/dbstore"
 	"github.com/sre-norns/wyrd/pkg/manifest"
 
@@ -61,9 +62,26 @@ import (
 // parses an imported struct exactly as it parsed the one that used to live in
 // cmd/api-server, so moving this here does not rename a single flag.
 type Config struct {
-	// Identity overrides the branded defaults for an embedded host. M5 adds operator flags.
+	// Identity replaces the whole identity configuration for an embedded host or
+	// a test. When set, the identity flags below are ignored.
 	Identity       *identity.Config `kong:"-"`
 	dbstore.Config `help:"Persistent storage URL" embed:"" prefix:"store."`
+
+	// IdentityOptions are the operator's identity settings: the public issuer,
+	// sign-in providers and account mail. Environment variables are URTH_ plus
+	// the option's own name -- URTH_ISSUER, URTH_MAIL_PROVIDER -- because kong's
+	// prefix renames flags only and envprefix alone names the variables. Left
+	// zero (a Config built in code), the branded defaults apply unchanged.
+	IdentityOptions identity.Options `embed:"" prefix:"identity." envprefix:"URTH_"`
+	// WebRedirectURIs are where the authorization server may return the web
+	// client. They must match exactly, so a development SPA on another port
+	// needs its own entry.
+	WebRedirectURIs []string `name:"identity.web-redirect-uri" env:"URTH_WEB_REDIRECT_URI" default:"http://localhost:8080/oauth/callback" help:"OAuth redirect URI of the urth-web client; repeat for several"`
+	// PrivacyURL is the privacy notice the sign-in pages link to. Empty hides
+	// the link: Urth serves no privacy page of its own.
+	PrivacyURL string `name:"identity.privacy-url" env:"URTH_PRIVACY_URL" help:"Privacy notice the sign-in pages link to: an https URL or a path that starts with /"`
+
+	Bootstrap BootstrapConfig `embed:"" prefix:"bootstrap." envprefix:"URTH_BOOTSTRAP_"`
 
 	// Named rather than embedded: both of these are called Config, and
 	// embedding a second one collides with dbstore's.
@@ -88,6 +106,17 @@ type Config struct {
 	// command hosting them elsewhere offers the same flags rather than a second
 	// set that drifted. See ADR 0006.
 	Controllers controllers.Config `embed:""`
+}
+
+// BootstrapConfig provisions a first user, so a new installation can be signed
+// into before anyone can invite anyone.
+type BootstrapConfig struct {
+	Email    string `env:"EMAIL" help:"Create this local user, and an account it owns, if the user does not exist"`
+	Password string `env:"PASSWORD" help:"Password of the bootstrap user: 12 to 72 bytes"`
+	// SystemAdmin is opt-in because the two are exclusive in identity: a system
+	// administrator is provisioned with system authority and no account, and
+	// Urth has no system console to land on.
+	SystemAdmin bool `name:"system-admin" env:"SYSTEM_ADMIN" help:"Provision a system administrator instead: system authority and no account"`
 }
 
 // Models are the tables an API server needs migrated before it can serve.
@@ -188,14 +217,22 @@ func New(ctx context.Context, db *gorm.DB, cfg Config, options ...Option) (*Serv
 		return nil, err
 	}
 	identityService := identity.NewService(db)
-	identityConfig := identity.DefaultConfig()
-	identityConfig.ProductName, identityConfig.WebClientID = "Urth", "urth-web"
-	identityConfig.Clients = map[string][]string{"urthctl": {}, "urth-web": {"http://localhost:8080/oauth/callback"}}
-	if cfg.Identity != nil {
-		identityConfig = *cfg.Identity
+	identityConfig, err := IdentityConfig(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("invalid identity configuration: %w", err)
 	}
 	if err := identityService.Configure(identityConfig); err != nil {
 		return nil, err
+	}
+	if err := pages.ValidPrivacyURL(cfg.PrivacyURL); err != nil {
+		return nil, err
+	}
+	if cfg.Bootstrap.Email != "" {
+		// Does nothing when the user exists, so every restart may run it; it
+		// does not repair an account deleted since.
+		if err := identityService.ProvisionUser(ctx, cfg.Bootstrap.Email, cfg.Bootstrap.Password, cfg.Bootstrap.SystemAdmin); err != nil {
+			return nil, fmt.Errorf("failed to provision the bootstrap user: %w", err)
+		}
 	}
 	store, err := dbstore.NewDBStore(db, dbstore.ManifestModel)
 	if err != nil {
@@ -325,9 +362,28 @@ func New(ctx context.Context, db *gorm.DB, cfg Config, options ...Option) (*Serv
 		return nil, fmt.Errorf("failed to register the worker presence watcher: %w", err)
 	}
 
+	// Identity mail: invitations and project-access notices, each delivered by a
+	// retrying worker from rows committed with the change. Registered only when a
+	// mail provider is configured -- without one both workers return at once,
+	// and the manager would restart them forever.
+	if identityService.IdentityMailAvailable() {
+		for name, run := range map[string]func(context.Context){
+			"identity-invitation-mail":     identityService.RunInvitationMailWorker,
+			"identity-project-access-mail": identityService.RunProjectAccessMailWorker,
+		} {
+			if err := server.Loops.Add(name, mailLoop(run)); err != nil {
+				_ = server.Close()
+				return nil, fmt.Errorf("failed to register the %s worker: %w", name, err)
+			}
+		}
+	}
+
 	server.Service = urth.NewService(store, server.scheduler, serviceOptions...)
 	server.Metrics = metricsRegistry(db, server.scheduler, placementMetrics)
-	server.Router = Routes(server.Service, server.natsConn, server.Metrics, identityService)
+	server.Router = Routes(server.Service, server.natsConn, server.Metrics, IdentityRoutes{
+		Service: identityService,
+		Pages:   SignInPages(cfg.PrivacyURL),
+	})
 
 	return server, nil
 }
