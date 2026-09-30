@@ -59,7 +59,18 @@ bootstraps `admin@urth.example` (password `urth-dev-password`) as an account
 owner. Sign-in forms are then accepted only through that origin, not directly on
 `:8080`. For sign-in through an upstream provider, run `make run-fake-idp` and
 then `make run-api-server-fake-idp`, which enables the fake as the `oidc`
-provider.
+provider. The fake approves whoever is queued, so queue an identity before each
+provider sign-in; without one it returns an empty identity, which is refused:
+
+```sh
+curl -X POST http://127.0.0.1:18090/control/next -H 'Content-Type: application/json' \
+  -d '{"provider":"google","identity":{"subject":"dave-1","email":"dave@example.test","email_verified":true}}'
+```
+
+(`google` is the fake's OIDC issuer.) A provider identity no user has yet does
+not sign in: it is mailed a pointer to registration. Start from **Create
+account → Continue with OpenID Connect** instead, which confirms the account by
+email; later sign-ins through the provider go straight in.
 
 ## The dispatch outbox
 

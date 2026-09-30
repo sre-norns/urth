@@ -2,7 +2,7 @@ import {screen} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import {http, HttpResponse} from 'msw'
 import {describe, expect, it, vi} from 'vitest'
-import {App} from '../App'
+import {LegacyApp} from '../LegacyApp'
 import {labels} from '../labels'
 import {renderApp} from '../test/render'
 import {server} from '../test/server'
@@ -30,7 +30,7 @@ describe('artifact content handling', () => {
         return new HttpResponse('{"token":"sensitive"}', {headers: {'content-type': 'application/json'}})
       }),
     )
-    renderApp(<App />, '/artifacts/capture.har')
+    renderApp(<LegacyApp />, '/artifacts/capture.har')
 
     expect(await screen.findByText('This artifact may contain secrets')).toBeInTheDocument()
     expect(contentRequest).not.toHaveBeenCalled()
