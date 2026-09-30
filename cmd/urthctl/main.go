@@ -5,12 +5,12 @@ import (
 
 	"github.com/alecthomas/kong"
 	_ "github.com/joho/godotenv/autoload"
-	"github.com/sre-norns/urth/pkg/urth"
+	"github.com/sre-norns/urth/pkg/client"
 	"github.com/sre-norns/wyrd/pkg/grace"
 )
 
 type commandContext struct {
-	*urth.APIClientConfig
+	*client.APIClientConfig
 	// *runner.RunnerConfig
 
 	OutputFormatter formatter
@@ -29,7 +29,7 @@ func (f outputFormat) AfterApply(cfg *commandContext) (err error) {
 }
 
 var appCli struct {
-	urth.APIClientConfig
+	client.APIClientConfig
 
 	// short:"o"
 	Format outputFormat `enum:"yaml,yml,json" help:"Data output format" default:"yml"`

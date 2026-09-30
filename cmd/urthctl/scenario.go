@@ -6,13 +6,14 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/sre-norns/urth/pkg/client"
 	"github.com/sre-norns/urth/pkg/urth"
 	"github.com/sre-norns/wyrd/pkg/manifest"
 )
 
 var ErrResourceNotFound = fmt.Errorf("requested resource not found")
 
-func fetchRunner(ctx context.Context, apiClient *urth.RestAPIClient, id manifest.ResourceName) (urth.Runner, error) {
+func fetchRunner(ctx context.Context, apiClient *client.RestAPIClient, id manifest.ResourceName) (urth.Runner, error) {
 	resource, ok, err := apiClient.Runners().Get(ctx, id)
 	if err != nil {
 		return urth.Runner{}, fmt.Errorf("failed to fetch Runner %q: %w", id, err)
@@ -24,7 +25,7 @@ func fetchRunner(ctx context.Context, apiClient *urth.RestAPIClient, id manifest
 	return result, err
 }
 
-func fetchRunners(ctx context.Context, apiClient *urth.RestAPIClient, q manifest.SearchQuery) ([]urth.Runner, manifest.Page, error) {
+func fetchRunners(ctx context.Context, apiClient *client.RestAPIClient, q manifest.SearchQuery) ([]urth.Runner, manifest.Page, error) {
 	resources, total, err := collectPages(ctx, q, apiClient.Runners().List)
 	if err != nil {
 		return nil, total, fmt.Errorf("failed to fetch batch: %w", err)
@@ -42,7 +43,7 @@ func fetchRunners(ctx context.Context, apiClient *urth.RestAPIClient, q manifest
 	return results, total, nil
 }
 
-func fetchScenario(ctx context.Context, apiClient *urth.RestAPIClient, id manifest.ResourceName) (urth.Scenario, error) {
+func fetchScenario(ctx context.Context, apiClient *client.RestAPIClient, id manifest.ResourceName) (urth.Scenario, error) {
 	resource, ok, err := apiClient.Scenarios().Get(ctx, id)
 	if err != nil {
 		return urth.Scenario{}, fmt.Errorf("failed to fetch Scenario %q: %w", id, err)
@@ -54,7 +55,7 @@ func fetchScenario(ctx context.Context, apiClient *urth.RestAPIClient, id manife
 	return result, err
 }
 
-func fetchScenarios(ctx context.Context, apiClient *urth.RestAPIClient, q manifest.SearchQuery) ([]urth.Scenario, manifest.Page, error) {
+func fetchScenarios(ctx context.Context, apiClient *client.RestAPIClient, q manifest.SearchQuery) ([]urth.Scenario, manifest.Page, error) {
 	resources, total, err := collectPages(ctx, q, apiClient.Scenarios().List)
 	if err != nil {
 		return nil, total, fmt.Errorf("failed to fetch batch: %w", err)
@@ -72,7 +73,7 @@ func fetchScenarios(ctx context.Context, apiClient *urth.RestAPIClient, q manife
 	return results, total, nil
 }
 
-func fetchResults(ctx context.Context, apiClient *urth.RestAPIClient, scenarioID manifest.ResourceName, q manifest.SearchQuery) ([]urth.Result, manifest.Page, error) {
+func fetchResults(ctx context.Context, apiClient *client.RestAPIClient, scenarioID manifest.ResourceName, q manifest.SearchQuery) ([]urth.Result, manifest.Page, error) {
 	resources, total, err := collectPages(ctx, q, apiClient.Results(scenarioID).List)
 	if err != nil {
 		return nil, total, fmt.Errorf("failed to fetch batch: %w", err)
@@ -92,7 +93,7 @@ func fetchResults(ctx context.Context, apiClient *urth.RestAPIClient, scenarioID
 	// return results, total, nil
 }
 
-func fetchArtifact(ctx context.Context, apiClient *urth.RestAPIClient, id manifest.ResourceName) (urth.Artifact, error) {
+func fetchArtifact(ctx context.Context, apiClient *client.RestAPIClient, id manifest.ResourceName) (urth.Artifact, error) {
 	resource, ok, err := apiClient.Artifacts().Get(ctx, id)
 	if err != nil {
 		return urth.Artifact{}, fmt.Errorf("failed to fetch Artifact %q: %w", id, err)
@@ -113,7 +114,7 @@ func contains(label string, requirements manifest.Requirements) bool {
 	return false
 }
 
-func fetchLogs(ctx context.Context, apiClient *urth.RestAPIClient, resultsName manifest.ResourceName, query manifest.SearchQuery) (chan io.Reader, error) {
+func fetchLogs(ctx context.Context, apiClient *client.RestAPIClient, resultsName manifest.ResourceName, query manifest.SearchQuery) (chan io.Reader, error) {
 	var requirements manifest.Requirements
 	if query.Selector != nil {
 		rs, ok := query.Selector.Requirements()

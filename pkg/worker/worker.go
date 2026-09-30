@@ -31,6 +31,7 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 
+	"github.com/sre-norns/urth/pkg/client"
 	"github.com/sre-norns/urth/pkg/natsq"
 	"github.com/sre-norns/urth/pkg/runner"
 	"github.com/sre-norns/urth/pkg/urth"
@@ -43,8 +44,8 @@ import (
 // parses an imported struct exactly as it parsed the one that used to live in
 // cmd/nats-worker, so moving this here does not rename a single flag.
 type Config struct {
-	urth.APIClientConfig `embed:"" prefix:"client."`
-	runner.RunnerConfig  `embed:""`
+	client.APIClientConfig `embed:"" prefix:"client."`
+	runner.RunnerConfig    `embed:""`
 
 	NATS natsq.ClientConfig `embed:"" prefix:"nats."`
 

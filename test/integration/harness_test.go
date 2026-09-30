@@ -26,6 +26,7 @@ import (
 	"gorm.io/gorm/logger"
 
 	"github.com/sre-norns/urth/pkg/apiserver"
+	"github.com/sre-norns/urth/pkg/client"
 	"github.com/sre-norns/urth/pkg/controllers"
 	"github.com/sre-norns/urth/pkg/natsq"
 	"github.com/sre-norns/urth/pkg/prob"
@@ -323,13 +324,13 @@ func (h *harness) stopNATS() {
 // directly: half of what this suite is for is that a claim outcome becomes an
 // HTTP status and is read back as one. A worker holding the service object would
 // never exercise that mapping.
-func (h *harness) client(token urth.APIToken) *urth.RestAPIClient {
+func (h *harness) client(token urth.APIToken) *client.RestAPIClient {
 	h.t.Helper()
 
 	if token == "" {
 		token = h.token
 	}
-	client, err := urth.NewRestAPIClient(h.HTTP.URL, urth.APIClientConfig{
+	c, err := client.NewRestAPIClient(h.HTTP.URL, client.APIClientConfig{
 		Account: h.scope.Account, Project: h.scope.Project,
 		Token:      token,
 		Timeout:    30 * time.Second,
@@ -337,7 +338,7 @@ func (h *harness) client(token urth.APIToken) *urth.RestAPIClient {
 	})
 	require.NoError(h.t, err)
 
-	return client
+	return c
 }
 
 // applyRunner registers an active runner with the given advertised labels.
