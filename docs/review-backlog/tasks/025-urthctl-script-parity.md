@@ -38,7 +38,7 @@ Nobody noticed, which is itself the evidence that nothing calls it.
 
 - `cmd/urthctl/get.go:29-31`: the `Script` struct, arg only, no `Run` method.
 - `cmd/urthctl/get.go:62`: registered as a subcommand.
-- `pkg/urth/client.go`: `scenariosAPIClient` has `UpdateScript` and no getter, so
+- `pkg/client/scenariosService.go`: `scenariosAPIClient` has `UpdateScript` and no getter, so
   there is no client method to call.
 - `cmd/api-server/main.go`, `probScript`: the server side, fixed 2026-07-29 and
   now covered by `cmd/api-server/script_test.go`.

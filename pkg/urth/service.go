@@ -315,6 +315,10 @@ func NewService(store *dbstore.DBStore, scheduler Scheduler, options ...ServiceO
 	return s
 }
 
+// The server and pkg/client's REST client implement the same interface, so a
+// worker or a test cannot tell which one it drives.
+var _ Service = (*serviceImpl)(nil)
+
 type (
 	serviceImpl struct {
 		store      *dbstore.DBStore
