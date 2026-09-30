@@ -1,7 +1,7 @@
 import {screen} from '@testing-library/react'
 import {http, HttpResponse} from 'msw'
 import {describe, expect, it, vi} from 'vitest'
-import {App} from '../App'
+import {LegacyApp} from '../LegacyApp'
 import {renderApp} from '../test/render'
 import {server} from '../test/server'
 
@@ -30,7 +30,7 @@ describe('scenario pagination', () => {
       }),
     )
 
-    renderApp(<App />, '/scenarios')
+    renderApp(<LegacyApp />, '/scenarios')
 
     expect(await screen.findByRole('link', {name: 'checkout-health'})).toBeInTheDocument()
     expect(requestedPage).toHaveBeenCalledWith('0')

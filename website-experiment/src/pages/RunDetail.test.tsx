@@ -1,7 +1,7 @@
 import {screen} from '@testing-library/react'
 import {http, HttpResponse} from 'msw'
 import {describe, expect, it} from 'vitest'
-import {App} from '../App'
+import {LegacyApp} from '../LegacyApp'
 import {labels} from '../labels'
 import {renderApp} from '../test/render'
 import {server} from '../test/server'
@@ -48,7 +48,7 @@ describe('run detail', () => {
       ),
     )
 
-    renderApp(<App />, '/runs/manual-pending')
+    renderApp(<LegacyApp />, '/runs/manual-pending')
 
     expect(await screen.findByRole('heading', {name: /manual-pending/})).toBeInTheDocument()
     expect(await screen.findByText('No artifacts')).toBeInTheDocument()
@@ -66,7 +66,7 @@ describe('run detail', () => {
       })),
       http.get('http://localhost/api/v1/scenarios/checkout/results/manual-current/logs', () => new HttpResponse('probe completed', {headers: {'content-type': 'text/plain'}})),
     )
-    renderApp(<App />, '/runs/manual-current')
+    renderApp(<LegacyApp />, '/runs/manual-current')
 
     expect(await screen.findByRole('heading', {name: /manual-current/})).toBeInTheDocument()
     expect(await screen.findByRole('link', {name: 'worker-01'})).toHaveAttribute('href', '/workers/worker-01')
@@ -83,7 +83,7 @@ describe('run detail', () => {
       http.get('http://localhost/api/v1/workers/worker-01', () => HttpResponse.json({metadata: {name: 'worker-01', uid: 'replacement'}, spec: {}, status: {presence: {condition: 'online'}}})),
       http.get('http://localhost/api/v1/scenarios/checkout/results/manual-current/logs', () => new HttpResponse('', {headers: {'content-type': 'text/plain'}})),
     )
-    renderApp(<App />, '/runs/manual-current')
+    renderApp(<LegacyApp />, '/runs/manual-current')
     expect(await screen.findByText('historical presence unknown')).toBeInTheDocument()
   })
 })

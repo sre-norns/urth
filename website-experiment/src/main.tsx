@@ -2,11 +2,15 @@ import {StrictMode} from 'react'
 import {createRoot} from 'react-dom/client'
 import {QueryClient, QueryClientProvider} from '@tanstack/react-query'
 import {BrowserRouter} from 'react-router-dom'
+import {IdentityProvider} from '@sre-norns/components/identity'
 import {App} from './App'
+import {identityLinks, identityTerms, runnerRegistration} from './identity/config'
+import {session} from './identity/session'
 import '@fontsource-variable/hanken-grotesk'
 import '@fontsource/jetbrains-mono/400.css'
 import '@fontsource/jetbrains-mono/500.css'
-import './styles.css'
+import '@sre-norns/components/styles.css'
+import '@sre-norns/components/themes/urth.css'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -22,9 +26,17 @@ const queryClient = new QueryClient({
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <App />
-      </BrowserRouter>
+      <IdentityProvider
+        session={session}
+        queryClient={queryClient}
+        terms={identityTerms}
+        links={identityLinks}
+        machineRegistration={runnerRegistration}
+      >
+        <BrowserRouter>
+          <App />
+        </BrowserRouter>
+      </IdentityProvider>
     </QueryClientProvider>
   </StrictMode>,
 )
