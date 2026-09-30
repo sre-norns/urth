@@ -1,4 +1,5 @@
 import '@testing-library/jest-dom/vitest'
+import {cleanup} from '@testing-library/react'
 import {afterAll, afterEach, beforeAll} from 'vitest'
 import {server} from './server'
 
@@ -12,7 +13,7 @@ beforeAll(() => {
     return interceptedFetch(input, init)
   }
 })
-afterEach(() => server.resetHandlers())
+afterEach(() => { cleanup(); server.resetHandlers() })
 afterAll(() => server.close())
 
 // Node 25 ships a localStorage global of its own; started without

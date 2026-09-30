@@ -6,11 +6,12 @@ import {QueryClient} from '@tanstack/react-query'
 import {render, screen, waitFor, within} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import {http, HttpResponse, type JsonBodyType} from 'msw'
-import {MemoryRouter} from 'react-router-dom'
+import {createMemoryRouter, RouterProvider} from 'react-router-dom'
 import {afterEach, describe, expect, it} from 'vitest'
-import {App} from '../App'
+import {routes} from '../App'
+import {scopedLinks} from './links'
 import {server} from '../test/server'
-import {identityLinks, identityTerms, runnerRegistration} from './config'
+import {identityTerms, runnerRegistration} from './config'
 import {sessionConfig} from './session'
 
 const api = (path: string) => `http://localhost/v1${path}`
@@ -54,6 +55,7 @@ function signIn() {
         system_admin: false,
       }),
     ),
+    http.get(api('/accounts/acct-1/projects'), () => HttpResponse.json(page([]))),
     http.get(api('/profile'), () =>
       HttpResponse.json({user_id: 'user-1', email: 'ada@example.test', display_name: 'Ada', status: 'active', revision: 1}),
     ),
@@ -76,12 +78,10 @@ function renderAt(route: string) {
       session={session}
       queryClient={queryClient}
       terms={identityTerms}
-      links={identityLinks}
+      links={scopedLinks(session.accountId)}
       machineRegistration={runnerRegistration}
     >
-      <MemoryRouter initialEntries={[route]}>
-        <App />
-      </MemoryRouter>
+      <RouterProvider router={createMemoryRouter(routes, {initialEntries: [route]})} />
     </IdentityProvider>,
   )
 }
@@ -97,9 +97,9 @@ describe('Urth identity routes', () => {
       ),
     )
     renderAt('/projects')
-    expect(await screen.findByRole('link', {name: /Plant 2/})).toHaveAttribute('href', '/projects/proj-1')
+    expect(await screen.findByRole('link', {name: /Plant 2/})).toHaveAttribute('href', '/a/acct-1/p/proj-1/members')
     expect(screen.getByText('URTH')).toBeInTheDocument()
-    expect(screen.getByRole('link', {name: 'Runners'})).toHaveAttribute('href', '/account/runners')
+    expect(screen.getByRole('link', {name: 'Runners'})).toHaveAttribute('href', '/a/acct-1/runners')
   })
 
   it("heads a project's access with the project's name", async () => {
@@ -159,11 +159,26 @@ describe('Urth identity routes', () => {
     expect(posted).toEqual([
       {apiVersion: 'v1', kind: 'runners', metadata: {name: 'edge-eu'}, spec: {active: true, description: 'Frankfurt'}},
     ])
-    expect(await screen.findByRole('link', {name: 'edge-eu'})).toHaveAttribute('href', '/account/runners/run-1')
+    expect(await screen.findByRole('link', {name: 'edge-eu'})).toHaveAttribute('href', '/a/acct-1/runners/run-1')
   })
 
   it('sends a signed-out visitor to sign in', async () => {
     renderAt('/projects')
     expect(await screen.findByRole('heading', {level: 1, name: 'Urth'})).toBeInTheDocument()
   })
+  it('does not mount a scoped page for a different session account', async () => {
+    signIn()
+    renderAt('/a/acct-other/runners')
+    expect(await screen.findByRole('heading', {name: 'Different account'})).toBeInTheDocument()
+    expect(screen.queryByRole('button', {name: 'Register runner'})).not.toBeInTheDocument()
+  })
+
+  it('rejects a project whose returned account disagrees with the route', async () => {
+    signIn()
+    server.use(http.get(api('/projects/proj-other'), () => HttpResponse.json(resource('proj-other', {name: 'Other project', description: '', account_id: 'acct-other'}))))
+    renderAt('/a/acct-1/p/proj-other/members')
+    expect(await screen.findByText('This project does not belong to the account in this address.')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', {name: 'Other project'})).not.toBeInTheDocument()
+  })
+
 })

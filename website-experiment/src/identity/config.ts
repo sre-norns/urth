@@ -1,5 +1,4 @@
 import type {
-  IdentityLinks,
   IdentityTerms,
   MachineIdentity,
   MachineRegistration,
@@ -15,16 +14,6 @@ export const identityTerms: Partial<IdentityTerms> = {
   roles: 'Runner roles',
   grantRoles: [{value: 'runner', label: 'Runner'}],
   clients: {'urth-web': 'Web browser', urthctl: 'urthctl CLI'},
-}
-
-// Where the shared screens link to. Only the runner routes and the project page
-// differ from the kit's defaults, which are Exp-Bench's.
-export const identityLinks: Partial<IdentityLinks> = {
-  machineIdentities: () => '/account/runners',
-  machineIdentity: (id) => `/account/runners/${encodeURIComponent(id)}`,
-  projectMachine: (projectId, machineId) =>
-    `/projects/${encodeURIComponent(projectId)}/runners/${encodeURIComponent(machineId)}`,
-  project: (id) => `/projects/${encodeURIComponent(id)}`,
 }
 
 // The Runner manifest POST /v1/accounts/:account/runners replies with. Only the
