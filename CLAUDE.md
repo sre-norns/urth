@@ -34,9 +34,8 @@ pkg/probers/*/      one package per prob kind (http, tcp, dns, icmp, grpc, rest,
 pkg/runner/         probe execution, run logging, worker capability labels
 test/integration/   the dispatch path end to end: real Postgres, real broker,
                     real router, real worker loop. See below.
-website-experiment/ the Web UI: Vite, React, @sre-norns/components (identity screens
-                    today; the monitoring pages, still in LegacyApp, return in M7)
-website/            the retired UI (webpack, emotion, redux, wouter); deleted in M7
+website/            Vite 8 / TypeScript 6 UI on @sre-norns/components: identity,
+                    infrastructure and project monitoring on the scoped /v1 API
 ```
 
 `pkg/runner` is a misnomer worth knowing about: it holds *probe execution*, not
@@ -72,7 +71,7 @@ indexed only the first table migrated. A database created before v0.3.0 gains
 make run-postgres-podman        # or podman run … postgres:18
 make run-nats-podman
 make run-api-server            # Postgres URL, dev identity env, bootstrap owner
-cd website-experiment && npm run dev   # :3001 -- the browser origin and the issuer
+cd website && npm run dev   # :3001 -- the browser origin and the issuer
 ```
 
 Sign in at `http://localhost:3001` as `admin@urth.example` / `urth-dev-password` (the
@@ -111,10 +110,10 @@ caught them:
 - `make audit` (vet + staticcheck + race tests) must exit 0. CI runs
   `make audit/postgres`, which is the same plus the tests that need a real
   database — see the Postgres note below. Run that one before pushing.
-- `cd website-experiment && npm test` — vitest, currently 15 tests in 6 files,
-  and `npm run build`. It installs `@sre-norns/components` from GitHub Packages
-  (`~/.npmrc` needs a `read:packages` token); CI builds neither website.
-  `cd website && npm test` still covers the retired UI until M7 deletes it.
+- `cd website && npm ci && npm test && npm run build`. GitHub Packages needs
+  `read:packages` locally; web CI uses the repository's package read permission.
+  `npm run test:e2e` runs the browser route checks; see `website/README.md` for
+  the live-stack test. CI gates the UI alongside the Go checks.
 - **`test/integration` is the one place the dispatch path is tested whole.** Every
   other package tests one boundary and assumes the rest, which is the arrangement
   that hid the acknowledgement bug task 010 fixed and the lost-claim-response bug
@@ -212,19 +211,21 @@ or it evaporates on reconnect — that is why `WorkerInstanceStatus.IsPaused` si
 there. Its zero value means *working*, deliberately, so records predating the
 field keep taking jobs rather than going dark.
 
-**Run results come back flat.** Unlike every other resource, a `Result` has
-`name`/`uid`/`labels` at the top level, not nested under `metadata`. UI code has
-to special-case this (`RunResult.jsx`, `runStats.js`).
+**All product results use manifests.** Read names and labels from `metadata`.
+Some responses omit `apiVersion`; the UI accepts that without falling back to
+flat results. Lists use `items/limit/next`, and totals never drive pagination.
 
 **Timestamps need `TIMESTAMPTZ`.** `TIMESTAMP` in Postgres is *without* time zone,
 so local wall-clock was stored naive and read back as UTC — every run time off by
 the server's offset. Fixed for run/artifact times; use `TIMESTAMPTZ` for any new
 time column.
 
-**JSX lives in `.jsx` files.** Vite's oxc transform refuses to parse JSX from
-`.js` and offers no override. `vitest.config.js` runs the project's babel presets
-rather than plugin-react, because `@emotion/babel-plugin` must run or emotion's
-component selectors throw at render time.
+**Web edits keep the read ETag.** The form captures an edit snapshot; polling
+cannot replace its precondition. A conflict preserves the draft and requires
+review of the latest document before retrying. Worker pause is unversioned.
+Live logs use streaming fetch with the shared session client; native EventSource
+cannot attach the bearer token. The log route bypasses manifest content
+negotiation but retains authentication and project scope guards.
 
 **Creating a run no longer publishes anything.** `resultsAPIImpl.Create` commits
 the `Result` and a `dispatch_outbox` row in one `dbstore` transaction; a relay

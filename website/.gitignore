@@ -1,8 +1,0 @@
-# WebStorm
-.idea/
-
-# Dependency directories
-node_modules/
-
-# OSX
-.DS_Store

@@ -1,14 +1,13 @@
 # Makefile is handcrafted to automate repetitive tasks
 
 website-dist = website/dist
-website-experiment-dist = website-experiment/dist
 
 # Postgres connection used by the local development targets below.
 # Note: the api-server's own default is `sqlite:test.sqlite`, which is not
 # supported (TIMESTAMPTZ columns cannot be read back), so Postgres is passed here.
 store-url ?= postgres://urth:urth@localhost:5432/urth
 
-# Local identity: the issuer is the browser-facing origin -- website-experiment's
+# Local identity: the issuer is the browser-facing origin -- website's
 # dev server, which proxies the API -- because emailed links are built from it
 # and sign-in forms are only accepted from it. Mail is written as .eml files to
 # .dev/mail. The bootstrap user owns an account, so it can sign straight in.
@@ -54,30 +53,18 @@ run-nats-worker: # Start NATS based worker
 run-scheduler: # Start scheduler server
 	@echo Not implemented yet....
 
-website/node_modules: 
-	@cd website && npm i 
+website/node_modules: website/package.json website/package-lock.json
+	@cd website && npm ci
 
-.PHONY: serve-site
-serve-site: website/node_modules  # Start Web UI
-	@cd website && npm start 
+.PHONY: serve-site build-site test-site
+serve-site: website/node_modules
+	@cd website && npm run dev
 
-website-experiment/node_modules:
-	@cd website-experiment && npm install
+build-site: website/node_modules
+	@cd website && npm run build
 
-## serve-site-experiment: Start the experimental Web UI on port 3001
-.PHONY: serve-site-experiment
-serve-site-experiment: website-experiment/node_modules
-	@cd website-experiment && npm run dev
-
-## build-site-experiment: Build the experimental Web UI without replacing the default site
-.PHONY: build-site-experiment
-build-site-experiment: website-experiment/node_modules
-	@cd website-experiment && npm run build
-
-## test-site-experiment: Run the experimental Web UI test suite
-.PHONY: test-site-experiment
-test-site-experiment: website-experiment/node_modules
-	@cd website-experiment && npm test
+test-site: website/node_modules
+	@cd website && npm test
 
 .PHONY: run-postgres-podman
 run-postgres-podman: # Start postgres using podman container
@@ -193,7 +180,7 @@ test/cover:
 .PHONY: clean
 clean:
 	$(RM) ./api-server ./nats-worker ./urthctl
-	$(RM) -dr ./dist $(website-dist) $(website-experiment-dist)
+	$(RM) -dr ./dist $(website-dist)
 
 
 api-server:
@@ -205,7 +192,6 @@ nats-worker:
 urthctl:
 	go build ./cmd/urthctl
 
-$(website-dist):
-	cd website && npm run build
+$(website-dist): build-site
 
-build: api-server $(website-dist) nats-worker
+build: api-server build-site nats-worker
