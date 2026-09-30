@@ -21,7 +21,7 @@ require (
 	github.com/prometheus/client_golang v1.24.1
 	github.com/prometheus/client_model v0.6.3
 	github.com/prometheus/common v0.71.0
-	github.com/sre-norns/wyrd v0.6.0
+	github.com/sre-norns/wyrd v0.6.1
 	github.com/sre-norns/wyrd/identity v0.5.0
 	github.com/stretchr/testify v1.12.1
 	golang.org/x/mod v0.41.0

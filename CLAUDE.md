@@ -164,6 +164,16 @@ both returned 200 and changed nothing. Resource edits now use `saveResource()`
 it) relies on the version-guarded update to lose the race when two workers reach
 for the same run.
 
+A plain `Save` guards nothing, and a version `WHERE` on it was worse. gorm's
+`Save` falls back to `INSERT … ON CONFLICT DO UPDATE ALL` when its UPDATE
+matches no row, so a stale write overwrote the newer row and reported success.
+Measured: 4 to 7 of 8 concurrent edits of one version landed. wyrd v0.6.1's
+`CreateOrUpdate` with `WithVersion` saves with `Select("*")`, which disables the
+fallback and keeps zero values. Resource edits through the API use
+`saveResourceAt`, guarded by the version `If-Match` named (see
+`docs/m4-backend-tenancy.md`). `test/integration`'s concurrent-edit scenario
+fails on v0.6.0.
+
 **Worker liveness must never be written through `saveResource`.** Recording that
 a worker is alive is not a resource edit: it happens on a timer, forever, for
 every worker. `ObjectMeta.BeforeSave` in wyrd increments `Version` on every gorm

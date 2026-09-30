@@ -8,6 +8,7 @@ import (
 
 	"github.com/sre-norns/wyrd/identity"
 	im "github.com/sre-norns/wyrd/identity/model"
+	"github.com/sre-norns/wyrd/pkg/bark"
 	"github.com/sre-norns/wyrd/pkg/dbstore"
 	"github.com/sre-norns/wyrd/pkg/manifest"
 	"gorm.io/gorm"
@@ -107,10 +108,13 @@ func WithIdentity(db *gorm.DB, service *identity.Service) ServiceOption {
 
 type scopedVisibility struct{ DB *gorm.DB }
 
+// A bark.ErrorResponse, because bark's response helpers keep the status of that
+// type only: a manifest.StatusError reaching them is answered 400, so a 403 or
+// 412 from identity arrived as a bad request.
 func identityError(err error) error {
 	var problem *identity.Problem
 	if errors.As(err, &problem) {
-		return manifest.NewStatusError(problem.Status, problem.Code, problem.Detail)
+		return bark.NewErrorResponse(problem.Status, manifest.NewStatusError(problem.Status, problem.Code, problem.Detail))
 	}
 	return err
 }

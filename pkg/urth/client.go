@@ -129,8 +129,8 @@ func (c *RestAPIClient) DispatchFailures() DispatchFailuresAPI {
 	}
 }
 
-func (c *RestAPIClient) resourceAPICall(ctx context.Context, method string, targetAPI *url.URL, data []byte) (result manifest.ResourceManifest, created bool, err error) {
-	request, err := c.requestWithAuth(ctx, method, targetAPI, "", nil, bytes.NewReader(data))
+func (c *RestAPIClient) resourceAPICall(ctx context.Context, method string, targetAPI *url.URL, data []byte, headers http.Header) (result manifest.ResourceManifest, created bool, err error) {
+	request, err := c.requestWithAuth(ctx, method, targetAPI, "", headers, bytes.NewReader(data))
 	if err != nil {
 		return result, false, err
 	}
@@ -168,7 +168,18 @@ func (c *RestAPIClient) ApplyObjectDefinition(ctx context.Context, spec manifest
 		return result, created, fmt.Errorf("RestApiClient manifest serialization error: %w", err)
 	}
 
-	return c.resourceAPICall(ctx, http.MethodPut, targetAPI, data)
+	return c.resourceAPICall(ctx, http.MethodPut, targetAPI, data, http.Header{bark.HTTPHeaderIfMatch: []string{applyIfMatch(spec)}})
+}
+
+// applyIfMatch is the If-Match of applying a manifest. A manifest that carries
+// its version -- one read back with `get` and edited -- updates only that
+// version, so applying a stale copy is refused rather than undoing someone
+// else's change. One without is applied unconditionally, as `apply` always was.
+func applyIfMatch(spec manifest.ResourceManifest) string {
+	if spec.Metadata.Version != 0 {
+		return bark.ETag(spec.Metadata.Version)
+	}
+	return "*"
 }
 
 func (c *RestAPIClient) CreateFromManifest(ctx context.Context, manifest manifest.ResourceManifest) (result manifest.ResourceManifest, err error) {
@@ -182,7 +193,7 @@ func (c *RestAPIClient) CreateFromManifest(ctx context.Context, manifest manifes
 		return result, fmt.Errorf("RestApiClient manifest serialization error: %w", err)
 	}
 
-	result, _, err = c.resourceAPICall(ctx, http.MethodPost, targetAPI, data)
+	result, _, err = c.resourceAPICall(ctx, http.MethodPost, targetAPI, data, nil)
 
 	return
 }
@@ -479,7 +490,7 @@ func (c *workersAPIClient) SetPaused(ctx context.Context, id manifest.ResourceNa
 	}
 
 	targetAPI := urlForPath(c.baseURL, fmt.Sprintf("v1/workers/%v/paused", id), nil)
-	result, _, err = c.resourceAPICall(ctx, http.MethodPut, targetAPI, data)
+	result, _, err = c.resourceAPICall(ctx, http.MethodPut, targetAPI, data, nil)
 
 	return result, err == nil, err
 }
@@ -550,16 +561,11 @@ func (c *runnersAPIClient) Update(ctx context.Context, id manifest.VersionedReso
 		return
 	}
 
-	queryParams := url.Values{}
-	queryParams.Set("version", id.Version.String())
-
-	targetAPI := urlForPath(c.baseURL, fmt.Sprintf("v1/runners/%v", id), queryParams)
+	// PUT addresses the resource by name; If-Match carries the version.
+	targetAPI := urlForPath(c.baseURL, fmt.Sprintf("v1/runners/%v", url.PathEscape(string(entry.Metadata.Name))), nil)
 	resp, err := c.put(ctx,
 		targetAPI,
-		http.Header{
-			// "Authorization": []string{fmt.Sprintf("Bearer %s", token)},
-			"If-Match": []string{id.String()},
-		},
+		http.Header{bark.HTTPHeaderIfMatch: []string{bark.ETag(id.Version)}},
 		bytes.NewReader(data),
 	)
 	if err != nil {
@@ -864,16 +870,11 @@ func (c *scenariosAPIClient) Update(ctx context.Context, id manifest.VersionedRe
 		return
 	}
 
-	queryParams := url.Values{}
-	queryParams.Set("version", id.Version.String())
-
-	targetAPI := urlForPath(c.baseURL, fmt.Sprintf("v1/scenarios/%v", id), queryParams)
+	// PUT addresses the resource by name; If-Match carries the version.
+	targetAPI := urlForPath(c.baseURL, fmt.Sprintf("v1/scenarios/%v", url.PathEscape(string(entry.Metadata.Name))), nil)
 	resp, err := c.put(ctx,
 		targetAPI,
-		http.Header{
-			// "Authorization": []string{fmt.Sprintf("Bearer %s", token)},
-			"If-Match": []string{id.String()},
-		},
+		http.Header{bark.HTTPHeaderIfMatch: []string{bark.ETag(id.Version)}},
 		bytes.NewReader(data),
 	)
 	if err != nil {
