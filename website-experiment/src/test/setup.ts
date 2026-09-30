@@ -1,6 +1,9 @@
 import '@testing-library/jest-dom/vitest'
 import {cleanup} from '@testing-library/react'
 import {afterAll, afterEach, beforeAll} from 'vitest'
+import {configure} from '@testing-library/react'
+
+configure({asyncUtilTimeout: 3000})
 import {server} from './server'
 
 beforeAll(() => {

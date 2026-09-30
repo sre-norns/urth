@@ -4,7 +4,7 @@ import {
   IdentityUserMenu, isAccountAdmin, PrincipalProvider, useAccountId, useIdentity,
   useIdentityQuery, useIdentityShell, useSessionEpoch, useSessionScope, wire,
 } from '@sre-norns/components/identity'
-import {Activity, FolderKanban, MailPlus, Server, Settings, Users} from 'lucide-react'
+import {Activity, AlertTriangle, FolderKanban, MailPlus, Server, Settings, Users, Cpu} from 'lucide-react'
 import {Navigate, NavLink, Outlet, useLocation, useNavigate, useParams} from 'react-router-dom'
 import {accountPath, projectPath} from './links'
 
@@ -73,6 +73,8 @@ export function Shell() {
           </>}
           {admin && <><NavLabel>Account</NavLabel>
             <NavLink to={`${base}/runners`} onClick={close}><Server size={18} />Runners</NavLink>
+            <NavLink to={`${base}/workers`} onClick={close}><Cpu size={18} />Workers</NavLink>
+            <NavLink to={`${base}/dead-letters`} onClick={close}><AlertTriangle size={18} />Dead letters</NavLink>
             <NavLink to={`${base}/members`} onClick={close}><Users size={18} />Members</NavLink>
             <NavLink to={`${base}/invitations`} onClick={close}><MailPlus size={18} />Invitations</NavLink>
             <NavLink to={`${base}/settings`} onClick={close}><Settings size={18} />Settings</NavLink>

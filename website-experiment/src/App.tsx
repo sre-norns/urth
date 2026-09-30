@@ -52,8 +52,14 @@ export const routes: RouteObject[] = [{
             {path: 'members', lazy: identity('AccountMembers')},
             {path: 'invitations', lazy: identity('AccountInvitations')},
             {path: 'settings', lazy: identity('AccountSettings')},
-            {path: 'runners', lazy: identity('MachineIdentities')},
-            {path: 'runners/:runnerId', lazy: page('RunnerPage')},
+            {lazy: async () => ({Component: (await import('./monitoring/common')).AccountOnly}), children: [
+              {path: 'runners', lazy: async () => ({Component: (await import('./monitoring/Infrastructure')).Runners})},
+              {path: 'runners/:runnerId', lazy: async () => ({Component: (await import('./monitoring/Infrastructure')).RunnerDetail})},
+              {path: 'workers', lazy: async () => ({Component: (await import('./monitoring/Infrastructure')).Workers})},
+              {path: 'workers/:workerName', lazy: async () => ({Component: (await import('./monitoring/Infrastructure')).WorkerDetail})},
+              {path: 'dead-letters', lazy: async () => ({Component: (await import('./monitoring/DeadLetters')).DeadLetters})},
+              {path: 'dead-letters/:failureName', lazy: async () => ({Component: (await import('./monitoring/DeadLetters')).DeadLetterDetail})},
+            ]},
             {path: 'p/:projectId', lazy: async () => ({Component: (await import('./identity/ProjectScope')).ProjectScope}), children: [
               {index: true, element: <Navigate to="members" replace />},
               {path: 'members', lazy: page('ProjectPage')},
