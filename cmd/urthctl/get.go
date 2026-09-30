@@ -2,19 +2,12 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
-	"strconv"
-	"time"
 
-	"gopkg.in/yaml.v3"
-
-	"github.com/sre-norns/wyrd/pkg/manifest"
-
-	"github.com/jedib0t/go-pretty/v6/table"
-	"github.com/jedib0t/go-pretty/v6/text"
 	"github.com/sre-norns/urth/pkg/urth"
+	"github.com/sre-norns/wyrd/identity/cli"
+	"github.com/sre-norns/wyrd/pkg/manifest"
 )
 
 type (
@@ -24,7 +17,6 @@ type (
 
 	Scenarios struct {
 		Selector string `help:"Selector (label query) to filter on" optional:"" name:"selector" short:"l"`
-		Output   string `help:"Output format" enum:"wide,short" default:"short" name:"output" short:"o"`
 	}
 
 	Script struct {
@@ -33,7 +25,6 @@ type (
 
 	Results struct {
 		Selector string `help:"Selector (label query) to filter on" optional:"" name:"selector" short:"l"`
-		Output   string `help:"Output format" enum:"wide,short" default:"short" name:"output" short:"o"`
 
 		ScenarioID manifest.ResourceName `help:"Id of the scenario" arg:"" name:"scenario" `
 	}
@@ -44,7 +35,6 @@ type (
 
 	Runners struct {
 		Selector string `help:"Selector (label query) to filter on" optional:"" name:"selector" short:"l"`
-		Output   string `help:"Output format" enum:"wide,short" default:"short" name:"output" short:"o"`
 	}
 
 	Artifact struct {
@@ -72,60 +62,6 @@ type (
 	}
 )
 
-type formatter func(any) error
-
-func yamlFormatter(resource any) error {
-	data, err := yaml.Marshal(resource)
-	if err != nil {
-		return err
-	}
-	fmt.Print(string(data))
-
-	return nil
-}
-
-func jsonFormatter(resource any) error {
-	encoder := json.NewEncoder(os.Stdout)
-	encoder.SetIndent("", "\t")
-
-	err := encoder.Encode(resource)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func getFormatter(formatName outputFormat) (formatter, error) {
-	switch formatName {
-	case "yaml", "yml":
-		return yamlFormatter, nil
-	case "json":
-		return jsonFormatter, nil
-	}
-
-	return nil, fmt.Errorf("unexpected output format %q", formatName)
-}
-
-func resourceAge(meta manifest.ObjectMeta) time.Duration {
-	if meta.UpdatedAt == nil {
-		return 0
-	}
-
-	return time.Since(*meta.UpdatedAt).Round(time.Second)
-}
-
-func maybeDuration(start *time.Time, end *time.Time) string {
-	if start == nil {
-		return "not-started"
-	}
-	if end == nil {
-		return fmt.Sprintf("pending: %v", time.Since(*start).Round(time.Second))
-	}
-
-	return end.Sub(*start).Round(time.Second).String()
-}
-
 func (c *Scenario) Run(cfg *commandContext) error {
 	apiClient, err := cfg.NewClient()
 	if err != nil {
@@ -136,11 +72,7 @@ func (c *Scenario) Run(cfg *commandContext) error {
 	defer cancel()
 
 	resource, err := fetchScenario(ctx, apiClient, c.ScenarioID)
-	if err != nil {
-		return err
-	}
-
-	return cfg.OutputFormatter(&resource)
+	return cli.RenderResource(cfg.Env.Output, scenarioView{resource}, err)
 }
 
 func (c *Scenarios) Run(cfg *commandContext) error {
@@ -149,74 +81,16 @@ func (c *Scenarios) Run(cfg *commandContext) error {
 		return fmt.Errorf("failed to initialize API Client: %w", err)
 	}
 
-	selector, err := manifest.ParseSelector(c.Selector)
+	q, err := cli.SearchQuery(c.Selector)
 	if err != nil {
-		return fmt.Errorf("failed to parse labels selector: %w", err)
+		return err
 	}
-	q := manifest.SearchQuery{
-		Selector: selector,
-	}
-	// TODO: Pagination
-	resources, _, err := fetchScenarios(cfg.Context, apiClient, q)
+	resources, page, err := fetchScenarios(cfg.Context, apiClient, q)
 	if err != nil {
 		return err
 	}
 
-	t := table.NewWriter()
-
-	t.Style().Options = table.OptionsNoBordersAndSeparators
-	t.Style().Format.HeaderAlign = text.AlignLeft
-	t.Style().Format.RowAlign = text.AlignLeft
-
-	t.SetOutputMirror(os.Stdout)
-	header := table.Row{"Name", "Enabled", "Type", "Status", "Age"}
-	if c.Output == "wide" {
-		header = append(header, "Schedule", "Requirements", "NextRun", "LastRun.Duration")
-	}
-	t.AppendHeader(header)
-
-	// r.Status.LastStatus
-
-	for _, r := range resources {
-		lastStatus := "unknown"
-		if len(r.Status.Results) > 0 {
-			lastStatus = fmt.Sprintf("%v/%v", r.Status.Results[0].Status.Status, r.Status.Results[0].Status.Result)
-		}
-
-		probType := "<unknown>"
-		if r.Spec.Prob.Kind != "" {
-			probType = string(r.Spec.Prob.Kind)
-		}
-
-		row := table.Row{r.Name, r.Spec.IsActive, probType, lastStatus, resourceAge(r.ObjectMeta)}
-
-		if c.Output == "wide" {
-			lastRunDuration := ""
-
-			if len(r.Status.Results) > 0 && r.Status.Results[0].Spec.TimeStarted != nil {
-				latestResult := r.Status.Results[0].Spec
-				lastRunDuration = maybeDuration(latestResult.TimeStarted, latestResult.TimeEnded)
-			}
-
-			nextRunScheduled := ""
-			if r.Status.NextRun != nil {
-				nextRunScheduled = r.Status.NextRun.String()
-			}
-
-			row = append(row,
-				r.Spec.RunSchedule,
-				// r.Spec.Description,
-				r.Spec.Requirements,
-				nextRunScheduled,
-				lastRunDuration,
-			)
-		}
-
-		t.AppendRow(row)
-	}
-
-	t.Render()
-	return nil
+	return cli.RenderList(cfg.Env.Output, views(resources, func(r urth.Scenario) scenarioView { return scenarioView{r} }), page)
 }
 
 func (c *Runners) Run(cfg *commandContext) error {
@@ -225,51 +99,16 @@ func (c *Runners) Run(cfg *commandContext) error {
 		return fmt.Errorf("failed to initialize API Client: %w", err)
 	}
 
-	selector, err := manifest.ParseSelector(c.Selector)
+	q, err := cli.SearchQuery(c.Selector)
 	if err != nil {
-		return fmt.Errorf("failed to parse labels selector: %w", err)
+		return err
 	}
-	q := manifest.SearchQuery{
-		Selector: selector,
-	}
-	// TODO: Pagination
-	resources, _, err := fetchRunners(cfg.Context, apiClient, q)
+	resources, page, err := fetchRunners(cfg.Context, apiClient, q)
 	if err != nil {
 		return err
 	}
 
-	t := table.NewWriter()
-	t.Style().Options = table.OptionsNoBordersAndSeparators
-	t.Style().Format.HeaderAlign = text.AlignLeft
-	t.Style().Format.RowAlign = text.AlignLeft
-
-	t.SetOutputMirror(os.Stdout)
-	header := table.Row{"Name", "Enabled", "Online", "Age"}
-	if c.Output == "wide" {
-		header = append(header, "Requirements", "Description")
-	}
-	t.AppendHeader(header)
-
-	for _, r := range resources {
-		nActive := strconv.FormatUint(r.Status.NumberInstances, 10)
-		if r.Spec.MaxInstances > 0 {
-			nActive = fmt.Sprintf("%d/%d", r.Status.NumberInstances, r.Spec.MaxInstances)
-		}
-
-		row := table.Row{r.Name, r.Spec.IsActive, nActive, resourceAge(r.ObjectMeta)}
-
-		if c.Output == "wide" {
-			row = append(row,
-				r.Spec.Requirements,
-				r.Spec.Description,
-			)
-		}
-
-		t.AppendRow(row)
-	}
-
-	t.Render()
-	return nil
+	return cli.RenderList(cfg.Env.Output, views(resources, func(r urth.Runner) runnerView { return runnerView{r} }), page)
 }
 
 func (c *Runner) Run(cfg *commandContext) error {
@@ -282,11 +121,7 @@ func (c *Runner) Run(cfg *commandContext) error {
 	defer cancel()
 
 	resource, err := fetchRunner(ctx, apiClient, c.ID)
-	if err != nil {
-		return err
-	}
-
-	return cfg.OutputFormatter(&resource)
+	return cli.RenderResource(cfg.Env.Output, runnerView{resource}, err)
 }
 
 func (c *Results) Run(cfg *commandContext) error {
@@ -298,47 +133,16 @@ func (c *Results) Run(cfg *commandContext) error {
 	ctx, cancel := cfg.ClientCallContext()
 	defer cancel()
 
-	selector, err := manifest.ParseSelector(c.Selector)
+	q, err := cli.SearchQuery(c.Selector)
 	if err != nil {
-		return fmt.Errorf("failed to parse labels selector: %w", err)
+		return err
 	}
-	q := manifest.SearchQuery{
-		Selector: selector,
-	}
-	// TODO: Pagination
-	resources, _, err := fetchResults(ctx, apiClient, c.ScenarioID, q)
+	resources, page, err := fetchResults(ctx, apiClient, c.ScenarioID, q)
 	if err != nil {
 		return err
 	}
 
-	t := table.NewWriter()
-	t.Style().Options = table.OptionsNoBordersAndSeparators
-	t.Style().Format.HeaderAlign = text.AlignLeft
-	t.Style().Format.RowAlign = text.AlignLeft
-	t.SetOutputMirror(os.Stdout)
-
-	header := table.Row{"Name", "Duration", "Status", "Age"}
-	if c.Output == "wide" {
-		header = append(header, "Results", "Kind", "Artifacts")
-	}
-	t.AppendHeader(header)
-
-	for _, resource := range resources {
-		row := table.Row{resource.Name, maybeDuration(resource.Spec.TimeStarted, resource.Spec.TimeEnded), resource.Status.Status, resourceAge(resource.ObjectMeta)}
-
-		if c.Output == "wide" {
-			row = append(row,
-				resource.Status.Result,
-				resource.Spec.ProbKind,
-				strconv.FormatUint(resource.Status.NumberArtifacts, 10),
-			)
-		}
-
-		t.AppendRow(row)
-	}
-
-	t.Render()
-	return nil
+	return cli.RenderList(cfg.Env.Output, views(resources, func(r urth.Result) resultView { return resultView{r} }), page)
 }
 
 func (c *Labels) Run(cfg *commandContext) error {
@@ -400,7 +204,7 @@ func (c *Artifact) Run(cfg *commandContext) error {
 	}
 
 	if c.ShowMeta {
-		return cfg.OutputFormatter(&resource)
+		return cli.RenderResource(cfg.Env.Output, artifactView{resource}, nil)
 	}
 
 	// FIXME: Broken!

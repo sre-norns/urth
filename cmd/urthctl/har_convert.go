@@ -10,7 +10,7 @@ import (
 
 type ConvertHar struct {
 	Files []string `arg:"" optional:"" name:"path" help:"HAR file(s) to convert" type:"existingfile"`
-	Out   string   `help:"Name of the output file to write to. Default output is STDOUT" short:"o" type:"file"`
+	Out   string   `help:"Name of the output file to write to. Default output is STDOUT" type:"file"`
 }
 
 func (c *ConvertHar) Run(cfg *commandContext) error {

@@ -136,7 +136,7 @@ make run-api-server-nats
 go run ./cmd/urthctl apply ./examples/runner.yaml
 go run ./cmd/urthctl apply ./examples/scenario.tcp.yaml
 
-export RUNNER_TOKEN=$(go run ./cmd/urthctl auth-worker -f ./examples/runner.yaml)
+export RUNNER_TOKEN=$(go run ./cmd/urthctl runners token -f ./examples/runner.yaml)
 make run-nats-worker
 ```
 
