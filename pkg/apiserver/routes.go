@@ -570,7 +570,10 @@ func Routes(srv urth.Service, natsConn *nats.Conn, metrics *prometheus.Registry,
 		})
 		// Live run log, falling back to the stored artifact once the run has
 		// finished, so one URL serves a run whether or not it is still going.
-		project.GET("/scenarios/:resource/results/:runId/logs", runLogHandler(srv, natsConn))
+		// SSE writes its own media type; the manifest negotiation middleware
+		// rejects text/event-stream. Keep the same user and project guards.
+		router.GET("/v1/projects/:id/scenarios/:resource/results/:runId/logs",
+			userAuthentication(identityService), requestScope(identityService, true), runLogHandler(srv, natsConn))
 		v1.PUT("/scenarios/:id/results/:runId/status", bark.AuthBearerAPI(), bark.VersionedResourceAPI(), func(ctx *gin.Context) {
 			var resourceRequest urth.ScenarioRunResultsRequest
 			if err := ctx.ShouldBindUri(&resourceRequest); err != nil {

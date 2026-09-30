@@ -4,6 +4,12 @@ import {z} from 'zod'
 export {ApiProblem}
 export type {ApiValue}
 
+// Product bark errors still use Code/Message; identity returns problem+json.
+export function productProblem(status: number, body: unknown, retryAfter: string | null = null) {
+  const legacy = z.object({Message: z.string()}).safeParse(body)
+  return new ApiProblem(status, legacy.success ? {detail: legacy.data.Message} : body, retryAfter)
+}
+
 export type Write =
   | {method: 'POST'; body?: unknown}
   | {method: 'PUT'; body: unknown; etag: string}
@@ -29,7 +35,7 @@ export async function request<T>(
     ...(write?.body !== undefined ? {body: JSON.stringify(write.body)} : {}),
   })
   const body: unknown = response.status === 204 ? null : await response.json().catch(() => null)
-  if (!response.ok) throw new ApiProblem(response.status, body, response.headers.get('Retry-After'))
+  if (!response.ok) throw productProblem(response.status, body, response.headers.get('Retry-After'))
   const parsed = schema.safeParse(body)
   if (!parsed.success) throw new Error('The service returned an unsupported response. Refresh and try again.')
   return {data: parsed.data, etag: response.headers.get('ETag')}
@@ -41,6 +47,6 @@ export async function pauseWorker<T>(session: SessionClient, path: string, pause
     method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({paused}),
   })
   const body: unknown = await response.json().catch(() => null)
-  if (!response.ok) throw new ApiProblem(response.status, body)
+  if (!response.ok) throw productProblem(response.status, body)
   return schema.parse(body)
 }

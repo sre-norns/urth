@@ -32,18 +32,18 @@ func runLogHandler(srv urth.Service, conn *nats.Conn) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		var request urth.ScenarioRunResultsRequest
 		if err := ctx.ShouldBindUri(&request); err != nil {
-			bark.AbortWithError(ctx, http.StatusNotFound, err)
+			bark.AbortWithProblem(ctx, http.StatusNotFound, err)
 			return
 		}
 
 		resource, found, err := srv.Results(manifest.ResourceName(request.ID)).
 			Get(ctx.Request.Context(), manifest.ResourceName(request.RunID))
 		if err != nil {
-			bark.AbortWithError(ctx, http.StatusInternalServerError, err)
+			bark.AbortWithProblem(ctx, http.StatusInternalServerError, err)
 			return
 		}
 		if !found {
-			bark.AbortWithError(ctx, http.StatusNotFound, bark.ErrResourceNotFound)
+			bark.AbortWithProblem(ctx, http.StatusNotFound, bark.ErrResourceNotFound)
 			return
 		}
 
@@ -54,7 +54,7 @@ func runLogHandler(srv urth.Service, conn *nats.Conn) gin.HandlerFunc {
 		}
 
 		if conn == nil {
-			bark.AbortWithError(ctx, http.StatusServiceUnavailable,
+			bark.AbortWithProblem(ctx, http.StatusServiceUnavailable,
 				fmt.Errorf("live run logs require the NATS transport"))
 			return
 		}
@@ -62,7 +62,7 @@ func runLogHandler(srv urth.Service, conn *nats.Conn) gin.HandlerFunc {
 		// A run that has not been claimed has no executor yet, so there is
 		// nobody to listen to.
 		if resource.Status.Executor.RunnerID == "" {
-			bark.AbortWithError(ctx, http.StatusConflict,
+			bark.AbortWithProblem(ctx, http.StatusConflict,
 				fmt.Errorf("run has not been claimed by a worker yet"))
 			return
 		}
@@ -89,27 +89,27 @@ func serveStoredRunLog(ctx *gin.Context, srv urth.Service, result urth.Result) {
 		urth.LabelResultUID, result.UID,
 		urth.LabelArtifactKind, runner.LogRelType))
 	if err != nil {
-		bark.AbortWithError(ctx, http.StatusInternalServerError, err)
+		bark.AbortWithProblem(ctx, http.StatusInternalServerError, err)
 		return
 	}
 
 	artifacts, _, err := srv.Artifacts().List(ctx.Request.Context(), manifest.SearchQuery{Selector: selector})
 	if err != nil {
-		bark.AbortWithError(ctx, http.StatusInternalServerError, err)
+		bark.AbortWithProblem(ctx, http.StatusInternalServerError, err)
 		return
 	}
 	if len(artifacts) == 0 {
-		bark.AbortWithError(ctx, http.StatusNotFound, bark.ErrResourceNotFound)
+		bark.AbortWithProblem(ctx, http.StatusNotFound, bark.ErrResourceNotFound)
 		return
 	}
 
 	content, found, err := srv.Artifacts().GetContent(ctx.Request.Context(), artifacts[0].Metadata.Name)
 	if err != nil {
-		bark.AbortWithError(ctx, http.StatusInternalServerError, err)
+		bark.AbortWithProblem(ctx, http.StatusInternalServerError, err)
 		return
 	}
 	if !found {
-		bark.AbortWithError(ctx, http.StatusNotFound, bark.ErrResourceNotFound)
+		bark.AbortWithProblem(ctx, http.StatusNotFound, bark.ErrResourceNotFound)
 		return
 	}
 
@@ -123,7 +123,7 @@ func serveStoredRunLog(ctx *gin.Context, srv urth.Service, result urth.Result) {
 func streamRunLog(ctx *gin.Context, conn *nats.Conn, result urth.Result) {
 	subscriber, err := natsq.SubscribeRunLog(conn, result.Status.Executor.RunnerID, result.UID, 0)
 	if err != nil {
-		bark.AbortWithError(ctx, http.StatusInternalServerError, err)
+		bark.AbortWithProblem(ctx, http.StatusInternalServerError, err)
 		return
 	}
 	defer subscriber.Close()

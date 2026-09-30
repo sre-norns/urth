@@ -52,8 +52,8 @@ export function DeadLetterDetail() {
     <Heading title={f.metadata.name} description={f.spec.reason} />
     <Card><h2>Dispatch failure</h2><Status value={f.status?.resolved ? 'resolved' : 'unresolved'} /><p>{f.spec.detail}</p>
       <p>Occurred {new Date(f.spec.occurredAt).toLocaleString()}</p><Labels value={f.metadata.labels} />
-      {projectId && f.spec.resultUID && <p><Link to={`${base}/runs/${encodeURIComponent(f.spec.resultUID)}`}>Original run</Link></p>}
-      {projectId && f.status?.retryResultUID && <p><Link to={`${base}/runs/${encodeURIComponent(f.status.retryResultUID)}`}>Retry run</Link></p>}
+      {projectId && f.spec.resultUID && <p><Link to={`${base}/run-ids/${encodeURIComponent(f.spec.resultUID)}`}>Original run</Link></p>}
+      {projectId && f.status?.retryResultUID && <p><Link to={`${base}/run-ids/${encodeURIComponent(f.status.retryResultUID)}`}>Retry run</Link></p>}
       {!f.status?.resolved && <div className="actions">
         {projectId && f.spec.resultUID && <Button onClick={() => {setError(undefined); setAction('retry')}}>Retry dispatch</Button>}
         <Button variant="secondary" onClick={() => {setError(undefined); setAction('resolve')}}>Resolve</Button>
