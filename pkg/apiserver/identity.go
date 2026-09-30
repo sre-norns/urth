@@ -76,6 +76,7 @@ var signInCopy = pages.Copy{
 	Description:           "Probe services from the networks they live in.",
 	InvitationDescription: "Join a monitoring account. Your other account memberships stay unchanged.",
 	MachineTokens:         "runner tokens",
+	DeviceRetry:           "Run urthctl auth login again.",
 }
 
 // SignInPages brands the sign-in, registration, recovery and invitation pages.
