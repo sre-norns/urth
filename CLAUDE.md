@@ -34,7 +34,9 @@ pkg/probers/*/      one package per prob kind (http, tcp, dns, icmp, grpc, rest,
 pkg/runner/         probe execution, run logging, worker capability labels
 test/integration/   the dispatch path end to end: real Postgres, real broker,
                     real router, real worker loop. See below.
-website/            React UI (webpack, emotion, redux, wouter)
+website-experiment/ the Web UI: Vite, React, @sre-norns/components (identity screens
+                    today; the monitoring pages, still in LegacyApp, return in M7)
+website/            the retired UI (webpack, emotion, redux, wouter); deleted in M7
 ```
 
 `pkg/runner` is a misnomer worth knowing about: it holds *probe execution*, not
@@ -69,25 +71,37 @@ indexed only the first table migrated. A database created before v0.3.0 gains
 ```bash
 make run-postgres-podman        # or podman run … postgres:18
 make run-nats-podman
-make run-api-server            # passes a Postgres URL explicitly
-go run ./cmd/urthctl apply ./examples/runner.yaml
-go run ./cmd/urthctl apply ./examples/scenario.tcp.yaml
-export RUNNER_TOKEN=$(go run ./cmd/urthctl auth-worker -f ./examples/runner.yaml)
-make run-nats-worker            # reads RUNNER_TOKEN
-cd website && npm start         # :3000, proxies /api to :8080
+make run-api-server            # Postgres URL, dev identity env, bootstrap owner
+cd website-experiment && npm run dev   # :3001 -- the browser origin and the issuer
 ```
+
+Sign in at `http://localhost:3001` as `admin@urth.example` / `urth-dev-password` (the
+bootstrap owner `make run-api-server` creates). The README's quick start has the rest,
+verbatim and verified: a CLI token through the OAuth device grant (`urthctl` has no
+`auth login` until M6), then `apply` a runner, a `runner-authorizations` grant and a
+scenario with `--token/--account/--project`, `auth-worker <runner>` for `RUNNER_TOKEN`,
+and `make run-nats-worker`.
 
 NATS is the only transport. The Redis/asynq prototype was retired (task 015);
 `--transport` survives as a hidden flag accepting only `nats`, so old command
 lines keep working.
 
-Trigger a run without the UI:
+Trigger a run without the UI -- every route is scoped and authenticated since M4:
 
 ```bash
-curl -X POST 'http://localhost:8080/api/v1/scenarios/tcp-self-fondle/results' \
-  -H 'Content-Type: application/json' \
+curl -X POST "http://localhost:8080/v1/projects/$URTH_PROJECT/scenarios/tcp-self-fondle/results" \
+  -H "Authorization: Bearer $URTH_TOKEN" -H 'Content-Type: application/json' \
   -d '{"apiVersion":"v1","kind":"results","metadata":{},"spec":{}}'
 ```
+
+**Identity in development.** The issuer is `http://localhost:3001`, not the
+api-server's `:8080`: emailed links are built from it and sign-in forms are accepted
+only when `Origin` is it, so a form posted straight to `:8080` gets 403. Mail lands as
+`.eml` files in `.dev/mail`. Sign-in through a provider: `make run-fake-idp`, then
+`make run-api-server-fake-idp`, and queue each identity with `POST
+http://127.0.0.1:18090/control/next` before signing in (see `cmd/api-server/README.md`).
+A provider identity no user has gets a "register instead" email -- by design; register
+through **Create account → Continue with OpenID Connect**.
 
 ## Verification expectations
 
@@ -97,7 +111,10 @@ caught them:
 - `make audit` (vet + staticcheck + race tests) must exit 0. CI runs
   `make audit/postgres`, which is the same plus the tests that need a real
   database — see the Postgres note below. Run that one before pushing.
-- `cd website && npm test` — vitest, currently 204 tests in 16 files.
+- `cd website-experiment && npm test` — vitest, currently 15 tests in 6 files,
+  and `npm run build`. It installs `@sre-norns/components` from GitHub Packages
+  (`~/.npmrc` needs a `read:packages` token); CI builds neither website.
+  `cd website && npm test` still covers the retired UI until M7 deletes it.
 - **`test/integration` is the one place the dispatch path is tested whole.** Every
   other package tests one boundary and assumes the rest, which is the arrangement
   that hid the acknowledgement bug task 010 fixed and the lost-claim-response bug

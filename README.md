@@ -68,9 +68,11 @@ DNS and ICMP semantics should be familiar if you already run it.
 
 ---
 
-The backend tenancy/API transition is documented in [M4 notes](docs/m4-backend-tenancy.md).
-It uses authenticated, scoped `/v1` routes and cursor lists; the website and CLI
-login migrations follow in M5–M7.
+Every API route is authenticated and scoped to an account or project: users sign in
+through the shared identity service (password, email links, Google/GitHub/OIDC), and
+runners use revocable machine tokens. See the [M4 notes](docs/m4-backend-tenancy.md)
+and the [api-server identity settings](cmd/api-server/README.md#identity-issuer-sign-in-mail-and-the-first-user).
+`urthctl` gains `auth login` in M6; the monitoring pages return to the Web UI in M7.
 
 ## Concepts
 
@@ -137,12 +139,14 @@ as `urth/artifact.may-contain-secrets: "true"`.
 This makes retention and audit questions ordinary label queries:
 
 ```bash
-# Everything still stored that may carry credentials
-curl -sG 'http://localhost:8080/api/v1/artifacts' \
+# Everything still stored in a project that may carry credentials
+curl -sG "http://localhost:8080/v1/projects/$URTH_PROJECT/artifacts" \
+  -H "Authorization: Bearer $URTH_TOKEN" \
   --data-urlencode 'labels=urth/artifact.may-contain-secrets=true'
 
 # Narrower: faithful recordings and unclassified output
-curl -sG 'http://localhost:8080/api/v1/artifacts' \
+curl -sG "http://localhost:8080/v1/projects/$URTH_PROJECT/artifacts" \
+  -H "Authorization: Bearer $URTH_TOKEN" \
   --data-urlencode 'labels=urth/artifact.data-class in (secret-bearing,unknown)'
 ```
 
@@ -200,7 +204,7 @@ when they satisfy the channel's Worker requirements. See
 | **api-server** | [`cmd/api-server`](./cmd/api-server/README.md) | REST API for all resources; hands out jobs. Run several replicas in production. |
 | **nats-worker** | [`cmd/nats-worker`](./cmd/nats-worker/README.md) | The Worker. Shares its Runner's durable JetStream consumer, authenticates claims, executes probes, and uploads Results and Artifacts. |
 | **urthctl** | [`cmd/urthctl`](./cmd/urthctl/README.md) | CLI. Apply manifests, inspect resources, run scenarios locally. |
-| **Web UI** | [`website`](./website) | React front end. |
+| **Web UI** | [`website-experiment`](./website-experiment) | React front end on `@sre-norns/components`: sign-in, accounts, projects, members and runners today; the monitoring pages return in M7. `website/` is the retired UI. |
 
 The architectural commitments behind the resource model and distributed runner design
 are recorded in [the architecture decision records](./docs/README.md).
@@ -226,10 +230,10 @@ are recorded in [the architecture decision records](./docs/README.md).
 >   scoped NATS credentials, complete Runner policy, and failure workflows are not
 >   finished. Track the ordered work in the
 >   [NATS review backlog](./docs/review-backlog/README.md).
-> - **Authentication is not production-ready.** Enrollment issuance still has an
->   unauthenticated route, NATS authority is not derived from Worker identity, and run
->   capabilities need stronger claims. Run Urth only in a trusted development environment until the P0 backlog is
->   closed.
+> - **Authentication is not yet reviewed for production.** Users sign in through the
+>   shared identity service and runner tokens are issued only to account administrators
+>   (M4, M5), but the combined auth surface has not had its security review (M9). Run
+>   Urth only in a trusted development environment until then.
 >
 > See [TODO.md](./TODO.md) for the full backlog.
 
@@ -267,39 +271,73 @@ The channel and executor relationship is defined by
 
 ## Quick start
 
-**Prerequisites:** Go (version per [`go.mod`](./go.mod)), Postgres 18, NATS, and Node.js
-for the Web UI. Each service below wants its own terminal.
+**Prerequisites:** Go (version per [`go.mod`](./go.mod)), Postgres 18, NATS, `jq`, and
+Node.js for the Web UI. The Web UI installs `@sre-norns/components` from GitHub Packages,
+so `~/.npmrc` needs a GitHub token with `read:packages`
+(`//npm.pkg.github.com/:_authToken=…`). Each service below wants its own terminal.
 
 ```bash
 # 1. Start Postgres and NATS
 make run-postgres-podman
 make run-nats-podman
 
-# 2. Start the API server on http://localhost:8080
+# 2. Start the API server on :8080. It creates the user admin@urth.example
+#    (password urth-dev-password) owning an account, and writes mail to .dev/mail.
 make run-api-server        # override the database with: make run-api-server store-url=...
 
-# 3. Register a runner and create a scenario
-go run ./cmd/urthctl apply ./examples/runner.yaml
-go run ./cmd/urthctl apply ./examples/scenario.yml
-go run ./cmd/urthctl get scenarios -o wide
-
-# 4. Mint a worker token, then start a worker with it
-export RUNNER_TOKEN=$(go run ./cmd/urthctl auth-worker -f ./examples/runner.yaml)
-make run-nats-worker
-
-# 5. Start the Web UI at http://localhost:3000
-make serve-site
+# 3. Start the Web UI on http://localhost:3001 and sign in as that user.
+#    This dev server is the browser's origin: sign-in and emailed links go through it.
+cd website-experiment && npm install && npm run dev
 ```
 
-After step 3, `get scenarios` should list `basic-rest-self-prober-http` with its schedule
-and requirements — that confirms the API server and database are wired up correctly.
+In the Web UI, create a project (**Projects → Create project**). Everything that follows
+can be done there too — **Runners → Register runner**, then a token, then **Authorize
+runner** on the project — but here it is from the command line.
 
-Trigger the `basic-rest-self-prober-http` scenario from the UI, then inspect the results:
+Until `urthctl auth login` arrives (M6), a command-line token comes from the OAuth device
+grant. Access tokens last 15 minutes; repeat this when one expires.
 
 ```bash
-go run ./cmd/urthctl get results basic-rest-self-prober-http
-curl 'http://localhost:8080/api/v1/scenarios/basic-rest-self-prober-http/results'
+# 4. Sign in the CLI: open the printed verification_uri_complete, log in, approve.
+curl -s -X POST http://localhost:3001/oauth/device_authorization -d client_id=urthctl | tee /tmp/device.json
+curl -s -X POST http://localhost:3001/oauth/token -d client_id=urthctl \
+  -d grant_type=urn:ietf:params:oauth:grant-type:device_code \
+  -d device_code="$(jq -r .device_code /tmp/device.json)" > /tmp/token.json
+export URTH_TOKEN=$(jq -r .access_token /tmp/token.json)
+export URTH_ACCOUNT=$(jq -r .account_id /tmp/token.json)
+export URTH_PROJECT=<the project's ID, from its URL in the Web UI>
+urthctl() { go run ./cmd/urthctl --token="$URTH_TOKEN" --account="$URTH_ACCOUNT" --project="$URTH_PROJECT" "$@"; }
+
+# 5. Register a runner, authorize it for the project, and add a scenario
+urthctl apply ./examples/runner.yaml
+urthctl apply /dev/stdin <<YAML
+apiVersion: v1
+kind: runner-authorizations
+metadata:
+  name: example-runner-yaml
+spec:
+  runnerRef: $(urthctl get runner example-runner-yaml --format json | jq -r .uid)
+  roles: [runner]
+YAML
+urthctl apply ./examples/scenario.tcp.yaml
+urthctl get scenarios
+
+# 6. Issue the runner a token, then start a worker with it
+export RUNNER_TOKEN=$(urthctl auth-worker example-runner-yaml)
+make run-nats-worker
 ```
+
+`apply` is quiet on success. Trigger a run, then inspect its result:
+
+```bash
+curl -s -X POST "http://localhost:8080/v1/projects/$URTH_PROJECT/scenarios/tcp-self-fondle/results" \
+  -H "Authorization: Bearer $URTH_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"apiVersion":"v1","kind":"results","metadata":{},"spec":{}}'
+urthctl get results tcp-self-fondle
+```
+
+To sign in through an upstream provider without a real one, see the fake identity
+provider in the [api-server README](cmd/api-server/README.md#identity-issuer-sign-in-mail-and-the-first-user).
 
 ### Running everything at once
 
@@ -308,8 +346,12 @@ and its clones ([goreman](https://github.com/mattn/goreman),
 [honcho](https://github.com/nickstenning/honcho)):
 
 ```bash
-goreman -b 8080 start
+export RUNNER_TOKEN=...   # from step 6; the worker needs it
+goreman start
 ```
+
+It runs the same Makefile targets as the steps above, so Postgres and NATS must already
+be up.
 
 ---
 
@@ -387,7 +429,8 @@ pkg/runner/    job dispatch, run logging, metrics collection
 pkg/http-parser/  .http / .rest file parser
 pkg/natsq/     NATS/JetStream transport: naming, dispatch, live logs
 pkg/worker/    the worker loop: claims, executes, uploads
-website/       React Web UI
+website-experiment/  Web UI (Vite, React, @sre-norns/components)
+website/       retired Web UI, deleted in M7
 examples/      example resource manifests
 ```
 
