@@ -1,3 +1,3 @@
-api: PORT=$BASE_PORT go run ./cmd/api-server
-web_ui: cd website && API_URL="http://${API_HOST}:${BASE_PORT}/" npm start
-worker: sleep 2; go run ./cmd/nats-worker --client.api-server-address="http://${API_HOST}:${BASE_PORT}/api" --client.token=$WORKER_API_TOKEN
+api: make run-api-server
+web_ui: cd website-experiment && npm run dev
+worker: sleep 5; make run-nats-worker

@@ -98,10 +98,11 @@ their narrower authority before acting through internal storage.
 
 M4 mounts the shared identity routes and supplies Urth OAuth client defaults.
 Embedded hosts can override `apiserver.Config.Identity` and provision users via
-`Server.Identity.ProvisionUser`. Operator-facing identity/bootstrap/mail flags
-and the complete sign-in/invitation journey belong to M5. CLI device login and
-profiles remain M6; the old websites need M7 adoption of the new authenticated,
-scoped APIs. Queue reaping and inherited-message UI remain the existing ADR 0007
+`Server.Identity.ProvisionUser`. M5 added the operator's side: identity, mail and
+bootstrap flags (see the api-server README's identity section), Urth-branded
+sign-in pages, and the web app's sign-in and identity screens in
+`website-experiment`. CLI device login and profiles remain M6; the monitoring
+pages move onto the scoped APIs in M7. Queue reaping and inherited-message UI remain the existing ADR 0007
 control-loop/operator-visibility follow-up, separate from M4 queue addressing.
 
 ## Validation

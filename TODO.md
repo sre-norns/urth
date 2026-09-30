@@ -95,7 +95,21 @@ looks deceptively like passing.
 
 - `Active / Disabled / All` in the scenarios header are dead links
   (`href="#"`). They look like filters and are not.
-- M4 backend authentication and tenancy are implemented; see [M4 notes](docs/m4-backend-tenancy.md). Operator login/mail configuration (M5), CLI login (M6), and website adoption (M7) remain.
+- M4 backend authentication and tenancy are implemented; see [M4 notes](docs/m4-backend-tenancy.md). M5 added operator identity/mail/bootstrap configuration and web sign-in (`website-experiment`). CLI login (M6) and the monitoring pages on the scoped API (M7) remain.
+- `urthctl` takes `--token/--account/--project` only as flags, so the token sits in
+  shell history, and gets it from a hand-run device grant (README quick start).
+  M6's `auth login` and profiles replace both.
+- Deleting a Runner leaves its machine identity behind (M4). It can still be
+  suspended through the identity routes; nothing removes or suspends it
+  automatically.
+- The device-flow error in the shared pages says "Run expbctl auth again"
+  (`wyrd/identity/httpapi/http.go`); fix with urthctl device login (M6).
+- Requests the browser abandons are logged as `500 context canceled` by the
+  shared identity routes -- read by an alert as server errors. Same follow-up as
+  Exp-Bench's.
+- Urth-specific mail (runner granted to a project, runner token issued or
+  revoked) was deferred from M5. It needs a notification row committed with the
+  change and a retrying worker, as identity's invitation mail does.
 - The UI polls; there is no live update. A run triggered from the UI only
   appears after a refetch. Per ADR 0004, resource changes belong on the durable
   `URTH_EVENTS` JetStream stream used by the scheduler and projections -- do not
