@@ -37,7 +37,7 @@ export const worker = manifest(z.object({requestedTTL: z.number().optional()}).l
 export const runner = manifest(z.object({
   active: z.boolean(), description: z.string().optional(), requirements: selector.optional(), maxInstance: z.number().optional(),
 }).loose(), z.object({
-  numberInstances: z.number().optional(), activeInstances: z.array(worker).optional(),
+  numberInstances: z.number().optional(), activeInstances: z.array(z.unknown()).optional(),
   channel: z.object({observed: z.boolean().optional(), pullers: z.number().optional(), pending: z.number().optional()}).loose().optional(),
 }).loose())
 export const artifact = manifest(z.object({rel: z.string().optional(), mimeType: z.string().optional(), expire_time: z.string().optional(), dataClass: z.string().optional()}).loose(), z.record(z.string(), z.unknown()))
@@ -46,3 +46,4 @@ export type Scenario = z.infer<typeof scenario>
 export type Run = z.infer<typeof run>
 export type Runner = z.infer<typeof runner>
 export type Worker = z.infer<typeof worker>
+export const failure = manifest(z.object({reason: z.string(), detail: z.string().optional(), occurredAt: z.string(), resultUID: z.string().optional(), scenarioName: z.string().optional(), runnerUID: z.string().optional(), deliveries: z.number().optional()}).loose(), z.object({resolved: z.boolean(), resolvedAt: z.string().optional(), retryResultUID: z.string().optional(), retryResultName: z.string().optional()}).loose())
