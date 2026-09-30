@@ -184,3 +184,18 @@ func TestRefusalsAreErrorResponses(t *testing.T) {
 		t.Fatalf("claim refusal returned %#v, want a 409 bark.ErrorResponse", err)
 	}
 }
+
+// A delete the server refuses is an error. It used to come back as
+// (false, nil), which a caller reads as "there was nothing to delete".
+func TestARefusedDeleteIsAnError(t *testing.T) {
+	c, _ := newTestClient(t, http.StatusConflict, `{"code":409,"message":"version conflict"}`)
+	deleted, err := c.Scenarios().Delete(context.Background(), manifest.NewVersionedID("probe", 2))
+	if deleted || err == nil {
+		t.Fatalf("refusal returned deleted=%t err=%v", deleted, err)
+	}
+
+	c, _ = newTestClient(t, http.StatusNotFound, `{"code":404,"message":"requested resource not found"}`)
+	if deleted, err := c.Scenarios().Delete(context.Background(), manifest.NewVersionedID("probe", 2)); deleted || err != nil {
+		t.Fatalf("absence returned deleted=%t err=%v", deleted, err)
+	}
+}

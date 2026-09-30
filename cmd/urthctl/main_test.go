@@ -3,7 +3,10 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -109,5 +112,48 @@ func TestStructuredOutputIsTheManifest(t *testing.T) {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("table lacks %q:\n%s", want, out.String())
 		}
+	}
+}
+
+// Someone whose project access was removed still has a membership: adding
+// them again restores it, guarded by its revision, rather than creating a
+// second one the server refuses with already-exists.
+func TestMembersAddRestoresARemovedMembership(t *testing.T) {
+	var patched string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		inactive := `{"id":"m2","user_id":"u2","email":"bob@example.test","status":"inactive","revision":3}`
+		switch {
+		case r.Method == "GET" && r.URL.Path == "/v1/projects/p/member-candidates":
+			fmt.Fprint(w, `{"items":[{"user_id":"u2","email":"bob@example.test","project_membership_status":"inactive"}]}`)
+		case r.Method == "GET" && r.URL.Path == "/v1/projects/p/memberships":
+			fmt.Fprintf(w, `{"items":[%s]}`, inactive)
+		case r.Method == "GET" && r.URL.Path == "/v1/project-memberships/m2":
+			fmt.Fprint(w, inactive)
+		case r.Method == "PATCH" && r.URL.Path == "/v1/project-memberships/m2":
+			body, _ := io.ReadAll(r.Body)
+			patched = r.Header.Get("If-Match") + " " + string(body)
+			fmt.Fprint(w, `{"id":"m2","user_id":"u2","email":"bob@example.test","status":"active","revision":4}`)
+		default:
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	parsed, appCli, cfg := parse(t, "members", "add", "bob@example.test", "--token=t", "--project=p", "--api-server-address="+server.URL)
+	var out bytes.Buffer
+	cfg.Env.Output = cli.Output{Format: cli.FormatJSON, Stdout: &out}
+	if err := prepareCommand(parsed, appCli, cfg); err != nil {
+		t.Fatal(err)
+	}
+	if err := parsed.Run(cfg); err != nil {
+		t.Fatal(err)
+	}
+	if patched != `"3" {"status":"active"}` {
+		t.Fatalf("restored with %q", patched)
+	}
+	if !strings.Contains(out.String(), `"status": "active"`) {
+		t.Fatalf("printed %s", out.String())
 	}
 }

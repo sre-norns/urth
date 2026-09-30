@@ -43,7 +43,13 @@ type CLI struct {
 	ProfileCmd cli.ProfileCmd `cmd:"" name:"profile" help:"Manage local CLI profiles"`
 	Context    cli.ContextCmd `cmd:"" help:"Show or set the project commands address"`
 
-	Runners RunnersCmd `cmd:"" help:"Runner operations"`
+	Accounts             AccountsCmd             `cmd:"" help:"Accounts you belong to"`
+	Projects             ProjectsCmd             `cmd:"" help:"The account's projects"`
+	Members              MembersCmd              `cmd:"" help:"Who may work in the context's project"`
+	Invitations          InvitationsCmd          `cmd:"" help:"Invite people to the account"`
+	Sessions             SessionsCmd             `cmd:"" help:"Where you are signed in"`
+	Runners              RunnersCmd              `cmd:"" help:"Runner operations"`
+	RunnerAuthorizations RunnerAuthorizationsCmd `cmd:"" name:"runner-authorizations" help:"Which runners may run the project's scenarios"`
 
 	Create createCmd `cmd:"" help:"Create a resource on the server form a manifest"`
 	Apply  ApplyCmd  `cmd:"" help:"Apply a new configuration to a resource"`

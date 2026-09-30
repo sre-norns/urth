@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 
+	"github.com/sre-norns/wyrd/identity/cli"
+
 	"github.com/sre-norns/urth/pkg/urth"
 	"github.com/sre-norns/wyrd/pkg/manifest"
 )
@@ -53,5 +55,76 @@ func (c *RunnerTokenCmd) Run(cfg *commandContext) error {
 	}
 
 	fmt.Println(token)
+	return nil
+}
+
+type (
+	// RunnerAuthorizationsCmd manages which runners may run the project's
+	// scenarios. Create or change one with `apply`.
+	RunnerAuthorizationsCmd struct {
+		List   RunnerAuthorizationsListCmd   `cmd:"" help:"List the project's runner authorizations"`
+		Get    RunnerAuthorizationsGetCmd    `cmd:"" help:"Show a runner authorization"`
+		Delete RunnerAuthorizationsDeleteCmd `cmd:"" help:"Withdraw a runner's authorization"`
+	}
+	RunnerAuthorizationsListCmd struct {
+		Selector string `help:"Selector (label query) to filter on" optional:"" name:"selector" short:"l"`
+	}
+	RunnerAuthorizationsGetCmd struct {
+		Name manifest.ResourceName `arg:"" help:"Name of the authorization"`
+	}
+	RunnerAuthorizationsDeleteCmd struct {
+		Name manifest.ResourceName `arg:"" help:"Name of the authorization"`
+	}
+)
+
+func (c *RunnerAuthorizationsListCmd) Run(cfg *commandContext) error {
+	apiClient, err := cfg.NewClient()
+	if err != nil {
+		return err
+	}
+	q, err := cli.SearchQuery(c.Selector)
+	if err != nil {
+		return err
+	}
+	grants, page, err := collectPages(cfg.Context, q, apiClient.RunnerAuthorizations().List)
+	if err != nil {
+		return err
+	}
+	return cli.RenderList(cfg.Env.Output, views(grants, func(m manifest.ResourceManifest) grantView { return grantView{m} }), page)
+}
+
+func (c *RunnerAuthorizationsGetCmd) Run(cfg *commandContext) error {
+	apiClient, err := cfg.NewClient()
+	if err != nil {
+		return err
+	}
+	grant, found, err := apiClient.RunnerAuthorizations().Get(cfg.Context, c.Name)
+	return cli.RenderFound(cfg.Env.Output, grantView{grant}, found, err)
+}
+
+// Run deletes the version it read: a grant changed in between is refused
+// rather than deleted unseen.
+func (c *RunnerAuthorizationsDeleteCmd) Run(cfg *commandContext) error {
+	apiClient, err := cfg.NewClient()
+	if err != nil {
+		return err
+	}
+	grant, found, err := apiClient.RunnerAuthorizations().Get(cfg.Context, c.Name)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return fmt.Errorf("runner authorization %q not found", c.Name)
+	}
+	// Addressed by UID: the delete route takes the grant's ID where the read
+	// and the update take its name.
+	deleted, err := apiClient.RunnerAuthorizations().Delete(cfg.Context, manifest.NewVersionedID(grant.Metadata.UID, grant.Metadata.Version))
+	if err != nil {
+		return err
+	}
+	if !deleted {
+		return fmt.Errorf("runner authorization %q was not found to delete", c.Name)
+	}
+	fmt.Printf("Deleted runner authorization %q.\n", c.Name)
 	return nil
 }
