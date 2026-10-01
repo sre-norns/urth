@@ -95,15 +95,15 @@ looks deceptively like passing.
 
 - `Active / Disabled / All` in the scenarios header are dead links
   (`href="#"`). They look like filters and are not.
-- M4 backend authentication and tenancy are implemented; see [M4 notes](docs/m4-backend-tenancy.md). M5 added operator identity/mail/bootstrap configuration and web sign-in (`website-experiment`). CLI login (M6) and the monitoring pages on the scoped API (M7) remain.
+- M4 backend authentication and tenancy are implemented; see [M4 notes](docs/m4-backend-tenancy.md). M5 added operator identity/mail/bootstrap configuration and web sign-in. M6 (CLI login) and M7 (the monitoring pages on the scoped API, in `website/`) are done.
 - M6: `urthctl auth login`, profiles and `context` replaced the flag-only
   `--token/--account/--project` and the hand-run device grant. Found while
   running it against a live stack, not fixed there:
   - Fixed in M6.4: responses say `apiVersion: urth.sre-norns.com/v1` and
     `get -o yaml|json | apply -` round-trips (tested end to end). `v1` is still
     accepted, with a warning from urthctl; drop it a release after M6 -- the Web UI
-    still sends it (`website-experiment/src/monitoring/Scenarios.tsx`,
-    `src/identity/config.ts`).
+    still sends it (`website/src/monitoring/Scenarios.tsx`,
+    `website/src/identity/config.ts`), and its tests' fixtures say it.
   - `DELETE /projects/:id/runner-authorizations/:resource` takes the grant's
     UID where GET and PUT on the same route take its name. urthctl sends the
     UID; the route should take one or the other.
