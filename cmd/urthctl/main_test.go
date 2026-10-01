@@ -7,8 +7,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -155,5 +157,46 @@ func TestMembersAddRestoresARemovedMembership(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), `"status": "active"`) {
 		t.Fatalf("printed %s", out.String())
+	}
+}
+
+func TestLocalFileRunDoesNotSelectAProfile(t *testing.T) {
+	for _, state := range []string{"signed-out", "expired"} {
+		t.Run(state, func(t *testing.T) {
+			t.Setenv("URTH_PROFILES", filepath.Join(t.TempDir(), "profiles.json"))
+			var requests atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
+				http.Error(w, "remote authentication is unavailable", http.StatusServiceUnavailable)
+			}))
+			defer server.Close()
+			profile := cli.Profile{Endpoint: server.URL, Type: cli.PrincipalUser, Scope: model.ScopeAccount, AccountID: "acme", ProjectID: "web"}
+			if state == "expired" {
+				profile.Token, profile.RefreshToken = "expired", "refresh"
+				profile.ExpiresAt = time.Now().Add(-time.Hour)
+			}
+			if err := app.SaveProfiles(cli.Profiles{Default: "work", Profiles: map[string]cli.Profile{"work": profile}}); err != nil {
+				t.Fatal(err)
+			}
+			file := filepath.Join(t.TempDir(), "check.http")
+			if err := os.WriteFile(file, []byte("GET http://localhost/\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			parsed, appCli, cfg := parse(t, "run", "-f", file, "--runner.working-directory="+t.TempDir())
+			if err := prepareCommand(parsed, appCli, cfg); err != nil {
+				t.Errorf("local execution must not require sign-in: %v", err)
+			}
+			if requests.Load() != 0 {
+				t.Errorf("local execution made %d authentication requests", requests.Load())
+			}
+			if cfg.Token != "" || cfg.Project != "" || cfg.Account != "" {
+				t.Error("local execution inherited a remote profile")
+			}
+			// Running the server's scenario by name still needs that profile.
+			parsed, appCli, cfg = parse(t, "run", "server-scenario", "--runner.working-directory="+t.TempDir())
+			if err := prepareCommand(parsed, appCli, cfg); err == nil {
+				t.Error("server scenario execution accepted an unusable profile")
+			}
+		})
 	}
 }
