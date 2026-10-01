@@ -106,6 +106,12 @@ func prepareCommand(parsed *kong.Context, appCli *CLI, cfg *commandContext) erro
 	switch strings.Fields(parsed.Command())[0] {
 	case "auth", "profile", "context", "convert":
 		return nil
+	case "run":
+		// A file runs locally. Only a scenario fetched by name needs the
+		// remote profile, which may be signed out or unable to refresh.
+		if len(appCli.Run.Files) > 0 {
+			return nil
+		}
 	}
 	selected, err := env.Select()
 	if err != nil || !selected.Found {
