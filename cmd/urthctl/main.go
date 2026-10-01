@@ -54,9 +54,10 @@ type CLI struct {
 	Create createCmd `cmd:"" help:"Create a resource on the server form a manifest"`
 	Apply  ApplyCmd  `cmd:"" help:"Apply a new configuration to a resource"`
 
-	Run  RunCmd  `cmd:"" help:"Run a scenario or a script locally"`
-	Get  GetCmd  `cmd:"" help:"Get and display a managed resource(s) from the server"`
-	Logs getLogs `cmd:"" help:"Show logs for a scenario run"`
+	Run     RunCmd     `cmd:"" help:"Run a scenario or a script locally"`
+	Trigger TriggerCmd `cmd:"" help:"Start a run of a scenario on the server now"`
+	Get     GetCmd     `cmd:"" help:"Get and display a managed resource(s) from the server"`
+	Logs    getLogs    `cmd:"" help:"Show logs for a scenario run"`
 
 	// Top-level rather than under `get`, because they are actions rather than
 	// reads: a retry schedules a new run.

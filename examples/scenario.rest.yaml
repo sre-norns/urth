@@ -1,4 +1,4 @@
-apiVersion: v1
+apiVersion: urth.sre-norns.com/v1
 kind: scenarios
 metadata:
   name: rest-self-prob
@@ -34,7 +34,7 @@ spec:
         Content-Type: application/json
 
         {
-          "apiVersion": "v1",
+          "apiVersion": "urth.sre-norns.com/v1",
           "kind": "results",
           "metadata": {},
           "spec": {}

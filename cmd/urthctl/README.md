@@ -47,6 +47,16 @@ Sign-in, profiles, the context and output come from the kit Urth shares with Exp
 Structured output is the resource's manifest. `urthctl get runner NAME -o json | jq -r .metadata.uid`
 reads a runner's UID, for example.
 
+What `get` prints applies back: `urthctl get scenario NAME -o yaml > s.yaml`, edit,
+`urthctl apply s.yaml` (or pipe it to `urthctl apply -`). The manifest carries the
+version it was read at, so a copy someone else has changed since is refused (412)
+rather than written over it; its `status` is the server's and is not sent. Manifests
+say `apiVersion: urth.sre-norns.com/v1`. The older `v1` still applies, with a warning,
+for one release.
+
+`urthctl trigger SCENARIO` starts a run on the server now, as the Web UI's "Run now"
+does; `urthctl run` runs a scenario locally.
+
 ## Runner tokens
 
 ```shell

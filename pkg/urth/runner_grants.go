@@ -38,7 +38,7 @@ type runnerGrantsAPI struct {
 
 func grantManifest(g im.AgentAuthorization) manifest.ResourceManifest {
 	return manifest.ResourceManifest{
-		TypeMeta: manifest.TypeMeta{APIVersion: "urth.sre-norns.com/v1", Kind: KindRunnerAuthorization},
+		TypeMeta: manifest.TypeMeta{APIVersion: APIVersion, Kind: KindRunnerAuthorization},
 		Metadata: manifest.ObjectMeta{UID: manifest.ResourceID(g.ID), Name: manifest.ResourceName(g.Name), Account: manifest.ResourceID(g.AccountID), Project: manifest.ResourceID(g.ProjectID), Version: manifest.Version(g.Revision), Labels: g.Labels},
 		Spec:     &RunnerAuthorizationSpec{RunnerRef: manifest.ResourceID(g.AgentID), Roles: g.Roles},
 		Status:   &RunnerAuthorizationStatus{Phase: g.Status},

@@ -1,4 +1,4 @@
-apiVersion: v1
+apiVersion: urth.sre-norns.com/v1
 kind: scenarios
 metadata:
   name: scenario-template

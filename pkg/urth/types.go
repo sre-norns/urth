@@ -299,23 +299,44 @@ type ArtifactSpec struct {
 }
 
 func (r Runner) ToManifest() manifest.ResourceManifest {
-	return manifest.ToManifestWithStatus(manifest.StatefulResource[RunnerSpec, RunnerStatus](r))
+	return versioned(manifest.ToManifestWithStatus(manifest.StatefulResource[RunnerSpec, RunnerStatus](r)))
 }
 
 func (r Scenario) ToManifest() manifest.ResourceManifest {
-	return manifest.ToManifestWithStatus(manifest.StatefulResource[ScenarioSpec, ScenarioStatus](r))
+	return versioned(manifest.ToManifestWithStatus(manifest.StatefulResource[ScenarioSpec, ScenarioStatus](r)))
 }
 
 func (r Artifact) ToManifest() manifest.ResourceManifest {
-	return manifest.ToManifest(manifest.ResourceModel[ArtifactSpec](r))
+	return versioned(manifest.ToManifest(manifest.ResourceModel[ArtifactSpec](r)))
 }
 
 func (r Result) ToManifest() manifest.ResourceManifest {
-	return manifest.ToManifestWithStatus(manifest.StatefulResource[ResultSpec, ResultStatus](r))
+	return versioned(manifest.ToManifestWithStatus(manifest.StatefulResource[ResultSpec, ResultStatus](r)))
 }
 
 func (r WorkerInstance) ToManifest() manifest.ResourceManifest {
-	return manifest.ToManifestWithStatus(manifest.StatefulResource[WorkerInstanceSpec, WorkerInstanceStatus](r))
+	return versioned(manifest.ToManifestWithStatus(manifest.StatefulResource[WorkerInstanceSpec, WorkerInstanceStatus](r)))
+}
+
+// APIVersion is the apiVersion of every manifest Urth serves.
+const APIVersion = "urth.sre-norns.com/v1"
+
+// LegacyAPIVersion is what manifests said before APIVersion. Still accepted,
+// for one release: every manifest written until then says it, and the Web UI
+// sends it.
+const LegacyAPIVersion = "v1"
+
+// AcceptsAPIVersion reports whether a manifest sent to Urth may say version.
+// Omitting it is accepted too: a run trigger's body is often only `{}`.
+func AcceptsAPIVersion(version string) bool {
+	return version == APIVersion || version == LegacyAPIVersion || version == ""
+}
+
+// versioned stamps a manifest with APIVersion, which wyrd's ToManifest leaves
+// empty. Without it, what `get` prints cannot be applied back.
+func versioned(m manifest.ResourceManifest) manifest.ResourceManifest {
+	m.APIVersion = APIVersion
+	return m
 }
 
 const (

@@ -2,9 +2,6 @@ package main
 
 import (
 	"fmt"
-
-	"github.com/sre-norns/wyrd/pkg/manifest"
-	"gopkg.in/yaml.v3"
 )
 
 type ApplyCmd struct {
@@ -27,10 +24,12 @@ func (c *ApplyCmd) Run(cfg *commandContext) error {
 		}
 
 		// FIXME: Should be just a universal resource manifest file
-		var resourceSpec manifest.ResourceManifest
-		if err := yaml.Unmarshal(content, &resourceSpec); err != nil {
+		resourceSpec, err := decodeManifest(content)
+		if err != nil {
 			return fmt.Errorf("client: %w", err)
 		}
+
+		warnLegacyAPIVersion(filename, resourceSpec)
 
 		if !c.DryRun {
 			_, _, err = apiClient.ApplyObjectDefinition(cfg.Context, resourceSpec)

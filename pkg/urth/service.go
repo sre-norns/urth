@@ -638,7 +638,7 @@ func (m *scenarioAPIImpl) UpdateScript(ctx context.Context, id manifest.Versione
 	ok, err := m.store.Update(ctx, &result, result.UID, dbstore.WithVersion(result.Version))
 
 	return bark.CreatedResponse{
-		TypeMeta:            manifest.TypeMeta{Kind: KindScenario},
+		TypeMeta:            manifest.TypeMeta{APIVersion: APIVersion, Kind: KindScenario},
 		VersionedResourceID: result.GetVersionedID(),
 	}, ok, err
 }
