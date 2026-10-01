@@ -96,9 +96,19 @@ looks deceptively like passing.
 - `Active / Disabled / All` in the scenarios header are dead links
   (`href="#"`). They look like filters and are not.
 - M4 backend authentication and tenancy are implemented; see [M4 notes](docs/m4-backend-tenancy.md). M5 added operator identity/mail/bootstrap configuration and web sign-in (`website-experiment`). CLI login (M6) and the monitoring pages on the scoped API (M7) remain.
-- `urthctl` takes `--token/--account/--project` only as flags, so the token sits in
-  shell history, and gets it from a hand-run device grant (README quick start).
-  M6's `auth login` and profiles replace both.
+- M6: `urthctl auth login`, profiles and `context` replaced the flag-only
+  `--token/--account/--project` and the hand-run device grant. Found while
+  running it against a live stack, not fixed there:
+  - Responses carry no `apiVersion` (except runner authorizations, which say
+    `urth.sre-norns.com/v1`), so `urthctl get X -o yaml | urthctl apply -f -`
+    does not round-trip: `apply` refuses a manifest without one. M6.4.
+  - `DELETE /projects/:id/runner-authorizations/:resource` takes the grant's
+    UID where GET and PUT on the same route take its name. urthctl sends the
+    UID; the route should take one or the other.
+  - Project memberships are visible only to the project's active members
+    (`identity.visible`), so an account owner who removes themselves from a
+    project cannot see, or restore, their membership -- from the CLI or the
+    Web UI. An identity policy question; it would change Exp-Bench too.
 - wyrd `bark`'s response helpers (`Created`, `CreatedOrUpdated`, `Found`, …)
   answer any error that is not a `bark.ErrorResponse` with their default 400,
   including a `manifest.StatusError` that carries its own status. Urth's
@@ -109,8 +119,9 @@ looks deceptively like passing.
 - Deleting a Runner leaves its machine identity behind (M4). It can still be
   suspended through the identity routes; nothing removes or suspends it
   automatically.
-- The device-flow error in the shared pages says "Run expbctl auth again"
-  (`wyrd/identity/httpapi/http.go`); fix with urthctl device login (M6).
+- The device-flow error in the shared pages named expbctl; wyrd's
+  `pages.Copy.DeviceRetry` (identity v0.6.0) lets Urth name urthctl -- set it
+  when Urth moves to that release.
 - Requests the browser abandons are logged as `500 context canceled` by the
   shared identity routes -- read by an alert as server errors. Same follow-up as
   Exp-Bench's.

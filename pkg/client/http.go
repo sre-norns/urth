@@ -196,7 +196,16 @@ func (c *RestAPIClient) deleteResource(ctx context.Context, uri string, version 
 	}
 	defer resp.Body.Close()
 
-	return resp.StatusCode == http.StatusNoContent || resp.StatusCode == http.StatusOK, err
+	switch resp.StatusCode {
+	case http.StatusOK, http.StatusNoContent:
+		return true, nil
+	case http.StatusNotFound:
+		return false, nil
+	default:
+		// A refused delete -- a stale version, no permission -- is an error,
+		// not "nothing was there".
+		return false, readAPIError(resp)
+	}
 }
 
 func readPaginatedResource[T any](reader io.Reader) (results []T, page manifest.Page, err error) {

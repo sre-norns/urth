@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/sre-norns/urth/pkg/urth"
@@ -175,4 +176,37 @@ func orDash(value string) string {
 	}
 
 	return value
+}
+
+type grantView struct{ manifest.ResourceManifest }
+
+func (v grantView) MarshalJSON() ([]byte, error) { return json.Marshal(v.ResourceManifest) }
+
+func (grantView) TableHeader(wide bool) []string {
+	header := []string{"NAME", "RUNNER", "ROLES", "PHASE"}
+	if wide {
+		header = append(header, "UID", "VERSION")
+	}
+	return header
+}
+
+func (v grantView) TableRow(wide bool) []any {
+	var spec urth.RunnerAuthorizationSpec
+	var status urth.RunnerAuthorizationStatus
+	// Registered kinds decode typed; convert through JSON so either form reads.
+	if data, err := json.Marshal(v.Spec); err == nil {
+		_ = json.Unmarshal(data, &spec)
+	}
+	if data, err := json.Marshal(v.Status); err == nil {
+		_ = json.Unmarshal(data, &status)
+	}
+	roles := make([]string, len(spec.Roles))
+	for i, role := range spec.Roles {
+		roles[i] = string(role)
+	}
+	row := []any{v.Metadata.Name, orDash(string(spec.RunnerRef)), orDash(strings.Join(roles, ",")), orDash(status.Phase)}
+	if wide {
+		row = append(row, v.Metadata.UID, v.Metadata.Version)
+	}
+	return row
 }
