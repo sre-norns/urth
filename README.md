@@ -72,7 +72,7 @@ Every API route is authenticated and scoped to an account or project: users sign
 through the shared identity service (password, email links, Google/GitHub/OIDC), and
 runners use revocable machine tokens. See the [M4 notes](docs/m4-backend-tenancy.md)
 and the [api-server identity settings](cmd/api-server/README.md#identity-issuer-sign-in-mail-and-the-first-user).
-`urthctl` gains `auth login` in M6; the monitoring pages return to the Web UI in M7.
+`urthctl` gains `auth login` in M6; the Web UI supports scoped monitoring, infrastructure and authenticated run logs.
 
 ## Concepts
 
@@ -204,7 +204,7 @@ when they satisfy the channel's Worker requirements. See
 | **api-server** | [`cmd/api-server`](./cmd/api-server/README.md) | REST API for all resources; hands out jobs. Run several replicas in production. |
 | **nats-worker** | [`cmd/nats-worker`](./cmd/nats-worker/README.md) | The Worker. Shares its Runner's durable JetStream consumer, authenticates claims, executes probes, and uploads Results and Artifacts. |
 | **urthctl** | [`cmd/urthctl`](./cmd/urthctl/README.md) | CLI. Apply manifests, inspect resources, run scenarios locally. |
-| **Web UI** | [`website-experiment`](./website-experiment) | React front end on `@sre-norns/components`: sign-in, accounts, projects, members and runners today; the monitoring pages return in M7. `website/` is the retired UI. |
+| **Web UI** | [`website`](./website) | React front end on `@sre-norns/components`: identity, account infrastructure, project scenarios, runs, authenticated logs, artifacts and dead letters. |
 
 The architectural commitments behind the resource model and distributed runner design
 are recorded in [the architecture decision records](./docs/README.md).
@@ -287,7 +287,7 @@ make run-api-server        # override the database with: make run-api-server sto
 
 # 3. Start the Web UI on http://localhost:3001 and sign in as that user.
 #    This dev server is the browser's origin: sign-in and emailed links go through it.
-cd website-experiment && npm install && npm run dev
+cd website && npm install && npm run dev
 ```
 
 In the Web UI, create a project (**Projects → Create project**). Everything that follows
@@ -429,8 +429,7 @@ pkg/runner/    job dispatch, run logging, metrics collection
 pkg/http-parser/  .http / .rest file parser
 pkg/natsq/     NATS/JetStream transport: naming, dispatch, live logs
 pkg/worker/    the worker loop: claims, executes, uploads
-website-experiment/  Web UI (Vite, React, @sre-norns/components)
-website/       retired Web UI, deleted in M7
+website/       Web UI (Vite 8, React, TypeScript 6, @sre-norns/components)
 examples/      example resource manifests
 ```
 
