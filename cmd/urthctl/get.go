@@ -42,6 +42,10 @@ type (
 		ShowMeta bool                  `help:"Show artifact meta information instead of content" name:"meta"`
 	}
 
+	Artifacts struct {
+		Selector string `help:"Selector (label query) to filter on" optional:"" name:"selector" short:"l"`
+	}
+
 	Labels struct {
 		Kind     manifest.Kind `help:"Kind of object that we want to query labels for" arg:""`
 		Selector string        `help:"Keys to match" optional:"" name:"selector" short:"l"`
@@ -53,6 +57,7 @@ type (
 		Script    Script    `cmd:"" help:"Get a script data for a given scenario"`
 		Results   Results   `cmd:"" help:"Get a run result"`
 		Artifact  Artifact  `cmd:"" help:"Get artifact produced during a scenario execution"`
+		Artifacts Artifacts `cmd:"" help:"List artifacts; select them by label, e.g. -l urth/artifact.may-contain-secrets=true"`
 		Runner    Runner    `cmd:"" help:"Get a runner object from the server"`
 		Runners   Runners   `cmd:"" help:"List all runners"`
 		Labels    Labels    `cmd:"" help:"Get labels"`
@@ -211,4 +216,30 @@ func (c *Artifact) Run(cfg *commandContext) error {
 	_, err = os.Stdout.Write(resource.Spec.Artifact.Content)
 
 	return err
+}
+
+func (c *Artifacts) Run(cfg *commandContext) error {
+	apiClient, err := cfg.NewClient()
+	if err != nil {
+		return fmt.Errorf("failed to initialize API Client: %w", err)
+	}
+
+	q, err := cli.SearchQuery(c.Selector)
+	if err != nil {
+		return err
+	}
+	resources, page, err := collectPages(cfg.Context, q, apiClient.Artifacts().List)
+	if err != nil {
+		return err
+	}
+	artifacts := make([]artifactView, 0, len(resources))
+	for _, resource := range resources {
+		artifact, err := urth.NewArtifact(resource)
+		if err != nil {
+			return err
+		}
+		artifacts = append(artifacts, artifactView{artifact})
+	}
+
+	return cli.RenderList(cfg.Env.Output, artifacts, page)
 }

@@ -224,7 +224,7 @@ func (r DispatchFailure) GetSpec() any { return r.Spec }
 
 // ToManifest renders the resource for the API.
 func (r DispatchFailure) ToManifest() manifest.ResourceManifest {
-	return manifest.ToManifestWithStatus(manifest.StatefulResource[DispatchFailureSpec, DispatchFailureStatus](r))
+	return versioned(manifest.ToManifestWithStatus(manifest.StatefulResource[DispatchFailureSpec, DispatchFailureStatus](r)))
 }
 
 // NewDispatchFailure converts a manifest into the model.

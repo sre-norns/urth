@@ -3,9 +3,6 @@ package main
 import (
 	"fmt"
 	"log"
-
-	"github.com/sre-norns/wyrd/pkg/manifest"
-	"gopkg.in/yaml.v3"
 )
 
 type createCmd struct {
@@ -25,10 +22,12 @@ func (c *createCmd) Run(cfg *commandContext) error {
 			return fmt.Errorf("failed read content from %q: %w", fname, err)
 		}
 
-		var resourceSpec manifest.ResourceManifest
-		if err := yaml.Unmarshal(content, &resourceSpec); err != nil {
+		resourceSpec, err := decodeManifest(content)
+		if err != nil {
 			return fmt.Errorf("failed parse manifest from %q: %w", filename, err)
 		}
+
+		warnLegacyAPIVersion(filename, resourceSpec)
 
 		// TODO: Use timeout!
 		c, err := apiClient.CreateFromManifest(cfg.Context, resourceSpec)

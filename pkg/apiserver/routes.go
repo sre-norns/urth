@@ -254,7 +254,7 @@ func Routes(srv urth.Service, natsConn *nats.Conn, metrics *prometheus.Registry,
 		//------------
 		// Worker registration: exchange an enrolment token for an identity, a
 		// session credential, and the queue to pull from.
-		v1.POST("/auth/workers", bark.AuthBearerAPI(), bark.ManifestAPI(urth.KindWorkerInstance), func(ctx *gin.Context) {
+		v1.POST("/auth/workers", bark.AuthBearerAPI(), bark.ManifestAPI(urth.KindWorkerInstance), supportedAPIVersion(), func(ctx *gin.Context) {
 			ctx.Header(bark.HTTPHeaderCacheControl, "no-store")
 
 			token := bark.RequireBearerToken(ctx)
@@ -356,7 +356,7 @@ func Routes(srv urth.Service, natsConn *nats.Conn, metrics *prometheus.Registry,
 		account.GET("/runners", bark.CursorSearchableAPI(bark.DefaultPageLimits), func(ctx *gin.Context) {
 			bark.Manifest(ctx).Page(srv.Runners().List(ctx.Request.Context(), bark.RequireSearchQuery(ctx)))
 		})
-		account.POST("/runners", bark.ManifestAPI(urth.KindRunner), func(ctx *gin.Context) {
+		account.POST("/runners", bark.ManifestAPI(urth.KindRunner), supportedAPIVersion(), func(ctx *gin.Context) {
 			bark.Manifest(ctx).Created(created(ctx)(srv.Runners().Create(ctx.Request.Context(), bark.RequireManifest(ctx))))
 		})
 		account.GET("/runners/:resource", bark.ResourceAPI(), func(ctx *gin.Context) {
@@ -364,7 +364,7 @@ func Routes(srv urth.Service, natsConn *nats.Conn, metrics *prometheus.Registry,
 		})
 		// Create or update: If-Match names the version the update is based on,
 		// or `*` for an unconditional write. See conditional.
-		account.PUT("/runners/:resource", bark.ResourceAPI(), bark.RequireIfMatch(), bark.ManifestAPI(urth.KindRunner), func(ctx *gin.Context) {
+		account.PUT("/runners/:resource", bark.ResourceAPI(), bark.RequireIfMatch(), bark.ManifestAPI(urth.KindRunner), supportedAPIVersion(), func(ctx *gin.Context) {
 			bark.Manifest(ctx).CreatedOrUpdated(written(ctx)(srv.Runners().CreateOrUpdate(conditional(ctx), bark.RequireManifest(ctx))))
 		})
 		account.DELETE("/runners/:resource", bark.ResourceAPI(), bark.VersionedResourceAPI(), func(ctx *gin.Context) {
@@ -499,14 +499,14 @@ func Routes(srv urth.Service, natsConn *nats.Conn, metrics *prometheus.Registry,
 		project.GET("/scenarios", bark.CursorSearchableAPI(bark.DefaultPageLimits), func(ctx *gin.Context) {
 			bark.Manifest(ctx).Page(srv.Scenarios().List(ctx.Request.Context(), bark.RequireSearchQuery(ctx)))
 		})
-		project.POST("/scenarios", bark.ManifestAPI(urth.KindScenario), func(ctx *gin.Context) {
+		project.POST("/scenarios", bark.ManifestAPI(urth.KindScenario), supportedAPIVersion(), func(ctx *gin.Context) {
 			bark.Manifest(ctx).Created(created(ctx)(srv.Scenarios().Create(ctx.Request.Context(), bark.RequireManifest(ctx))))
 		})
 		project.GET("/scenarios/:resource", bark.ResourceAPI(), func(ctx *gin.Context) {
 			bark.Manifest(ctx).Found(srv.Scenarios().Get(ctx.Request.Context(), bark.RequireResourceName(ctx)))
 		})
 		// Create or update, as runners: If-Match is required. See conditional.
-		project.PUT("/scenarios/:resource", bark.ResourceAPI(), bark.RequireIfMatch(), bark.ManifestAPI(urth.KindScenario), func(ctx *gin.Context) {
+		project.PUT("/scenarios/:resource", bark.ResourceAPI(), bark.RequireIfMatch(), bark.ManifestAPI(urth.KindScenario), supportedAPIVersion(), func(ctx *gin.Context) {
 			bark.Manifest(ctx).CreatedOrUpdated(written(ctx)(srv.Scenarios().CreateOrUpdate(conditional(ctx), bark.RequireManifest(ctx))))
 		})
 		project.DELETE("/scenarios/:resource", bark.ResourceAPI(), bark.VersionedResourceAPI(), func(ctx *gin.Context) {
@@ -556,7 +556,7 @@ func Routes(srv urth.Service, natsConn *nats.Conn, metrics *prometheus.Registry,
 			bark.WithContext[urth.Result](ctx).Page(srv.Results(bark.RequireResourceName(ctx)).List(ctx.Request.Context(), bark.RequireSearchQuery(ctx)))
 		})
 		// AuthBearerAPI: Who is authorized to create new results ???
-		project.POST("/scenarios/:resource/results", bark.ResourceAPI(), bark.ManifestAPI(urth.KindResult), func(ctx *gin.Context) {
+		project.POST("/scenarios/:resource/results", bark.ResourceAPI(), bark.ManifestAPI(urth.KindResult), supportedAPIVersion(), func(ctx *gin.Context) {
 			bark.WithContext[urth.Result](ctx).Created(srv.Results(bark.RequireResourceName(ctx)).Create(ctx.Request.Context(), bark.RequireManifest(ctx)))
 		})
 		project.GET("/scenarios/:resource/results/:runId", func(ctx *gin.Context) {
@@ -608,7 +608,7 @@ func Routes(srv urth.Service, natsConn *nats.Conn, metrics *prometheus.Registry,
 
 		// FIXME: Require valid worker auth / JWT
 		// TODO: Considers streaming data to a blob storage
-		v1.POST("/artifacts", bark.AuthBearerAPI(), bark.ManifestAPI(urth.KindArtifact), func(ctx *gin.Context) {
+		v1.POST("/artifacts", bark.AuthBearerAPI(), bark.ManifestAPI(urth.KindArtifact), supportedAPIVersion(), func(ctx *gin.Context) {
 			token := bark.RequireBearerToken(ctx)
 			bark.Manifest(ctx).Created(srv.Artifacts().Create(ctx.Request.Context(), urth.APIToken(token), bark.RequireManifest(ctx)))
 		})
@@ -643,10 +643,10 @@ func Routes(srv urth.Service, natsConn *nats.Conn, metrics *prometheus.Registry,
 	project.GET("/runner-authorizations/:resource", bark.ResourceAPI(), func(ctx *gin.Context) {
 		bark.Manifest(ctx).Found(srv.RunnerAuthorizations().Get(ctx.Request.Context(), bark.RequireResourceName(ctx)))
 	})
-	project.POST("/runner-authorizations", bark.ManifestAPI(urth.KindRunnerAuthorization), func(ctx *gin.Context) {
+	project.POST("/runner-authorizations", bark.ManifestAPI(urth.KindRunnerAuthorization), supportedAPIVersion(), func(ctx *gin.Context) {
 		bark.Manifest(ctx).Created(created(ctx)(srv.RunnerAuthorizations().Create(ctx.Request.Context(), bark.RequireManifest(ctx))))
 	})
-	project.PUT("/runner-authorizations/:resource", bark.ResourceAPI(), bark.RequireIfMatch(), bark.ManifestAPI(urth.KindRunnerAuthorization), func(ctx *gin.Context) {
+	project.PUT("/runner-authorizations/:resource", bark.ResourceAPI(), bark.RequireIfMatch(), bark.ManifestAPI(urth.KindRunnerAuthorization), supportedAPIVersion(), func(ctx *gin.Context) {
 		bark.Manifest(ctx).CreatedOrUpdated(written(ctx)(srv.RunnerAuthorizations().CreateOrUpdate(conditional(ctx), bark.RequireManifest(ctx))))
 	})
 	project.DELETE("/runner-authorizations/:resource", bark.ResourceAPI(), bark.VersionedResourceAPI(), func(ctx *gin.Context) {

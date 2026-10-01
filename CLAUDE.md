@@ -76,22 +76,31 @@ cd website && npm run dev   # :3001 -- the browser origin and the issuer
 
 Sign in at `http://localhost:3001` as `admin@urth.example` / `urth-dev-password` (the
 bootstrap owner `make run-api-server` creates). The README's quick start has the rest,
-verbatim and verified: a CLI token through the OAuth device grant (`urthctl` has no
-`auth login` until M6), then `apply` a runner, a `runner-authorizations` grant and a
-scenario with `--token/--account/--project`, `auth-worker <runner>` for `RUNNER_TOKEN`,
-and `make run-nats-worker`.
+verbatim and verified: `urthctl auth login` (the OAuth device grant; approve in the
+browser), `projects create quickstart --use`, then `apply` a runner, a
+`runner-authorizations` grant and a scenario, `runners token <runner>` for
+`RUNNER_TOKEN`, and `make run-nats-worker`. Profiles live in
+`$XDG_CONFIG_HOME/urth/profiles.json`; point `URTH_PROFILES` elsewhere to keep a test
+run from touching yours.
 
 NATS is the only transport. The Redis/asynq prototype was retired (task 015);
 `--transport` survives as a hidden flag accepting only `nats`, so old command
 lines keep working.
 
-Trigger a run without the UI -- every route is scoped and authenticated since M4:
+Trigger a run without the UI: `urthctl trigger tcp-self-fondle`.
 
-```bash
-curl -X POST "http://localhost:8080/v1/projects/$URTH_PROJECT/scenarios/tcp-self-fondle/results" \
-  -H "Authorization: Bearer $URTH_TOKEN" -H 'Content-Type: application/json' \
-  -d '{"apiVersion":"v1","kind":"results","metadata":{},"spec":{}}'
-```
+**Driving the CLI without the Web UI.** Start the api-server with
+`URTH_ISSUER=http://127.0.0.1:<its port>`: it then serves the device-approval page
+itself, and `urthctl auth login` needs no website. A browser (Playwright) still has to
+approve the code; a used code is a cheap way to see the device-retry page.
+
+**`get -o yaml | apply` is a contract, tested end to end** in
+`test/integration/roundtrip_test.go` with the real binary against the real server. Three
+things broke it, each invisible until real data went through: responses had no
+`apiVersion`; YAML rendered from JSON wrote a probe timeout as nanoseconds, which
+YAML's duration decoder refuses (urthctl's views implement `MarshalYAML`, which the CLI
+kit honours); and a scenario that has run carries its results in `status`, which apply
+must drop. A fixture without a timeout or a run passes while the real thing fails.
 
 **Identity in development.** The issuer is `http://localhost:3001`, not the
 api-server's `:8080`: emailed links are built from it and sign-in forms are accepted

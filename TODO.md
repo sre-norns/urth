@@ -99,9 +99,11 @@ looks deceptively like passing.
 - M6: `urthctl auth login`, profiles and `context` replaced the flag-only
   `--token/--account/--project` and the hand-run device grant. Found while
   running it against a live stack, not fixed there:
-  - Responses carry no `apiVersion` (except runner authorizations, which say
-    `urth.sre-norns.com/v1`), so `urthctl get X -o yaml | urthctl apply -f -`
-    does not round-trip: `apply` refuses a manifest without one. M6.4.
+  - Fixed in M6.4: responses say `apiVersion: urth.sre-norns.com/v1` and
+    `get -o yaml|json | apply -` round-trips (tested end to end). `v1` is still
+    accepted, with a warning from urthctl; drop it a release after M6 -- the Web UI
+    still sends it (`website-experiment/src/monitoring/Scenarios.tsx`,
+    `src/identity/config.ts`).
   - `DELETE /projects/:id/runner-authorizations/:resource` takes the grant's
     UID where GET and PUT on the same route take its name. urthctl sends the
     UID; the route should take one or the other.

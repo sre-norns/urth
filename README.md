@@ -72,7 +72,7 @@ Every API route is authenticated and scoped to an account or project: users sign
 through the shared identity service (password, email links, Google/GitHub/OIDC), and
 runners use revocable machine tokens. See the [M4 notes](docs/m4-backend-tenancy.md)
 and the [api-server identity settings](cmd/api-server/README.md#identity-issuer-sign-in-mail-and-the-first-user).
-`urthctl` gains `auth login` in M6; the Web UI supports scoped monitoring, infrastructure and authenticated run logs.
+`urthctl auth login` signs the CLI in through the same service (the OAuth device grant).
 
 ## Concepts
 
@@ -140,14 +140,10 @@ This makes retention and audit questions ordinary label queries:
 
 ```bash
 # Everything still stored in a project that may carry credentials
-curl -sG "http://localhost:8080/v1/projects/$URTH_PROJECT/artifacts" \
-  -H "Authorization: Bearer $URTH_TOKEN" \
-  --data-urlencode 'labels=urth/artifact.may-contain-secrets=true'
+urthctl get artifacts -l 'urth/artifact.may-contain-secrets=true'
 
 # Narrower: faithful recordings and unclassified output
-curl -sG "http://localhost:8080/v1/projects/$URTH_PROJECT/artifacts" \
-  -H "Authorization: Bearer $URTH_TOKEN" \
-  --data-urlencode 'labels=urth/artifact.data-class in (secret-bearing,unknown)'
+urthctl get artifacts -l 'urth/artifact.data-class in (secret-bearing,unknown)'
 ```
 
 The classification is assigned server-side from the artifact's own declaration,
@@ -290,51 +286,50 @@ make run-api-server        # override the database with: make run-api-server sto
 cd website && npm install && npm run dev
 ```
 
-In the Web UI, create a project (**Projects → Create project**). Everything that follows
-can be done there too — **Runners → Register runner**, then a token, then **Authorize
-runner** on the project — but here it is from the command line.
-
-Until `urthctl auth login` arrives (M6), a command-line token comes from the OAuth device
-grant. Access tokens last 15 minutes; repeat this when one expires.
+Everything that follows can be done in the Web UI too — **Projects → Create project**,
+**Runners → Register runner**, then a token, then **Authorize runner** on the project —
+but here it is from the command line.
 
 ```bash
-# 4. Sign in the CLI: open the printed verification_uri_complete, log in, approve.
-curl -s -X POST http://localhost:3001/oauth/device_authorization -d client_id=urthctl | tee /tmp/device.json
-curl -s -X POST http://localhost:3001/oauth/token -d client_id=urthctl \
-  -d grant_type=urn:ietf:params:oauth:grant-type:device_code \
-  -d device_code="$(jq -r .device_code /tmp/device.json)" > /tmp/token.json
-export URTH_TOKEN=$(jq -r .access_token /tmp/token.json)
-export URTH_ACCOUNT=$(jq -r .account_id /tmp/token.json)
-export URTH_PROJECT=<the project's ID, from its URL in the Web UI>
-urthctl() { go run ./cmd/urthctl --token="$URTH_TOKEN" --account="$URTH_ACCOUNT" --project="$URTH_PROJECT" "$@"; }
+# 4. Sign in the CLI: open the printed link, log in as admin@urth.example, approve.
+#    The session is kept in a profile and refreshed; `urthctl auth status` shows it.
+urthctl() { go run ./cmd/urthctl "$@"; }
+urthctl auth login
+urthctl projects create quickstart --use    # or: urthctl context use <a project>
 
 # 5. Register a runner, authorize it for the project, and add a scenario
 urthctl apply ./examples/runner.yaml
-urthctl apply /dev/stdin <<YAML
-apiVersion: v1
+urthctl apply - <<YAML
+apiVersion: urth.sre-norns.com/v1
 kind: runner-authorizations
 metadata:
   name: example-runner-yaml
 spec:
-  runnerRef: $(urthctl get runner example-runner-yaml --format json | jq -r .uid)
+  runnerRef: $(urthctl get runner example-runner-yaml -o json | jq -r .metadata.uid)
   roles: [runner]
 YAML
 urthctl apply ./examples/scenario.tcp.yaml
 urthctl get scenarios
 
 # 6. Issue the runner a token, then start a worker with it
-export RUNNER_TOKEN=$(urthctl auth-worker example-runner-yaml)
+export RUNNER_TOKEN=$(urthctl runners token example-runner-yaml)
 make run-nats-worker
 ```
 
-`apply` is quiet on success. Trigger a run, then inspect its result:
+`apply` is quiet on success. Start a run now rather than waiting for the schedule, then
+inspect its result:
 
 ```bash
-curl -s -X POST "http://localhost:8080/v1/projects/$URTH_PROJECT/scenarios/tcp-self-fondle/results" \
-  -H "Authorization: Bearer $URTH_TOKEN" -H 'Content-Type: application/json' \
-  -d '{"apiVersion":"v1","kind":"results","metadata":{},"spec":{}}'
+urthctl trigger tcp-self-fondle
 urthctl get results tcp-self-fondle
 ```
+
+What `get` prints with `-o yaml` can be edited and applied back, as with kubectl:
+`urthctl get scenario tcp-self-fondle -o yaml > s.yaml`, edit, `urthctl apply s.yaml`.
+The copy carries the version it was read at, so if someone changed the scenario in
+between, the apply is refused rather than undoing their change. Manifests say
+`apiVersion: urth.sre-norns.com/v1`; the older `v1` is still accepted, with a warning,
+for one release.
 
 To sign in through an upstream provider without a real one, see the fake identity
 provider in the [api-server README](cmd/api-server/README.md#identity-issuer-sign-in-mail-and-the-first-user).
