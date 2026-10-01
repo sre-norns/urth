@@ -10,7 +10,6 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/martian v2.1.0+incompatible
 	github.com/google/uuid v1.6.0
-	github.com/jedib0t/go-pretty/v6 v6.8.3
 	github.com/joho/godotenv v1.5.1
 	github.com/klauspost/compress v1.20.1
 	github.com/nats-io/jwt/v2 v2.8.2
@@ -22,7 +21,7 @@ require (
 	github.com/prometheus/client_model v0.6.3
 	github.com/prometheus/common v0.71.0
 	github.com/sre-norns/wyrd v0.6.1
-	github.com/sre-norns/wyrd/identity v0.5.0
+	github.com/sre-norns/wyrd/identity v0.6.0
 	github.com/stretchr/testify v1.12.1
 	golang.org/x/mod v0.41.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -43,7 +42,6 @@ require (
 	github.com/bytedance/sonic v1.15.4 // indirect
 	github.com/bytedance/sonic/loader v0.5.2 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/cloudwego/base64x v0.1.7 // indirect
 	github.com/coreos/go-oidc/v3 v3.21.0 // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect
@@ -74,7 +72,6 @@ require (
 	github.com/leodido/go-urn v1.5.0 // indirect
 	github.com/mailgun/mailgun-go/v5 v5.19.3 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
-	github.com/mattn/go-runewidth v0.0.30 // indirect
 	github.com/mattn/go-sqlite3 v1.14.52 // indirect
 	github.com/miekg/dns v1.1.73 // indirect
 	github.com/minio/highwayhash v1.0.4 // indirect

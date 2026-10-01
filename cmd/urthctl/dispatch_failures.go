@@ -3,10 +3,8 @@ package main
 import (
 	"fmt"
 	"os"
-	"time"
 
-	"github.com/jedib0t/go-pretty/v6/table"
-	"github.com/jedib0t/go-pretty/v6/text"
+	"github.com/sre-norns/wyrd/identity/cli"
 	"github.com/sre-norns/wyrd/pkg/manifest"
 
 	"github.com/sre-norns/urth/pkg/urth"
@@ -23,7 +21,6 @@ type (
 	// DeadLetters lists dispatches that stopped making progress.
 	DeadLetters struct {
 		Selector string `help:"Selector (label query) to filter on" optional:"" name:"selector" short:"l"`
-		Output   string `help:"Output format" enum:"wide,short" default:"short" name:"output" short:"o"`
 
 		// Unresolved is the default view for a reason: the question being asked
 		// is almost always "what is still broken", and a list that fills up with
@@ -75,46 +72,14 @@ func (c *DeadLetters) Run(cfg *commandContext) error {
 	ctx, cancel := cfg.ClientCallContext()
 	defer cancel()
 
-	resources, _, err := collectPages(ctx, manifest.SearchQuery{Selector: selector}, apiClient.DispatchFailures().List)
+	resources, page, err := collectPages(ctx, manifest.SearchQuery{Selector: selector}, apiClient.DispatchFailures().List)
 	if err != nil {
 		return err
 	}
 
-	t := table.NewWriter()
-	t.Style().Options = table.OptionsNoBordersAndSeparators
-	t.Style().Format.HeaderAlign = text.AlignLeft
-	t.Style().Format.RowAlign = text.AlignLeft
-
-	t.SetOutputMirror(os.Stdout)
-	header := table.Row{"Name", "Reason", "Scenario", "Runner", "Resolved", "Age"}
-	if c.Output == "wide" {
-		header = append(header, "Reporter", "Deliveries", "Retry", "Detail")
+	if err := cli.RenderList(cfg.Env.Output, views(resources, func(f urth.DispatchFailure) dispatchFailureView { return dispatchFailureView{f} }), page); err != nil {
+		return err
 	}
-	t.AppendHeader(header)
-
-	for _, failure := range resources {
-		row := table.Row{
-			failure.Name,
-			failure.Spec.Reason,
-			orDash(string(failure.Spec.ScenarioName)),
-			orDash(failure.Labels[urth.LabelRunnerName]),
-			resolvedLabel(failure),
-			failureAge(failure),
-		}
-
-		if c.Output == "wide" {
-			row = append(row,
-				failure.Spec.ReportedBy,
-				failure.Spec.Deliveries,
-				orDash(string(failure.Status.RetryResultName)),
-				failure.Spec.Detail,
-			)
-		}
-
-		t.AppendRow(row)
-	}
-
-	t.Render()
 
 	if len(resources) == 0 && !c.All {
 		// Said explicitly, because an empty table and "there are none
@@ -142,7 +107,7 @@ func (c *DeadLetter) Run(cfg *commandContext) error {
 		return fmt.Errorf("dispatch failure %q not found", c.ID)
 	}
 
-	return cfg.OutputFormatter(failure.ToManifest())
+	return cli.RenderResource(cfg.Env.Output, dispatchFailureView{failure}, nil)
 }
 
 func (c *RetryCmd) Run(cfg *commandContext) error {
@@ -214,18 +179,10 @@ func resolvedLabel(failure urth.DispatchFailure) string {
 // From OccurredAt rather than the record's timestamps: a worker that could not
 // reach the API reports late, and the age an operator cares about is the age of
 // the problem.
-func failureAge(failure urth.DispatchFailure) time.Duration {
+func failureAge(failure urth.DispatchFailure) string {
 	if failure.Spec.OccurredAt.IsZero() {
-		return resourceAge(failure.ObjectMeta)
+		return age(failure.ObjectMeta)
 	}
 
-	return time.Since(failure.Spec.OccurredAt).Round(time.Second)
-}
-
-func orDash(value string) string {
-	if value == "" {
-		return "-"
-	}
-
-	return value
+	return cli.HumanizeAge(failure.Spec.OccurredAt)
 }

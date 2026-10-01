@@ -44,7 +44,7 @@ run-api-server-nats: run-api-server
 
 # The enrolment token comes from the environment or a file rather than a flag:
 # an argument is visible in the process table to every user on the host.
-#   export RUNNER_TOKEN=$$(go run ./cmd/urthctl auth-worker -f ./examples/runner.yaml)
+#   export RUNNER_TOKEN=$$(go run ./cmd/urthctl runners token -f ./examples/runner.yaml)
 .PHONY: run-nats-worker
 run-nats-worker: # Start NATS based worker
 	@go run ./cmd/nats-worker --client.token="$(RUNNER_TOKEN)"

@@ -1,0 +1,178 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"strconv"
+	"time"
+
+	"github.com/sre-norns/urth/pkg/urth"
+	"github.com/sre-norns/wyrd/identity/cli"
+	"github.com/sre-norns/wyrd/pkg/manifest"
+)
+
+// The views below are how `get` prints Urth's resources: kubectl-style columns
+// in a table, and the resource's manifest for -o yaml|json -- the document
+// `apply -f` takes back.
+
+type scenarioView struct{ urth.Scenario }
+
+func (v scenarioView) MarshalJSON() ([]byte, error) { return json.Marshal(v.ToManifest()) }
+
+func (scenarioView) TableHeader(wide bool) []string {
+	header := []string{"NAME", "ENABLED", "TYPE", "STATUS", "AGE"}
+	if wide {
+		header = append(header, "SCHEDULE", "REQUIREMENTS", "NEXT RUN", "LAST RUN")
+	}
+	return header
+}
+
+func (v scenarioView) TableRow(wide bool) []any {
+	r := v.Scenario
+	lastStatus := "unknown"
+	if len(r.Status.Results) > 0 {
+		lastStatus = fmt.Sprintf("%v/%v", r.Status.Results[0].Status.Status, r.Status.Results[0].Status.Result)
+	}
+	probType := "<unknown>"
+	if r.Spec.Prob.Kind != "" {
+		probType = string(r.Spec.Prob.Kind)
+	}
+	row := []any{r.Name, r.Spec.IsActive, probType, lastStatus, age(r.ObjectMeta)}
+	if wide {
+		lastRunDuration, nextRun := "-", "-"
+		if len(r.Status.Results) > 0 && r.Status.Results[0].Spec.TimeStarted != nil {
+			latest := r.Status.Results[0].Spec
+			lastRunDuration = maybeDuration(latest.TimeStarted, latest.TimeEnded)
+		}
+		if r.Status.NextRun != nil {
+			nextRun = r.Status.NextRun.String()
+		}
+		row = append(row, orDash(string(r.Spec.RunSchedule)), r.Spec.Requirements, nextRun, lastRunDuration)
+	}
+	return row
+}
+
+type runnerView struct{ urth.Runner }
+
+func (v runnerView) MarshalJSON() ([]byte, error) { return json.Marshal(v.ToManifest()) }
+
+func (runnerView) TableHeader(wide bool) []string {
+	header := []string{"NAME", "ENABLED", "ONLINE", "AGE"}
+	if wide {
+		header = append(header, "REQUIREMENTS", "DESCRIPTION")
+	}
+	return header
+}
+
+func (v runnerView) TableRow(wide bool) []any {
+	r := v.Runner
+	online := strconv.FormatUint(r.Status.NumberInstances, 10)
+	if r.Spec.MaxInstances > 0 {
+		online = fmt.Sprintf("%d/%d", r.Status.NumberInstances, r.Spec.MaxInstances)
+	}
+	row := []any{r.Name, r.Spec.IsActive, online, age(r.ObjectMeta)}
+	if wide {
+		row = append(row, r.Spec.Requirements, orDash(r.Spec.Description))
+	}
+	return row
+}
+
+type resultView struct{ urth.Result }
+
+func (v resultView) MarshalJSON() ([]byte, error) { return json.Marshal(v.ToManifest()) }
+
+func (resultView) TableHeader(wide bool) []string {
+	header := []string{"NAME", "DURATION", "STATUS", "AGE"}
+	if wide {
+		header = append(header, "RESULT", "KIND", "ARTIFACTS")
+	}
+	return header
+}
+
+func (v resultView) TableRow(wide bool) []any {
+	r := v.Result
+	row := []any{r.Name, maybeDuration(r.Spec.TimeStarted, r.Spec.TimeEnded), r.Status.Status, age(r.ObjectMeta)}
+	if wide {
+		row = append(row, r.Status.Result, r.Spec.ProbKind, r.Status.NumberArtifacts)
+	}
+	return row
+}
+
+type artifactView struct{ urth.Artifact }
+
+func (v artifactView) MarshalJSON() ([]byte, error) { return json.Marshal(v.ToManifest()) }
+
+func (artifactView) TableHeader(bool) []string {
+	return []string{"NAME", "MIME TYPE", "AGE"}
+}
+
+func (v artifactView) TableRow(bool) []any {
+	return []any{v.Name, orDash(v.Spec.MimeType), age(v.ObjectMeta)}
+}
+
+type dispatchFailureView struct{ urth.DispatchFailure }
+
+func (v dispatchFailureView) MarshalJSON() ([]byte, error) { return json.Marshal(v.ToManifest()) }
+
+func (dispatchFailureView) TableHeader(wide bool) []string {
+	header := []string{"NAME", "REASON", "SCENARIO", "RUNNER", "RESOLVED", "AGE"}
+	if wide {
+		header = append(header, "REPORTER", "DELIVERIES", "RETRY", "DETAIL")
+	}
+	return header
+}
+
+func (v dispatchFailureView) TableRow(wide bool) []any {
+	failure := v.DispatchFailure
+	row := []any{
+		failure.Name,
+		failure.Spec.Reason,
+		orDash(string(failure.Spec.ScenarioName)),
+		orDash(failure.Labels[urth.LabelRunnerName]),
+		resolvedLabel(failure),
+		failureAge(failure),
+	}
+	if wide {
+		row = append(row,
+			failure.Spec.ReportedBy,
+			failure.Spec.Deliveries,
+			orDash(string(failure.Status.RetryResultName)),
+			failure.Spec.Detail,
+		)
+	}
+	return row
+}
+
+func views[T, V any](items []T, view func(T) V) []V {
+	out := make([]V, len(items))
+	for i, item := range items {
+		out[i] = view(item)
+	}
+	return out
+}
+
+func age(meta manifest.ObjectMeta) string {
+	if meta.UpdatedAt == nil {
+		return cli.HumanizeAge(time.Time{})
+	}
+	return cli.HumanizeAge(*meta.UpdatedAt)
+}
+
+func maybeDuration(start *time.Time, end *time.Time) string {
+	if start == nil {
+		return "not-started"
+	}
+	if end == nil {
+		return fmt.Sprintf("pending: %v", time.Since(*start).Round(time.Second))
+	}
+
+	return end.Sub(*start).Round(time.Second).String()
+}
+
+func orDash(value string) string {
+	if value == "" {
+		return "-"
+	}
+
+	return value
+}
