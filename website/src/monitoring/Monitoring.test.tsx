@@ -6,13 +6,13 @@ import {server} from '../test/server'
 import {api, page, renderAt, resource, signIn} from '../identity/test-support'
 
 const meta = {name: 'http-check', uid: 'scenario-1', version: 1, account: 'acct-1', project: 'proj-1'}
-const scenario = {apiVersion: 'v1', kind: 'scenarios', metadata: meta, spec: {active: true, description: 'HTTP check', prob: {kind: 'http', spec: {target: 'https://example.test'}}}}
-const run = {apiVersion: 'v1', kind: 'results', metadata: {...meta, name: 'run-1', uid: 'run-1', labels: {'urth/scenario.name': 'http-check'}}, spec: {probKind: 'http'}, status: {status: 'completed', result: 'success'}}
+const scenario = {apiVersion: 'urth.sre-norns.com/v1', kind: 'scenarios', metadata: meta, spec: {active: true, description: 'HTTP check', prob: {kind: 'http', spec: {target: 'https://example.test'}}}}
+const run = {apiVersion: 'urth.sre-norns.com/v1', kind: 'results', metadata: {...meta, name: 'run-1', uid: 'run-1', labels: {'urth/scenario.name': 'http-check'}}, spec: {probKind: 'http'}, status: {status: 'completed', result: 'success'}}
 function project(member = true) {
   signIn()
   server.use(
     http.get(api('/principal'), () => HttpResponse.json({type: 'user', user_id: 'user-1', account_id: 'acct-1', credential_id: 'sess-1', account_role: 'owner', project_ids: member ? ['proj-1'] : [], system_admin: false})),
-    http.get(api('/projects/proj-1'), () => HttpResponse.json(resource('proj-1', {name: 'Plant 2', description: ''}))),
+    http.get(api('/projects/proj-1'), () => HttpResponse.json(resource('projects', 'proj-1', {description: ''}, {}, {name: 'Plant 2'}))),
   )
 }
 afterEach(() => sessionStorage.clear())
@@ -56,7 +56,7 @@ describe('project monitoring', () => {
     project()
     let reads = 0
     server.use(
-      http.get(api('/projects/proj-1/artifacts/trace-1'), () => HttpResponse.json({apiVersion: 'v1', kind: 'artifacts', metadata: {...meta, name: 'trace-1'}, spec: {dataClass: 'secret-bearing', mimeType: 'text/plain'}})),
+      http.get(api('/projects/proj-1/artifacts/trace-1'), () => HttpResponse.json({apiVersion: 'urth.sre-norns.com/v1', kind: 'artifacts', metadata: {...meta, name: 'trace-1'}, spec: {dataClass: 'secret-bearing', mimeType: 'text/plain'}})),
       http.get(api('/projects/proj-1/artifacts/trace-1/content'), ({request}) => {
         expect(request.headers.get('Authorization')).toBe('Bearer access')
         reads++; return new HttpResponse('Sensitive trace', {headers: {'Content-Type': 'text/plain'}})
@@ -82,7 +82,7 @@ describe('project monitoring', () => {
     await userEvent.type(await screen.findByLabelText('Name'), 'http-check')
     await userEvent.click(screen.getByRole('button', {name: 'Save'}))
     expect(await screen.findByRole('heading', {name: 'http-check'})).toBeInTheDocument()
-    expect(body).toMatchObject({apiVersion: 'v1', kind: 'scenarios', metadata: {name: 'http-check'}, spec: {active: true, prob: {kind: 'http'}}})
+    expect(body).toMatchObject({apiVersion: 'urth.sre-norns.com/v1', kind: 'scenarios', metadata: {name: 'http-check'}, spec: {active: true, prob: {kind: 'http'}}})
   })
   it('resolves a dead-letter run UID through the project list before reading by name', async () => {
     project()
@@ -102,7 +102,7 @@ describe('project monitoring', () => {
   it('retries a project dead letter only after confirmation and links the new run', async () => {
     project()
     let retried = false
-    const failure = () => ({kind: 'dispatch-failures', metadata: {...meta, name: 'failure-1'}, spec: {reason: 'delivery-exhausted', occurredAt: '2026-10-01T00:00:00Z', resultUID: 'original-uid'}, status: {resolved: retried, ...(retried ? {retryResultUID: 'retry-uid'} : {})}})
+    const failure = () => ({apiVersion: 'urth.sre-norns.com/v1', kind: 'dispatch-failures', metadata: {...meta, name: 'failure-1'}, spec: {reason: 'delivery-exhausted', occurredAt: '2026-10-01T00:00:00Z', resultUID: 'original-uid'}, status: {resolved: retried, ...(retried ? {retryResultUID: 'retry-uid'} : {})}})
     server.use(
       http.get(api('/projects/proj-1/dispatch-failures/failure-1'), () => HttpResponse.json(failure())),
       http.post(api('/projects/proj-1/dispatch-failures/failure-1/retry'), async ({request}) => {

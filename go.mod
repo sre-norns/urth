@@ -20,8 +20,8 @@ require (
 	github.com/prometheus/client_golang v1.24.1
 	github.com/prometheus/client_model v0.6.3
 	github.com/prometheus/common v0.71.0
-	github.com/sre-norns/wyrd v0.6.1
-	github.com/sre-norns/wyrd/identity v0.6.3
+	github.com/sre-norns/wyrd v0.7.0
+	github.com/sre-norns/wyrd/identity v0.7.0
 	github.com/stretchr/testify v1.12.1
 	golang.org/x/mod v0.41.0
 	gopkg.in/yaml.v3 v3.0.1

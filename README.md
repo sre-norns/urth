@@ -328,8 +328,7 @@ What `get` prints with `-o yaml` can be edited and applied back, as with kubectl
 `urthctl get scenario tcp-self-fondle -o yaml > s.yaml`, edit, `urthctl apply s.yaml`.
 The copy carries the version it was read at, so if someone changed the scenario in
 between, the apply is refused rather than undoing their change. Manifests say
-`apiVersion: urth.sre-norns.com/v1`; the older `v1` is still accepted, with a warning,
-for one release.
+`apiVersion: urth.sre-norns.com/v1`; legacy `v1` and missing API versions are rejected.
 
 To sign in through an upstream provider without a real one, see the fake identity
 provider in the [api-server README](cmd/api-server/README.md#identity-issuer-sign-in-mail-and-the-first-user).

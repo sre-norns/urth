@@ -42,7 +42,7 @@ export function ScenarioDetail() {
       // Placement may have changed since the last poll. Refresh before enqueueing.
       const check = await request(session, `${path}/placement`, placement)
       if (!check.data.schedulable) throw new Error(check.data.detail || check.data.reason || 'No eligible runner is available.')
-      const created = await request(session, `${path}/results`, run, {method: 'POST', body: {apiVersion: 'v1', kind: 'results', metadata: {labels: {trigger: 'manual', triggerAgent: 'website'}}, spec: {}}})
+      const created = await request(session, `${path}/results`, run, {method: 'POST', body: {apiVersion: 'urth.sre-norns.com/v1', kind: 'results', metadata: {labels: {trigger: 'manual', triggerAgent: 'website'}}, spec: {}}})
       void queryClient.invalidateQueries({queryKey: [accountId, projectId]})
       void navigate(`${base}/runs/${encodeURIComponent(created.data.metadata.name)}`)
     } catch (error) {setError(error)} finally {setBusy(false)}
@@ -68,7 +68,7 @@ export function ScenarioDetail() {
 function scenarioBody(values: Record<string, string>, source?: Scenario) {
   const probe = prob.parse({kind: values.kind, timeout: z.number().nonnegative().parse(Number(values.timeout || 0)) * 1_000_000_000, spec: parse(values.probe || '{}')})
   return {
-    apiVersion: source?.apiVersion ?? 'v1', kind: 'scenarios',
+    apiVersion: source?.apiVersion ?? 'urth.sre-norns.com/v1', kind: 'scenarios',
     metadata: {...source?.metadata, name: source?.metadata.name ?? values.name, labels: z.record(z.string(), z.string()).parse(parse(values.labels || '{}'))},
     spec: {...source?.spec, description: values.description, active: values.active === 'true', schedule: values.schedule, requirements: selector.parse(parse(values.requirements || '{}')), prob: probe},
   }

@@ -65,7 +65,7 @@ spec:
 
 		"scenario": {
 			given: []byte(`
-apiVersion: v1
+apiVersion: urth.sre-norns.com/v1
 kind: scenarios
 metadata:
   name: simple-web-prober
@@ -90,7 +90,7 @@ spec:
 `),
 			expect: manifest.ResourceManifest{
 				TypeMeta: manifest.TypeMeta{
-					APIVersion: "v1",
+					APIVersion: urth.APIVersion,
 					Kind:       "scenarios",
 				},
 				Metadata: manifest.ObjectMeta{
@@ -127,7 +127,7 @@ spec:
 
 		"artifact": {
 			given: []byte(`
-apiVersion: v1
+apiVersion: urth.sre-norns.com/v1
 kind: artifacts
 metadata:
  name: artifact-example
@@ -140,7 +140,7 @@ spec:
 `),
 			expect: manifest.ResourceManifest{
 				TypeMeta: manifest.TypeMeta{
-					APIVersion: "v1",
+					APIVersion: urth.APIVersion,
 					Kind:       "artifacts",
 				},
 				Metadata: manifest.ObjectMeta{
@@ -231,7 +231,7 @@ func TestResourceManifest_UnmarshalingJson(t *testing.T) {
 
 		"scenario": {
 			given: []byte(`{
-"apiVersion": "v1",
+"apiVersion": "urth.sre-norns.com/v1",
 "kind": "scenarios",
 "metadata": {
   "name": "simple-web-prober",
@@ -263,7 +263,7 @@ func TestResourceManifest_UnmarshalingJson(t *testing.T) {
 }`),
 			expect: manifest.ResourceManifest{
 				TypeMeta: manifest.TypeMeta{
-					APIVersion: "v1",
+					APIVersion: urth.APIVersion,
 					Kind:       "scenarios",
 				},
 				Metadata: manifest.ObjectMeta{
@@ -300,7 +300,7 @@ func TestResourceManifest_UnmarshalingJson(t *testing.T) {
 
 		"artifact": {
 			given: []byte(`{
-"apiVersion": "v1",
+"apiVersion": "urth.sre-norns.com/v1",
 "kind": "artifacts",
 "metadata": {
  "name": "artifact-example",
@@ -317,7 +317,7 @@ func TestResourceManifest_UnmarshalingJson(t *testing.T) {
 `),
 			expect: manifest.ResourceManifest{
 				TypeMeta: manifest.TypeMeta{
-					APIVersion: "v1",
+					APIVersion: urth.APIVersion,
 					Kind:       "artifacts",
 				},
 				Metadata: manifest.ObjectMeta{

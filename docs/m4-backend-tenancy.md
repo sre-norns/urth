@@ -69,9 +69,12 @@ same transaction as the version-guarded claim. Revocation before claim produces
 `runner-not-authorized`; already-claimed runs can recover their authorization,
 finish and upload artifacts after grant revocation.
 
-`POST /v1/accounts/:account/runners/:name/tokens` issues a revocable opaque
-machine token, returned once as plain text. The anonymous runner-token GET is
-gone. Registration exchanges that token for a worker session and restricted
+`POST /v1/agent-identities/:runnerUID/tokens` issues a revocable opaque
+machine token as `{resource, token}`. Send a canonical `agent-identity-tokens`
+create input and an `Idempotency-Key`. The secret is returned once and redacted
+on replay; ordinary reads never expose it. Both name-based plain-text token
+routes are retired. `urthctl runners token NAME` resolves the paired identity
+UID and uses the shared operation. Registration exchanges that token for a worker session and restricted
 NATS credentials. Worker sessions and per-run capabilities remain separate
 credentials; neither authenticates product user routes.
 

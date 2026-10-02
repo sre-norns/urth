@@ -13,18 +13,8 @@ import {identityTerms, runnerRegistration} from './config'
 import {sessionConfig} from './session'
 
 export const api = (path: string) => `http://localhost/v1${path}`
-const stamp = '2026-09-30T01:00:00Z'
-export const resource = (id: string, extra: Record<string, unknown> = {}) => ({
-  id,
-  name: '',
-  status: 'active',
-  revision: 1,
-  account_id: 'acct-1',
-  created_at: stamp,
-  updated_at: stamp,
-  authority: 'owner',
-  ...extra,
-})
+export {identityResource as resource} from '../test/identity-fixtures'
+import {identityResource as resource} from '../test/identity-fixtures'
 export const page = (items: unknown[]) => ({items, limit: 100, total: items.length})
 
 export function signIn() {
@@ -55,13 +45,13 @@ export function signIn() {
     ),
     http.get(api('/accounts/acct-1/projects'), () => HttpResponse.json(page([]))),
     http.get(api('/profile'), () =>
-      HttpResponse.json({user_id: 'user-1', email: 'ada@example.test', display_name: 'Ada', status: 'active', revision: 1}),
+      HttpResponse.json(resource('personal-profiles', 'user-1', {displayName: 'Ada'}, {email: 'ada@example.test'})),
     ),
     http.get(api('/profile/accounts'), () =>
       HttpResponse.json(page([{account_id: 'acct-1', name: 'Edge monitoring', role: 'owner', status: 'active'}])),
     ),
     http.get(api('/accounts/acct-1'), () =>
-      HttpResponse.json(resource('acct-1', {name: 'Edge monitoring', description: ''})),
+      HttpResponse.json(resource('accounts', 'acct-1', {description: ''}, {}, {name: 'Edge monitoring'})),
     ),
   )
 }

@@ -145,7 +145,7 @@ func (w *Worker) report(ctx context.Context, envelope natsq.DispatchEnvelope, au
 		schedule(func(ctx context.Context) error {
 			_, err := artifactsAPI.Create(ctx, auth.Token, manifest.ResourceManifest{
 				TypeMeta: manifest.TypeMeta{
-					APIVersion: "v1",
+					APIVersion: urth.APIVersion,
 					Kind:       urth.KindArtifact,
 				},
 				Metadata: manifest.ObjectMeta{

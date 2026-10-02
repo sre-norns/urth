@@ -48,18 +48,7 @@ const principal: Principal = {
   systemAdmin: false,
 }
 
-const stamp = '2026-09-30T01:00:00Z'
-const resource = (id: string, extra: Record<string, unknown> = {}) => ({
-  id,
-  name: '',
-  status: 'active',
-  revision: 1,
-  account_id: 'acct-1',
-  created_at: stamp,
-  updated_at: stamp,
-  authority: 'owner',
-  ...extra,
-})
+import {identityResource as resource} from './test/identity-fixtures'
 const page = (items: unknown[]) => ({items, limit: 100, total: items.length})
 
 function renderIdentity(ui: ReactElement) {
@@ -94,16 +83,10 @@ describe('shared identity screens in Urth', () => {
     server.use(
       http.get('http://localhost/v1/profile', ({request}) => {
         authorization.push(request.headers.get('Authorization'))
-        return HttpResponse.json({
-          user_id: 'user-1',
-          email: 'ada@example.test',
-          display_name: 'Ada Lovelace',
-          status: 'active',
-          revision: 1,
-        })
+        return HttpResponse.json(resource('personal-profiles', 'user-1', {displayName: 'Ada Lovelace'}, {email: 'ada@example.test'}))
       }),
       http.get('http://localhost/v1/accounts/acct-1', () =>
-        HttpResponse.json(resource('acct-1', {name: 'Analytical Engines', description: ''})),
+        HttpResponse.json(resource('accounts', 'acct-1', {description: ''}, {}, {name: 'Analytical Engines'})),
       ),
     )
 
@@ -117,13 +100,7 @@ describe('shared identity screens in Urth', () => {
 
   it('lists sessions, marks the current one and names clients in Urth terms', async () => {
     const session = (id: string, clientID: string, created: string) =>
-      resource(id, {
-        user_id: 'user-1',
-        client_id: clientID,
-        created_at: created,
-        expires_at: '2026-10-01T00:00:00Z',
-        refresh_expires_at: '2026-10-30T00:00:00Z',
-      })
+      resource('sessions', id, {}, {userId: 'user-1', clientId: clientID, expiresAt: '2026-10-01T00:00:00Z', refreshExpiresAt: '2026-10-30T00:00:00Z'}, {creationTimestamp: created})
     server.use(
       http.get('http://localhost/v1/sessions', () =>
         HttpResponse.json(

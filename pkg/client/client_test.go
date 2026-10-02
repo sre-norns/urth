@@ -54,7 +54,7 @@ func newTestClient(t *testing.T, status int, body string) (*RestAPIClient, *reco
 
 func scenarioManifest(version manifest.Version) manifest.ResourceManifest {
 	return manifest.ResourceManifest{
-		TypeMeta: manifest.TypeMeta{APIVersion: "v1", Kind: "scenarios"},
+		TypeMeta: manifest.TypeMeta{APIVersion: urth.APIVersion, Kind: "scenarios"},
 		Metadata: manifest.ObjectMeta{Name: "probe", Version: version},
 	}
 }

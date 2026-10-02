@@ -1,21 +1,23 @@
 {
-    "metadata": {
-        "name": "scenario-puppeteer-example-1",
-        "labels": {
-            "os": "linux",
-            "ui": "web"
-        }
-    },
-    "spec": {
-        "active": true,
-        "description": "My other scenario",
-        "requirements": {},
-        "schedule": "@5minutes",
-        "prob": {
-            "kind": "puppeteer",
-            "spec": {
-                "script": "console.log(`Hello world`);"
-            }
-        }
+  "apiVersion": "urth.sre-norns.com/v1",
+  "kind": "scenarios",
+  "metadata": {
+    "name": "scenario-puppeteer-example-1",
+    "labels": {
+      "os": "linux",
+      "ui": "web"
     }
+  },
+  "spec": {
+    "active": true,
+    "description": "My other scenario",
+    "requirements": {},
+    "schedule": "@5minutes",
+    "prob": {
+      "kind": "puppeteer",
+      "spec": {
+        "script": "console.log(`Hello world`);"
+      }
+    }
+  }
 }

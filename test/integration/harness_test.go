@@ -381,7 +381,7 @@ func (h *harness) applyScenario(name manifest.ResourceName, spec testProbSpec, r
 	var runners []urth.Runner
 	require.NoError(h.t, h.DB.Where("account_id = ?", h.scope.Account).Find(&runners).Error)
 	for _, runner := range runners {
-		_, _, err := h.Server.Service.RunnerAuthorizations().CreateOrUpdate(h.ctx, manifest.ResourceManifest{TypeMeta: manifest.TypeMeta{Kind: urth.KindRunnerAuthorization}, Metadata: manifest.ObjectMeta{Name: runner.Name}, Spec: &urth.RunnerAuthorizationSpec{RunnerRef: runner.UID, Roles: []im.RoleType{"runner"}}})
+		_, _, err := h.Server.Service.RunnerAuthorizations().CreateOrUpdate(h.ctx, manifest.ResourceManifest{TypeMeta: manifest.TypeMeta{APIVersion: urth.APIVersion, Kind: urth.KindRunnerAuthorization}, Metadata: manifest.ObjectMeta{Name: runner.Name}, Spec: &urth.RunnerAuthorizationSpec{RunnerRef: runner.UID, Roles: []im.RoleType{"runner"}}})
 		require.NoError(h.t, err)
 	}
 
@@ -404,7 +404,7 @@ func (h *harness) createRun(scenarioName manifest.ResourceName) urth.Result {
 	h.t.Helper()
 
 	result, err := h.Server.Service.Results(scenarioName).Create(h.ctx, manifest.ResourceManifest{
-		TypeMeta: manifest.TypeMeta{APIVersion: "v1", Kind: urth.KindResult},
+		TypeMeta: manifest.TypeMeta{APIVersion: urth.APIVersion, Kind: urth.KindResult},
 		// Unnamed, as a triggered run is: the server generates the name. See
 		// resultsAPIImpl.Create.
 		Metadata: manifest.ObjectMeta{},

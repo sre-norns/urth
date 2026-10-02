@@ -137,20 +137,14 @@ func TestGetAsYAMLAppliesBack(t *testing.T) {
 	require.Equal(t, "mel", h.storedRunner("edge").Labels["site"])
 }
 
-// Manifests written before M6.4 say `apiVersion: v1`; they still apply, with a
-// warning. Any other apiVersion is not Urth's and is refused.
+// Only the canonical group is accepted; no legacy input window is needed.
 func TestAPIVersions(t *testing.T) {
 	h := newHarness(t)
-	manifestOf := func(version string) string {
-		return "apiVersion: " + version + "\nkind: runners\nmetadata:\n  name: legacy\nspec:\n  active: true\n"
+	for _, version := range []string{"v1", "apps/v1", ""} {
+		body := "apiVersion: " + version + "\nkind: runners\nmetadata:\n  name: legacy\nspec:\n  active: true\n"
+		_, err := h.urthctl(body, "apply", "-")
+		require.Error(t, err)
 	}
-
-	_, err := h.urthctl(manifestOf(urth.LegacyAPIVersion), "apply", "-")
-	require.NoError(t, err, "the legacy apiVersion is still accepted")
-
-	_, err = h.urthctl(manifestOf("apps/v1"), "apply", "-")
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "unsupported apiVersion")
 }
 
 func (h *harness) storedRunner(name manifest.ResourceName) urth.Runner {

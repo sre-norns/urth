@@ -32,7 +32,7 @@ func TestHappyPathRunExecutesEndToEnd(t *testing.T) {
 
 	instance := h.startWorker(runner.Name)
 
-	run, err := h.client("").Results(scenario.Name).Create(h.ctx, manifest.ResourceManifest{TypeMeta: manifest.TypeMeta{Kind: urth.KindResult}, Spec: &urth.ResultSpec{}})
+	run, err := h.client("").Results(scenario.Name).Create(h.ctx, manifest.ResourceManifest{TypeMeta: manifest.TypeMeta{APIVersion: urth.APIVersion, Kind: urth.KindResult}, Spec: &urth.ResultSpec{}})
 	require.NoError(t, err)
 	require.Equal(t, urth.JobPending, run.Status.Status)
 	require.Equal(t, runner.UID, run.Status.Executor.RunnerID,

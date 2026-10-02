@@ -285,6 +285,10 @@ func apiURLForResource(baseURL *url.URL, typeInfo manifest.TypeMeta, resourceNam
 		return nil, ErrUnspecifiedAPIVersion
 	}
 
+	if !urth.AcceptsAPIVersion(typeInfo.APIVersion) {
+		return nil, fmt.Errorf("unsupported apiVersion %q", typeInfo.APIVersion)
+	}
+
 	collection := strings.ToLower(string(typeInfo.Kind)) // TODO: Ensure that type name is plural?
 	if collection == "" {
 		return nil, ErrUnspecifiedAPIKind
