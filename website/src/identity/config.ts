@@ -20,6 +20,8 @@ export const identityTerms: Partial<IdentityTerms> = {
 // fields the identity screens show are read.
 const runnerReply = z
   .object({
+    apiVersion: z.literal('urth.sre-norns.com/v1'),
+    kind: z.literal('runners'),
     metadata: z.object({
       uid: z.string().min(1),
       name: z.string(),
@@ -54,7 +56,7 @@ const runnerReply = z
 export const runnerRegistration: MachineRegistration = {
   path: (accountId) => `/v1/accounts/${encodeURIComponent(accountId)}/runners`,
   body: (values) => ({
-    apiVersion: 'v1',
+    apiVersion: 'urth.sre-norns.com/v1',
     kind: 'runners',
     metadata: {name: values.name},
     // Explicit: spec.active is a plain bool, so an omitted field would create

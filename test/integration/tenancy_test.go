@@ -29,7 +29,7 @@ func TestTenancyPlacementRequiresProjectGrant(t *testing.T) {
 	body.Metadata = manifest.ObjectMeta{Name: "ungranted"}
 	_, err = h.Server.Service.Scenarios().Create(ctx, body)
 	require.NoError(t, err)
-	run, err := h.Server.Service.Results("ungranted").Create(ctx, manifest.ResourceManifest{TypeMeta: manifest.TypeMeta{Kind: urth.KindResult}, Spec: &urth.ResultSpec{}})
+	run, err := h.Server.Service.Results("ungranted").Create(ctx, manifest.ResourceManifest{TypeMeta: manifest.TypeMeta{APIVersion: urth.APIVersion, Kind: urth.KindResult}, Spec: &urth.ResultSpec{}})
 	require.NoError(t, err)
 	require.Equal(t, urth.JobErrored, run.Status.Status)
 	require.Equal(t, "no-eligible-runner", run.Labels[urth.LabelResultUnschedulable])
@@ -148,7 +148,7 @@ func TestTenancyRevocationDoesNotInterruptClaimedRun(t *testing.T) {
 	token, found, err := client.Runners().GetToken(h.ctx, runner.Name)
 	require.NoError(t, err)
 	require.True(t, found)
-	worker := manifest.ResourceManifest{TypeMeta: manifest.TypeMeta{Kind: urth.KindWorkerInstance}, Metadata: manifest.ObjectMeta{Name: "claiming-worker"}, Spec: &urth.WorkerInstanceSpec{}}
+	worker := manifest.ResourceManifest{TypeMeta: manifest.TypeMeta{APIVersion: urth.APIVersion, Kind: urth.KindWorkerInstance}, Metadata: manifest.ObjectMeta{Name: "claiming-worker"}, Spec: &urth.WorkerInstanceSpec{}}
 	registration, err := client.Runners().AuthWorker(h.ctx, token, worker)
 	require.NoError(t, err)
 	request := urth.ClaimJobRequest{DispatchID: urth.DispatchEventUID(run.UID, run.Version), ResultVersion: run.Version}

@@ -2,8 +2,11 @@ package client
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
-	"io"
+	"github.com/google/uuid"
+	identityclient "github.com/sre-norns/wyrd/identity/client"
+	"github.com/sre-norns/wyrd/identity/model"
 	"net/http"
 
 	"github.com/sre-norns/urth/pkg/urth"
@@ -45,22 +48,31 @@ func (c *runnersAPIClient) Update(ctx context.Context, id manifest.VersionedReso
 }
 
 func (c *runnersAPIClient) GetToken(ctx context.Context, runnerName manifest.ResourceName) (urth.APIToken, bool, error) {
-	targetAPI := urlForPath(c.baseURL, fmt.Sprintf("v1/runners/%v/tokens", runnerName), nil)
-	resp, err := c.do(ctx, http.MethodPost, targetAPI, "", "", nil)
+	// Resolve the product's name to the paired identity UID; the shared API
+	// owns credential creation, transactional replay and operation-only secrets.
+	runner, found, err := c.Get(ctx, runnerName)
+	if err != nil || !found {
+		return "", found, err
+	}
+	api, err := identityclient.New(c.baseURL.String(), identityclient.Config{HTTPClient: c.config.HTTPClient, Token: string(c.config.Token), Timeout: c.config.Timeout})
 	if err != nil {
-		return urth.APIToken(""), false, err
+		return "", true, err
 	}
-	defer resp.Body.Close()
-
-	switch resp.StatusCode {
-	case http.StatusOK, http.StatusAccepted, http.StatusCreated:
-		token, err := io.ReadAll(resp.Body)
-		return urth.APIToken(token), true, err
-	case http.StatusNotFound:
-		return urth.APIToken(""), false, nil
-	default:
-		return urth.APIToken(""), false, readAPIError(resp)
+	key := requestOptions(ctx).IdempotencyKey
+	if key == "" {
+		key = uuid.NewString()
 	}
+	ctx = identityclient.WithRequestOptions(ctx, identityclient.RequestOptions{IdempotencyKey: key})
+	// A retry must retain both its key and body, including the generated name.
+	sum := sha256.Sum256([]byte(string(runner.Metadata.UID) + "\x00" + key))
+	token, err := api.AgentIdentityTokens().Create(ctx, model.AgentIdentityID(runner.Metadata.UID), model.AgentIdentityToken{Resource: model.Resource{Name: fmt.Sprintf("enrolment-%x", sum[:16])}})
+	if err != nil {
+		return "", true, err
+	}
+	if token.Token == "" {
+		return "", true, fmt.Errorf("token already created; its one-time secret is no longer available")
+	}
+	return urth.APIToken(token.Token), true, nil
 }
 
 func (c *runnersAPIClient) AuthWorker(ctx context.Context, token urth.APIToken, newEntry manifest.ResourceManifest) (urth.WorkerRegistrationResponse, error) {

@@ -27,8 +27,6 @@ func (c *createCmd) Run(cfg *commandContext) error {
 			return fmt.Errorf("failed parse manifest from %q: %w", filename, err)
 		}
 
-		warnLegacyAPIVersion(filename, resourceSpec)
-
 		// TODO: Use timeout!
 		c, err := apiClient.CreateFromManifest(cfg.Context, resourceSpec)
 		if err != nil {

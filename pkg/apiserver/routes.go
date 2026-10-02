@@ -332,24 +332,6 @@ func Routes(srv urth.Service, natsConn *nats.Conn, metrics *prometheus.Registry,
 			bark.Ok(ctx, resource)
 		})
 
-		// Issue a revocable machine token for runner enrolment.
-		account.POST("/runners/:resource/tokens", bark.ResourceAPI(), func(ctx *gin.Context) {
-			ctx.Header(bark.HTTPHeaderCacheControl, "no-store")
-
-			// Scoped runner reads require account administration.
-			token, found, err := srv.Runners().GetToken(ctx.Request.Context(), bark.RequireResourceName(ctx))
-			if err != nil {
-				bark.AbortWithError(ctx, http.StatusBadRequest, err)
-				return
-			} else if !found {
-				bark.AbortWithError(ctx, http.StatusNotFound, bark.ErrResourceNotFound)
-				return
-			}
-
-			ctx.Header(bark.HTTPHeaderContentType, "text/plain; charset=utf-8")
-			ctx.Writer.Write([]byte(token))
-		})
-
 		//------------
 		// Runners API
 		//------------

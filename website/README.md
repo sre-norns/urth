@@ -1,7 +1,7 @@
 # Urth website
 
 The supported web UI is a Vite 8 / React / TypeScript 6 application using
-`@sre-norns/components` **0.4.0** and its Urth theme and identity client. The old
+`@sre-norns/components` **0.5.0** and its Urth theme and identity client. The old
 webpack UI and the `website-experiment` directory are retired.
 
 ## Development
@@ -99,3 +99,8 @@ issuer and redirect URI for that origin. Nginx preserves the browser Host,
 proxies OAuth server routes, keeps the SPA callback/deep-link fallback, and
 disables response buffering for `/v1` so live logs arrive immediately. Package
 credentials are build secrets and do not enter image layers.
+
+The identity API requires wyrd identity/v0.7.0 canonical resources. Deploy the
+backend and this UI together. Flat resource reads and writes are unsupported.
+Runner enrolment uses the shared token operation; its secret appears only in
+the create result and is redacted on replay and ordinary reads.

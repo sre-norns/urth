@@ -117,7 +117,7 @@ func TestRunnerAndGrantUpdatesRefuseAStaleVersion(t *testing.T) {
 	h := newHarness(t)
 	runner := h.applyRunner("guarded-runner", nil)
 	runnerPath := fmt.Sprintf("/v1/accounts/%s/runners/guarded-runner", h.scope.Account)
-	body := map[string]any{"apiVersion": "v1", "kind": "runners", "metadata": map[string]any{"name": "guarded-runner"}, "spec": map[string]any{"active": false}}
+	body := map[string]any{"apiVersion": "urth.sre-norns.com/v1", "kind": "runners", "metadata": map[string]any{"name": "guarded-runner"}, "spec": map[string]any{"active": false}}
 
 	code, _, _ := h.identityRequest("PUT", runnerPath, nil, body)
 	require.Equal(t, http.StatusPreconditionRequired, code)
@@ -128,7 +128,7 @@ func TestRunnerAndGrantUpdatesRefuseAStaleVersion(t *testing.T) {
 	require.Equal(t, http.StatusPreconditionFailed, code, "a runner edit of a superseded version is refused")
 
 	grants := fmt.Sprintf("/v1/projects/%s/runner-authorizations", h.scope.Project)
-	grantBody := map[string]any{"apiVersion": "v1", "kind": "runner-authorizations", "metadata": map[string]any{"name": "guarded-grant"},
+	grantBody := map[string]any{"apiVersion": "urth.sre-norns.com/v1", "kind": "runner-authorizations", "metadata": map[string]any{"name": "guarded-grant"},
 		"spec": map[string]any{"runnerRef": string(runner.UID), "roles": []string{"runner"}}}
 	code, headers, data = h.identityRequest("POST", grants, nil, grantBody)
 	require.Equal(t, http.StatusCreated, code, string(data))
@@ -153,7 +153,7 @@ func TestApplyIsUnconditionalUnlessTheManifestCarriesAVersion(t *testing.T) {
 	scenario := h.applyScenario("applied", testProbSpec{}, manifest.LabelSelector{})
 
 	body := scenario.ToManifest()
-	body.APIVersion = "v1" // as every manifest file says; the client requires it
+	body.APIVersion = urth.APIVersion // as every manifest file says; the client requires it
 	body.Metadata = manifest.ObjectMeta{Name: "applied"}
 	for range 2 {
 		_, _, err := client.Scenarios().CreateOrUpdate(h.ctx, body)
@@ -161,13 +161,13 @@ func TestApplyIsUnconditionalUnlessTheManifestCarriesAVersion(t *testing.T) {
 	}
 
 	stale := scenario.ToManifest()
-	stale.APIVersion = "v1"
+	stale.APIVersion = urth.APIVersion
 	stale.Metadata = manifest.ObjectMeta{Name: "applied", Version: 1}
 	_, _, err := client.Scenarios().CreateOrUpdate(h.ctx, stale)
 	require.Error(t, err, "applying a stale copy that carries its version is refused")
 
 	current := h.storedScenario("applied").ToManifest()
-	current.APIVersion = "v1"
+	current.APIVersion = urth.APIVersion
 	_, _, err = client.Scenarios().CreateOrUpdate(h.ctx, current)
 	require.NoError(t, err, "applying the current copy succeeds")
 }

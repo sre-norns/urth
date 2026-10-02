@@ -410,7 +410,7 @@ cardinality problem. A rising `saturated` rate means the fleet has no spare
 capacity; a rising `unmeasured` rate means placement has degraded to its
 fallback.
 
-`GET /api/v1/scenarios/:id/placement` reports the same picture before a run is
+`GET /v1/projects/:project/scenarios/:id/placement` reports the same picture before a run is
 created — `onlineWorkers`, `queuedRuns`, `runningRuns` and `spareCapacity`
 alongside the runner counts. `spareCapacity: 0` means a run would wait, not that
 it would be refused.
@@ -433,7 +433,7 @@ a label query:
 ```sh
 urthctl get results <scenario> -l 'urth/result.unschedulable = no-eligible-runner'
 # fleet-wide, since `get results` is scoped to one scenario:
-curl -sG localhost:8080/api/v1/results \
+curl -sG "$API/v1/projects/$PROJECT_ID/results" -H "Authorization: Bearer $ACCESS_TOKEN" \
   --data-urlencode 'labels=urth/result.unschedulable = no-eligible-runner'
 ```
 
@@ -444,7 +444,7 @@ record that a run was wanted and could not happen is the thing worth keeping.
 Clients ask *before* offering to trigger one:
 
 ```sh
-curl -s localhost:8080/api/v1/scenarios/<name>/placement
+curl -s "$API/v1/projects/$PROJECT_ID/scenarios/$SCENARIO/placement" -H "Authorization: Bearer $ACCESS_TOKEN"
 {"requirements":"os=linux","matchingRunners":2,"eligibleRunners":1,
  "registeredWorkers":3,"readyWorkers":2,"schedulable":true}
 ```
@@ -657,7 +657,7 @@ registrations.
 
 **API contact** is any authenticated arrival from the worker's session:
 
-- `POST /api/v1/auth/workers/heartbeat`, authenticated by the session bearer
+- `POST /v1/auth/workers/heartbeat`, authenticated by the session bearer
   token. Nothing in the body identifies the caller — the same rule the claim
   route follows, since a request body is not evidence of identity. The response
   carries the interval to report at next (this server owns the cadence, because
@@ -713,7 +713,7 @@ worker may register again. This drops a registration; it does not bar a worker.
 
 ### Queue observation
 
-`GET /api/v1/runners/:id` also reports `status.channel` — how many worker pull
+`GET /v1/accounts/:account/runners/:id` also reports `status.channel` — how many worker pull
 requests are parked on that runner's JetStream consumer, and how much is queued.
 It needs no cooperation from any worker, so it is the cross-check on the presence
 workers report about themselves: every worker quiet while the queue still shows
@@ -734,7 +734,7 @@ must show nothing rather than an authoritative-looking zero.
 
 ## Metrics
 
-`GET /metrics`, in Prometheus exposition format. Registered outside `/api/v1`
+`GET /metrics`, in Prometheus exposition format. Registered outside `/v1`
 because bark's content negotiation on that group answers 406 to any Accept header
 it does not recognise — the same trap that makes the live run log stream
 unreachable from a browser

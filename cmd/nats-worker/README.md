@@ -180,7 +180,7 @@ Plus the usual process and Go runtime collectors.
 The worker reports liveness on both paths it has, every interval, **independently
 of each other**:
 
-- an HTTP heartbeat to `POST /api/v1/auth/workers/heartbeat`, authenticated by
+- an HTTP heartbeat to `POST /v1/auth/workers/heartbeat`, authenticated by
   its session; and
 - an empty NATS message on `urth.v1.presence.<runner-uid>.<worker-uid>`.
 

@@ -12,7 +12,7 @@ test('login → create project → grant runner → execute scenario → logs an
   const workerBinary = process.env.URTH_E2E_WORKER
   if (!workerBinary) throw new Error('Set URTH_E2E_WORKER to a built nats-worker binary')
   const suffix = Date.now().toString(36)
-  const runnerName = `m7-${suffix}`
+  const runnerName = `m8-${suffix}`
   const scenarioName = `check-${suffix}`
   const runtimeErrors: string[] = []
   page.on('pageerror', (error) => runtimeErrors.push(error.message))
@@ -22,12 +22,11 @@ test('login → create project → grant runner → execute scenario → logs an
   await page.getByRole('button', {name: 'Log in', exact: true}).click()
   await page.waitForURL(/\/a\//)
   await page.getByRole('link', {name: 'Create project', exact: true}).click()
-  await page.getByLabel('Project name').fill(`M7 ${suffix}`)
+  await page.getByLabel('Project name').fill(`M8 ${suffix}`)
   await page.getByRole('button', {name: 'Create project', exact: true}).click()
   await page.waitForURL(/\/p\//)
   const base = new URL(page.url()).pathname.replace(/\/members$/, '')
   const accountBase = base.split('/p/')[0]!
-  const accountID = accountBase.split('/')[2]!
   const projectID = base.split('/p/')[1]!
   await page.goto(`${accountBase}/runners`)
   await page.getByRole('button', {name: 'Register runner', exact: true}).click()
@@ -45,13 +44,15 @@ test('login → create project → grant runner → execute scenario → logs an
   await expect(page.getByRole('dialog')).toHaveCount(0)
   // Bootstrap a real process using the product's one-time token endpoint.
   // Credentials remain in a private temporary file and never enter argv.
-  const token = await page.evaluate(async ({accountID, runnerName}) => {
+  const token = await page.evaluate(async ({runnerID, runnerName}) => {
     const session = JSON.parse(sessionStorage.getItem('urth.session')!) as {access_token: string}
-    const response = await fetch(`/v1/accounts/${accountID}/runners/${runnerName}/tokens`, {method: 'POST', headers: {Authorization: `Bearer ${session.access_token}`}})
+    const response = await fetch(`/v1/agent-identities/${runnerID}/tokens`, {method: 'POST', headers: {Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID()}, body: JSON.stringify({apiVersion: 'identity.sre-norns.com/v1', kind: 'agent-identity-tokens', metadata: {name: runnerName}, spec: {}})})
     if (!response.ok) throw new Error(`Worker token: ${response.status}`)
-    return response.text()
-  }, {accountID, runnerName})
-  const dir = mkdtempSync(join(tmpdir(), 'm7-e2e-'))
+    const result = await response.json() as {token?: string}
+    if (!result.token) throw new Error('Token secret unavailable')
+    return result.token
+  }, {runnerID, runnerName})
+  const dir = mkdtempSync(join(tmpdir(), 'm8-e2e-'))
   const tokenFile = join(dir, 'token')
   writeFileSync(tokenFile, token, {mode: 0o600})
   const workerName = `${runnerName}-worker`

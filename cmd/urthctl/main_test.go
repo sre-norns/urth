@@ -124,7 +124,7 @@ func TestMembersAddRestoresARemovedMembership(t *testing.T) {
 	var patched string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		inactive := `{"id":"m2","user_id":"u2","email":"bob@example.test","status":"inactive","revision":3}`
+		inactive := `{"apiVersion":"identity.sre-norns.com/v1","kind":"project-memberships","metadata":{"uid":"m2","name":"","version":3},"spec":{"userId":"u2"},"status":{"email":"bob@example.test","phase":"inactive","displayName":null}}`
 		switch {
 		case r.Method == "GET" && r.URL.Path == "/v1/projects/p/member-candidates":
 			fmt.Fprint(w, `{"items":[{"user_id":"u2","email":"bob@example.test","project_membership_status":"inactive"}]}`)
@@ -135,7 +135,7 @@ func TestMembersAddRestoresARemovedMembership(t *testing.T) {
 		case r.Method == "PATCH" && r.URL.Path == "/v1/project-memberships/m2":
 			body, _ := io.ReadAll(r.Body)
 			patched = r.Header.Get("If-Match") + " " + string(body)
-			fmt.Fprint(w, `{"id":"m2","user_id":"u2","email":"bob@example.test","status":"active","revision":4}`)
+			fmt.Fprint(w, strings.ReplaceAll(strings.ReplaceAll(inactive, "inactive", "active"), `"version":3`, `"version":4`))
 		default:
 			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)
@@ -152,10 +152,10 @@ func TestMembersAddRestoresARemovedMembership(t *testing.T) {
 	if err := parsed.Run(cfg); err != nil {
 		t.Fatal(err)
 	}
-	if patched != `"3" {"status":"active"}` {
+	if patched != `"3" {"operation":"activate"}` {
 		t.Fatalf("restored with %q", patched)
 	}
-	if !strings.Contains(out.String(), `"status": "active"`) {
+	if !strings.Contains(out.String(), `"phase": "active"`) {
 		t.Fatalf("printed %s", out.String())
 	}
 }
@@ -196,6 +196,58 @@ func TestLocalFileRunDoesNotSelectAProfile(t *testing.T) {
 			parsed, appCli, cfg = parse(t, "run", "server-scenario", "--runner.working-directory="+t.TempDir())
 			if err := prepareCommand(parsed, appCli, cfg); err == nil {
 				t.Error("server scenario execution accepted an unusable profile")
+			}
+		})
+	}
+}
+
+func TestIdentityViewsUseCanonicalJSONAndYAML(t *testing.T) {
+	for _, format := range []string{cli.FormatJSON, cli.FormatYAML} {
+		for _, value := range []any{
+			projectView{model.Project{Resource: model.Resource{ID: "p", Name: "project", Revision: 2}}},
+			memberView{model.ProjectMembership{Resource: model.Resource{ID: "m", Revision: 2}, UserID: "u"}},
+			invitationView{model.AccountInvitation{Resource: model.Resource{ID: "i", Revision: 2}, Token: "do-not-print"}},
+			sessionView{Session: model.Session{Resource: model.Resource{ID: "s", Revision: 2}}},
+		} {
+			var out bytes.Buffer
+			if err := (cli.Output{Format: format, Stdout: &out}).Encode(value); err != nil {
+				t.Fatal(err)
+			}
+			text := out.String()
+			for _, want := range []string{"identity.sre-norns.com/v1", "metadata", "spec", "status"} {
+				if !strings.Contains(text, want) {
+					t.Fatalf("missing %s: %s", want, text)
+				}
+			}
+			if strings.Contains(text, "do-not-print") {
+				t.Fatal("read view leaked credential")
+			}
+		}
+	}
+}
+
+func TestCurrentExampleManifests(t *testing.T) {
+	files, err := filepath.Glob("../../examples/*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range files {
+		switch filepath.Ext(path) {
+		case ".yaml", ".yml", ".json":
+		default:
+			continue
+		}
+		t.Run(filepath.Base(path), func(t *testing.T) {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			doc, err := decodeManifest(data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if doc.APIVersion != urth.APIVersion || doc.Kind == "" || doc.Spec == nil {
+				t.Fatalf("not a canonical create/apply document: %+v", doc)
 			}
 		})
 	}

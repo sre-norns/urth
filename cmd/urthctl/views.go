@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -221,14 +220,6 @@ func (v grantView) TableRow(wide bool) []any {
 		row = append(row, v.Metadata.UID, v.Metadata.Version)
 	}
 	return row
-}
-
-// warnLegacyAPIVersion says that a manifest's `apiVersion: v1` is on its way
-// out. The server still accepts it for one release.
-func warnLegacyAPIVersion(source string, m manifest.ResourceManifest) {
-	if m.APIVersion == urth.LegacyAPIVersion {
-		fmt.Fprintf(os.Stderr, "warning: %s: apiVersion %q is deprecated; use %q\n", source, m.APIVersion, urth.APIVersion)
-	}
 }
 
 // decodeManifest reads one manifest, as JSON when it is a JSON document --

@@ -18,7 +18,7 @@ spec:
     kind: http
     timeout: 5s
     spec:
-      target: http://localhost:8080/api/v1/version
+      target: http://localhost:8080/v1/version
       http:
         method: GET
         # headers:

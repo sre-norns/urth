@@ -6,7 +6,7 @@ import {server} from '../test/server'
 import {api, page, renderAt, resource, signIn} from '../identity/test-support'
 
 const metadata = {uid: 'worker-1', name: 'edge-worker', version: 3, account: 'acct-1'}
-const worker = {apiVersion: 'v1', kind: 'workerInstances', metadata, spec: {}, status: {paused: false, presence: {condition: 'api-unreachable', api: 'offline', nats: 'online'}}}
+const worker = {apiVersion: 'urth.sre-norns.com/v1', kind: 'workerInstances', metadata, spec: {}, status: {paused: false, presence: {condition: 'api-unreachable', api: 'offline', nats: 'online'}}}
 afterEach(() => sessionStorage.clear())
 
 describe('infrastructure', () => {
@@ -50,11 +50,11 @@ describe('infrastructure', () => {
     signIn()
     let version = 1
     const writes: string[] = []
-    const runner = () => ({apiVersion: 'v1', kind: 'runners', metadata: {uid: 'runner-1', name: 'edge', version, account: 'acct-1'}, spec: {active: true, description: version === 1 ? 'Original' : 'Changed elsewhere'}})
+    const runner = () => ({apiVersion: 'urth.sre-norns.com/v1', kind: 'runners', metadata: {uid: 'runner-1', name: 'edge', version, account: 'acct-1'}, spec: {active: true, description: version === 1 ? 'Original' : 'Changed elsewhere'}})
     server.use(
       http.get(api('/accounts/acct-1/runners/edge'), () => HttpResponse.json(runner(), {headers: {ETag: `"${version}"`}})),
       http.get(api('/accounts/acct-1/workers'), () => HttpResponse.json(page([]))),
-      http.get(api('/agent-identities/runner-1'), () => HttpResponse.json(resource('runner-1', {name: 'edge', description: 'Identity'}))),
+      http.get(api('/agent-identities/runner-1'), () => HttpResponse.json(resource('agent-identities', 'runner-1', {description: 'Identity'}, {}, {name: 'edge'}))),
       http.get(api('/agent-identities/runner-1/tokens'), () => HttpResponse.json(page([]))),
       http.get(api('/agent-identities/runner-1/project-grants'), () => HttpResponse.json(page([]))),
       http.put(api('/accounts/acct-1/runners/edge'), async ({request}) => {
@@ -81,7 +81,7 @@ describe('infrastructure', () => {
   it('resolves account diagnostic failures without offering a project retry', async () => {
     signIn()
     let resolved = false
-    const failure = () => ({apiVersion: 'v1', kind: 'dispatch-failures', metadata: {...metadata, name: 'diagnostic-1'}, spec: {reason: 'malformed-envelope', occurredAt: '2026-10-01T00:00:00Z'}, status: {resolved}})
+    const failure = () => ({apiVersion: 'urth.sre-norns.com/v1', kind: 'dispatch-failures', metadata: {...metadata, name: 'diagnostic-1'}, spec: {reason: 'malformed-envelope', occurredAt: '2026-10-01T00:00:00Z'}, status: {resolved}})
     server.use(
       http.get(api('/accounts/acct-1/dispatch-failures/diagnostic-1'), () => HttpResponse.json(failure())),
       http.post(api('/accounts/acct-1/dispatch-failures/diagnostic-1/resolve'), () => {resolved = true; return HttpResponse.json(failure())}),

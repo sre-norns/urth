@@ -19,6 +19,11 @@ changes, add a new ADR that supersedes the old one instead of rewriting the old 
 | [0006](./adr/0006-control-loop-placement.md) | Accepted | Run control loops in every API server replica by default, composed from `pkg/controllers` so extraction to a separate process stays a configuration change. |
 | [0007](./adr/0007-runner-queue-addressing.md) | Accepted | Address a Runner's queue by its immutable name so a recreated Runner reattaches to it, keep entitlement to execute a run keyed by UID in Postgres, and garbage-collect queues whose Runner is gone. Supersedes ADR 0004 §3 on addressing only. |
 
+## Portfolio unification
+
+[M8 canonical adoption](./m8-canonical-adoption.md) records the released dependencies,
+Urth/identity boundaries, token operation and coordinated client cutover.
+
 ## Implementation review backlog
 
 [`review-backlog/`](./review-backlog/README.md) turns the NATS Worker implementation

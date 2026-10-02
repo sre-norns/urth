@@ -10,6 +10,7 @@ import (
 	"github.com/sre-norns/wyrd/identity/cli"
 	identityclient "github.com/sre-norns/wyrd/identity/client"
 	"github.com/sre-norns/wyrd/identity/model"
+	"github.com/sre-norns/wyrd/identity/resource"
 	"github.com/sre-norns/wyrd/pkg/manifest"
 )
 
@@ -36,7 +37,7 @@ func (c *commandContext) project() (model.ProjectID, error) {
 }
 
 // setStatus moves an identity resource to status, the way the identity routes
-// retire and restore things: a revision-guarded PATCH of the status alone.
+// retire and restore things: a revision-guarded lifecycle command.
 func setStatus[T any, ID ~string](ctx context.Context, id ID, status string,
 	get func(context.Context, ID) (T, bool, error),
 	update func(context.Context, T) (T, bool, error)) (T, error) {
@@ -47,8 +48,12 @@ func setStatus[T any, ID ~string](ctx context.Context, id ID, status string,
 	if !found {
 		return value, fmt.Errorf("%q not found", id)
 	}
-	encoded, _ := json.Marshal(status)
-	ctx = identityclient.WithRequestOptions(ctx, identityclient.RequestOptions{Patch: map[string]json.RawMessage{"status": encoded}})
+	operation, ok := map[string]string{"active": "activate", "inactive": "deactivate", "revoked": "revoke"}[status]
+	if !ok {
+		return value, fmt.Errorf("unsupported lifecycle state %q", status)
+	}
+	encoded, _ := json.Marshal(operation)
+	ctx = identityclient.WithRequestOptions(ctx, identityclient.RequestOptions{Patch: map[string]json.RawMessage{"operation": encoded}})
 	value, _, err = update(ctx, value)
 	return value, err
 }
@@ -106,7 +111,7 @@ type (
 
 type projectView struct{ model.Project }
 
-func (v projectView) MarshalJSON() ([]byte, error) { return json.Marshal(v.Project) }
+func (v projectView) MarshalJSON() ([]byte, error) { return identityJSON(v.Project) }
 
 func (projectView) TableHeader(bool) []string {
 	return []string{"NAME", "ID", "STATUS", "DESCRIPTION", "AGE"}
@@ -185,7 +190,7 @@ type (
 
 type memberView struct{ model.ProjectMembership }
 
-func (v memberView) MarshalJSON() ([]byte, error) { return json.Marshal(v.ProjectMembership) }
+func (v memberView) MarshalJSON() ([]byte, error) { return identityJSON(v.ProjectMembership) }
 
 func (memberView) TableHeader(wide bool) []string {
 	header := []string{"ID", "EMAIL", "NAME", "STATUS", "AGE"}
@@ -319,7 +324,7 @@ type (
 
 type invitationView struct{ model.AccountInvitation }
 
-func (v invitationView) MarshalJSON() ([]byte, error) { return json.Marshal(v.AccountInvitation) }
+func (v invitationView) MarshalJSON() ([]byte, error) { return identityJSON(v.AccountInvitation) }
 
 func (invitationView) TableHeader(wide bool) []string {
 	header := []string{"ID", "EMAIL", "ROLE", "STATUS", "EXPIRES"}
@@ -369,6 +374,9 @@ func (c *InvitationsCreateCmd) Run(cfg *commandContext) error {
 		// The token is shown once; a manual invitation is useless without it.
 		fmt.Fprintf(os.Stderr, "Invitation token (shown once): %s\n", invitation.Token)
 	}
+	if cfg.Env.Output.Structured() {
+		return cfg.Env.Output.EncodeResult(invitation)
+	}
 	return cli.RenderUpsert(cfg.Env.Output, invitationView{invitation}, true, nil)
 }
 
@@ -398,7 +406,7 @@ type sessionView struct {
 	current bool
 }
 
-func (v sessionView) MarshalJSON() ([]byte, error) { return json.Marshal(v.Session) }
+func (v sessionView) MarshalJSON() ([]byte, error) { return identityJSON(v.Session) }
 
 func (sessionView) TableHeader(wide bool) []string {
 	header := []string{"ID", "CURRENT", "CLIENT", "METHOD", "STATUS", "EXPIRES"}
@@ -445,4 +453,12 @@ func (c *SessionsRevokeCmd) Run(cfg *commandContext) error {
 	}
 	session, err := setStatus(cfg.Context, model.SessionID(c.ID), "revoked", api.Sessions().Get, api.Sessions().CreateOrUpdate)
 	return cli.RenderResource(cfg.Env.Output, sessionView{Session: session}, err)
+}
+
+func identityJSON(value any) ([]byte, error) {
+	wire, err := resource.Encode(value)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(wire)
 }

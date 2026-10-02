@@ -1,72 +1,61 @@
-# Examples of working with Urth
+# Current API examples
 
-## Using API directly
+Use a signed-in account and project. The CLI stores credentials in its profile;
+all resource examples use `apiVersion: urth.sre-norns.com/v1`. Shared identity
+resources use `identity.sre-norns.com/v1`. Old flat documents and `v1` aliases
+are unsupported.
 
-### Create scenario from a file
-Create your first scenario using curl / [httpie](https://httpie.io/) / Test HTTP client of your choice
-```bash
-curl -X POST 'http://localhost:8080/api/v1/scenarios'  \
--H "Content-Type: application/json" \
---data-binary "@examples/scenario.tcp.json"
+```sh
+urthctl auth login --api-server-address=http://localhost:8080
+urthctl projects create quickstart --use
+urthctl apply examples/runner.yaml
+urthctl apply examples/scenario.http.yaml
+# Authorize the runner for this project before triggering; see the main README.
+urthctl trigger bb-http-self-prob
+urthctl get scenarios -o yaml
 ```
 
-The command above will create a new scenario based on [example resource manifest](./scenario.tcp.json). Note the system generated ID for the newly created resource.
-You can use that ID to modify the example file and update scenario on the server.
+Edit a read document and apply it back to retain its version precondition:
 
-### Update scenario object
-```bash
-curl -X PUT 'http://localhost:8080/api/v1/scenarios/1'  \
--H "Content-Type: application/json" \
---data-binary "@examples/scenario.tcp.json"
+```sh
+urthctl get scenario bb-http-self-prob -o yaml > /tmp/scenario.yaml
+# Edit /tmp/scenario.yaml, then:
+urthctl apply /tmp/scenario.yaml
 ```
 
-### List all registered scenarios
-```bash
-curl 'http://localhost:8080/api/v1/scenarios'
+For direct HTTP, set `API`, `PROJECT_ID`, `SCENARIO` and `ACCESS_TOKEN` to the API,
+project UID, scenario name and your user bearer credential. The run request
+fixture is a create input, not a worker completion report:
+
+```sh
+curl --fail-with-body -X POST "$API/v1/projects/$PROJECT_ID/scenarios/$SCENARIO/results" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: $(uuidgen)" --data-binary @examples/scenario.run.started.json
 ```
 
-### Delete scenario
-```bash
-curl -X DELETE 'http://localhost:8080/api/v1/scenarios/1'
+Shared identity creates use typed envelopes. For example, the project API takes:
+
+```json
+{
+  "apiVersion": "identity.sre-norns.com/v1",
+  "kind": "projects",
+  "metadata": {"name": "edge-monitoring"},
+  "spec": {"description": "Private network checks"}
+}
 ```
 
-## Trigger a scenario Run manually (outside of normal schedule)
-```bash
-curl -X PUT 'http://localhost:8080/api/v1/scenarios/1/results'  \
--H "Content-Type: application/json" \
---data-binary "@examples/run.scenario.json"
+Send it to `POST /v1/accounts/:account/projects` with an idempotency key.
+Configuration PATCHes send only writable `metadata`/`spec`; lifecycle changes
+send a separate command such as `{"operation":"deactivate"}`. Both edits carry
+the ETag read as `If-Match`. For enrolment, `urthctl runners token NAME` uses
+`POST /v1/agent-identities/:runnerUID/tokens` and prints its one-time secret.
+
+Local probes need no account or server:
+
+```sh
+urthctl run -f examples/scenario.rest.httpbin.yml
 ```
 
-
-## Post that a job has been picked up by a worker:
-```bash
-curl -X POST 'http://localhost:8080/api/v1/scenarios/4/results'  \
--H "Content-Type: application/json" \
---data-binary "@examples/scenario.run.started.json"
-```
-
-## Create a slot for a worker
-```bash
-curl -X POST 'http://localhost:8080/api/v1/runners'  \
--H "Content-Type: application/json" \
---data-binary "@examples/runner.json"
-```
-
-
-
-## Using `urhctl`
-
-Create a scenario using manifest file:
-```bash
-go run ./cmd/urthctl create ./examples/scenario.rest.httpbin.yml
-```
-
-Run a scenario locally, without registering it or waiting for its schedule:
-```bash
-go run ./cmd/urthctl run -f ./examples/scenario.rest.httpbin.yml
-```
-Create a runner using manifest file:
-```bash
-go run ./cmd/urthctl create ./examples/runner.yaml
-```
-
+The REST self-check examples call only the public `/v1/version` endpoint and
+contain no credentials. Worker registration, run claims, status reports and
+artifact upload are performed by `nats-worker`, using its separate capabilities.

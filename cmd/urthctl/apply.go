@@ -29,8 +29,6 @@ func (c *ApplyCmd) Run(cfg *commandContext) error {
 			return fmt.Errorf("client: %w", err)
 		}
 
-		warnLegacyAPIVersion(filename, resourceSpec)
-
 		if !c.DryRun {
 			_, _, err = apiClient.ApplyObjectDefinition(cfg.Context, resourceSpec)
 			if err != nil {

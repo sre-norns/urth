@@ -52,7 +52,7 @@ func TestRunnerIdentityStaysPairedWithItsRunner(t *testing.T) {
 	h := newHarness(t)
 
 	code, _, data := h.identityRequest("POST", fmt.Sprintf("/v1/accounts/%s/agent-identities", h.scope.Account),
-		map[string]string{"Idempotency-Key": "orphan-identity"}, map[string]string{"name": "orphan"})
+		map[string]string{"Idempotency-Key": "orphan-identity"}, map[string]any{"apiVersion": "identity.sre-norns.com/v1", "kind": "agent-identities", "metadata": map[string]string{"name": "orphan"}, "spec": map[string]any{}})
 	require.True(t, code >= 400 && code < 500, "a bare identity must be refused, got %d: %s", code, data)
 	require.Contains(t, string(data), "/runners", "the refusal should say where runners are registered")
 	var orphans int64
@@ -64,13 +64,13 @@ func TestRunnerIdentityStaysPairedWithItsRunner(t *testing.T) {
 	code, headers, data := h.identityRequest("GET", path, nil, nil)
 	require.Equal(t, http.StatusOK, code, "registering a runner still creates its identity: %s", data)
 
-	code, _, data = h.identityRequest("PATCH", path, map[string]string{"If-Match": headers.Get("ETag")}, map[string]string{"name": "renamed"})
+	code, _, data = h.identityRequest("PATCH", path, map[string]string{"If-Match": headers.Get("ETag")}, map[string]any{"metadata": map[string]string{"name": "renamed"}})
 	require.True(t, code >= 400 && code < 500, "a rename away from the runner must be refused, got %d: %s", code, data)
 	var machine im.AgentIdentity
 	require.NoError(t, h.DB.Where("id = ?", runner.UID).First(&machine).Error)
 	require.Equal(t, "paired-runner", machine.Name)
 
-	code, _, data = h.identityRequest("PATCH", path, map[string]string{"If-Match": headers.Get("ETag")}, map[string]string{"status": "suspended"})
+	code, _, data = h.identityRequest("PATCH", path, map[string]string{"If-Match": headers.Get("ETag")}, map[string]string{"operation": "deactivate"})
 	require.Equal(t, http.StatusOK, code, "suspending a runner's identity stays allowed: %s", data)
 }
 
@@ -105,7 +105,7 @@ func TestEmailInvitationIsDeliveredWithTheIssuerLink(t *testing.T) {
 
 	code, _, data := h.identityRequest("POST", fmt.Sprintf("/v1/accounts/%s/invitations", h.scope.Account),
 		map[string]string{"Idempotency-Key": "invite-new-user"},
-		map[string]string{"email": "new@example.test", "role": "member", "delivery": "email"})
+		map[string]any{"apiVersion": "identity.sre-norns.com/v1", "kind": "account-invitations", "spec": map[string]string{"email": "new@example.test", "role": "member", "delivery": "email"}})
 	require.Equal(t, http.StatusCreated, code, string(data))
 
 	// One pass of the worker the loop runs, rather than waiting on its ticker.
@@ -144,7 +144,7 @@ func TestWithoutMailTheEmailInvitationIsRefused(t *testing.T) {
 	require.NotContains(t, h.Server.Loops.Names(), "identity-invitation-mail")
 	code, _, _ := h.identityRequest("POST", fmt.Sprintf("/v1/accounts/%s/invitations", h.scope.Account),
 		map[string]string{"Idempotency-Key": "invite-no-mail"},
-		map[string]string{"email": "new@example.test", "role": "member", "delivery": "email"})
+		map[string]any{"apiVersion": "identity.sre-norns.com/v1", "kind": "account-invitations", "spec": map[string]string{"email": "new@example.test", "role": "member", "delivery": "email"}})
 	require.Equal(t, http.StatusServiceUnavailable, code, "email delivery needs a mail provider")
 }
 

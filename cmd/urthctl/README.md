@@ -51,8 +51,7 @@ What `get` prints applies back: `urthctl get scenario NAME -o yaml > s.yaml`, ed
 `urthctl apply s.yaml` (or pipe it to `urthctl apply -`). The manifest carries the
 version it was read at, so a copy someone else has changed since is refused (412)
 rather than written over it; its `status` is the server's and is not sent. Manifests
-say `apiVersion: urth.sre-norns.com/v1`. The older `v1` still applies, with a warning,
-for one release.
+say `apiVersion: urth.sre-norns.com/v1`. Legacy `v1` and missing API versions are rejected.
 
 `urthctl trigger SCENARIO` starts a run on the server now, as the Web UI's "Run now"
 does; `urthctl run` runs a scenario locally.

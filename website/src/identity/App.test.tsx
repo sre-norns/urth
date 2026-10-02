@@ -12,7 +12,7 @@ describe('Urth identity routes', () => {
     signIn()
     server.use(
       http.get(api('/accounts/acct-1/projects'), () =>
-        HttpResponse.json(page([resource('proj-1', {name: 'Plant 2', description: 'Floor network'})])),
+        HttpResponse.json(page([resource('projects', 'proj-1', {description: 'Floor network'}, {}, {name: 'Plant 2'})])),
       ),
     )
     renderAt('/projects')
@@ -25,7 +25,7 @@ describe('Urth identity routes', () => {
     signIn()
     server.use(
       http.get(api('/projects/proj-1'), () =>
-        HttpResponse.json(resource('proj-1', {name: 'Plant 2', description: 'Floor network'})),
+        HttpResponse.json(resource('projects', 'proj-1', {description: 'Floor network'}, {}, {name: 'Plant 2'})),
       ),
       http.get(api('/projects/proj-1/memberships'), () => HttpResponse.json(page([]))),
     )
@@ -38,7 +38,7 @@ describe('Urth identity routes', () => {
     // ProjectMachineDetail has no h1 of its own; axe flagged the page without one.
     signIn()
     server.use(
-      http.get(api('/projects/proj-1'), () => HttpResponse.json(resource('proj-1', {name: 'Plant 2', description: ''}))),
+      http.get(api('/projects/proj-1'), () => HttpResponse.json(resource('projects', 'proj-1', {description: ''}, {}, {name: 'Plant 2'}))),
     )
     renderAt('/projects/proj-1/runners/run-1')
     expect(await screen.findByRole('heading', {level: 1, name: 'Plant 2'})).toBeInTheDocument()
@@ -49,16 +49,16 @@ describe('Urth identity routes', () => {
     const posted: JsonBodyType[] = []
     server.use(
       http.get(api('/accounts/acct-1/runners'), () => HttpResponse.json(page([]))),
-      http.get(api('/accounts/acct-1/runners/edge-eu'), () => HttpResponse.json({apiVersion: 'v1', kind: 'runners', metadata: {uid: 'run-1', name: 'edge-eu', version: 1, account: 'acct-1'}, spec: {active: true, description: 'Frankfurt'}})),
+      http.get(api('/accounts/acct-1/runners/edge-eu'), () => HttpResponse.json({apiVersion: 'urth.sre-norns.com/v1', kind: 'runners', metadata: {uid: 'run-1', name: 'edge-eu', version: 1, account: 'acct-1'}, spec: {active: true, description: 'Frankfurt'}})),
       http.get(api('/accounts/acct-1/workers'), () => HttpResponse.json(page([]))),
-      http.get(api('/agent-identities/run-1'), () => HttpResponse.json(resource('run-1', {name: 'edge-eu', description: 'Frankfurt'}))),
+      http.get(api('/agent-identities/run-1'), () => HttpResponse.json(resource('agent-identities', 'run-1', {description: 'Frankfurt'}, {}, {name: 'edge-eu'}))),
       http.get(api('/agent-identities/run-1/project-grants'), () => HttpResponse.json(page([]))),
       http.get(api('/agent-identities/run-1/tokens'), () => HttpResponse.json(page([]))),
       http.post(api('/accounts/acct-1/runners'), async ({request}) => {
         posted.push((await request.json()) as JsonBodyType)
         return HttpResponse.json(
           {
-            apiVersion: 'v1',
+            apiVersion: 'urth.sre-norns.com/v1',
             kind: 'runners',
             metadata: {uid: 'run-1', name: 'edge-eu', version: 1, account: 'acct-1'},
             spec: {active: true, description: 'Frankfurt'},
@@ -76,7 +76,7 @@ describe('Urth identity routes', () => {
     await user.click(within(dialog).getByRole('button', {name: 'Save'}))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     expect(posted).toEqual([
-      {apiVersion: 'v1', kind: 'runners', metadata: {name: 'edge-eu'}, spec: {active: true, description: 'Frankfurt'}},
+      {apiVersion: 'urth.sre-norns.com/v1', kind: 'runners', metadata: {name: 'edge-eu'}, spec: {active: true, description: 'Frankfurt'}},
     ])
     expect(await screen.findByRole('heading', {name: 'edge-eu'})).toBeInTheDocument()
   })
@@ -94,7 +94,7 @@ describe('Urth identity routes', () => {
 
   it('rejects a project whose returned account disagrees with the route', async () => {
     signIn()
-    server.use(http.get(api('/projects/proj-other'), () => HttpResponse.json(resource('proj-other', {name: 'Other project', description: '', account_id: 'acct-other'}))))
+    server.use(http.get(api('/projects/proj-other'), () => HttpResponse.json(resource('projects', 'proj-other', {description: ''}, {}, {name: 'Other project', account: 'acct-other'}))))
     renderAt('/a/acct-1/p/proj-other/members')
     expect(await screen.findByText('This project does not belong to the account in this address.')).toBeInTheDocument()
     expect(screen.queryByRole('heading', {name: 'Other project'})).not.toBeInTheDocument()

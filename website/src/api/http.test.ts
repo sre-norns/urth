@@ -60,8 +60,16 @@ describe('scoped product requests', () => {
     expect(url.searchParams.has('offset')).toBe(false)
   })
   it('requires manifest results and cursor pages; total is optional', () => {
-    const result = {kind: 'results', metadata: {uid: 'run-1', name: 'check-1', version: 1}, spec: {}, status: {status: 'pending'}}
+    const result = {apiVersion: 'urth.sre-norns.com/v1', kind: 'results', metadata: {uid: 'run-1', name: 'check-1', version: 1}, spec: {}, status: {status: 'pending'}}
     expect(page(run).parse({items: [result], limit: 20, next: 'opaque'}).next).toBe('opaque')
     expect(run.safeParse({name: 'old-flat-run', spec: {}, status: {status: 'pending'}}).success).toBe(false)
   })
+})
+
+it('rejects unrelated resource groups and kinds', () => {
+  const canonical = {apiVersion: 'urth.sre-norns.com/v1', kind: 'results', metadata: {uid: 'r', name: 'run', version: 1}, spec: {}}
+  expect(run.safeParse(canonical).success).toBe(true)
+  expect(run.safeParse({...canonical, apiVersion: 'v1'}).success).toBe(false)
+  expect(run.safeParse({...canonical, apiVersion: 'identity.sre-norns.com/v1'}).success).toBe(false)
+  expect(run.safeParse({...canonical, kind: 'scenarios'}).success).toBe(false)
 })
