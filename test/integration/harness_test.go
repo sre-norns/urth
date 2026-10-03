@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"net"
-	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -101,13 +101,17 @@ type harness struct {
 	releasePort func()
 
 	// diagnostics is a client connection used only by dump.
-	diagnostics *nats.Conn
+	diagnostics   *nats.Conn
+	brokerOptions func(*natsserver.Options)
+	secureHTTP    bool
 }
 
 // harnessOption adjusts a harness before it is composed.
 type harnessOption func(*harnessSettings)
 
 type harnessSettings struct {
+	brokerOptions func(*natsserver.Options)
+	secureHTTP    bool
 	serverOptions []apiserver.Option
 	configure     []func(*apiserver.Config)
 }
@@ -140,12 +144,14 @@ func newHarness(t *testing.T, options ...harnessOption) *harness {
 	port, releasePort := reservePort(t)
 
 	h := &harness{
-		t:           t,
-		ctx:         t.Context(),
-		DB:          openTestSchema(t),
-		natsPort:    port,
-		releasePort: releasePort,
-		natsStore:   t.TempDir(),
+		t:             t,
+		ctx:           t.Context(),
+		DB:            openTestSchema(t),
+		natsPort:      port,
+		releasePort:   releasePort,
+		natsStore:     t.TempDir(),
+		brokerOptions: settings.brokerOptions,
+		secureHTTP:    settings.secureHTTP,
 	}
 
 	h.startNATS()
@@ -220,7 +226,11 @@ func newHarness(t *testing.T, options ...harnessOption) *harness {
 	require.NoError(t, err)
 	h.token = urth.APIToken(session["access_token"].(string))
 
-	h.HTTP = httptest.NewServer(server.Router)
+	if settings.secureHTTP {
+		h.HTTP = httptest.NewTLSServer(server.Router)
+	} else {
+		h.HTTP = httptest.NewServer(server.Router)
+	}
 	t.Cleanup(h.HTTP.Close)
 
 	return h
@@ -234,7 +244,7 @@ func newHarness(t *testing.T, options ...harnessOption) *harness {
 // system.
 func (h *harness) natsConfig() natsq.Config {
 	cfg := natsq.Config{AllowInsecureWorkers: true,
-		ClientConfig: natsq.ClientConfig{URL: h.natsURL()},
+		ClientConfig: natsq.ClientConfig{AllowInsecure: true, URL: h.natsURL()},
 
 		Replicas:         1,
 		MaxJobs:          256,
@@ -260,7 +270,11 @@ func (h *harness) natsConfig() natsq.Config {
 }
 
 func (h *harness) natsURL() string {
-	return fmt.Sprintf("nats://127.0.0.1:%d", h.natsPort)
+	scheme := "nats"
+	if h.brokerOptions != nil {
+		scheme = "tls"
+	}
+	return fmt.Sprintf("%s://127.0.0.1:%d", scheme, h.natsPort)
 }
 
 // startNATS runs an in-process NATS server with JetStream, on the port this
@@ -282,6 +296,9 @@ func (h *harness) startNATS() {
 		NoSigs:    true,
 	}
 
+	if h.brokerOptions != nil {
+		h.brokerOptions(opts)
+	}
 	srv, err := natsserver.NewServer(opts)
 	require.NoError(h.t, err, "failed to start the embedded NATS server")
 
@@ -331,10 +348,9 @@ func (h *harness) client(token urth.APIToken) *client.RestAPIClient {
 		token = h.token
 	}
 	c, err := client.NewRestAPIClient(h.HTTP.URL, client.APIClientConfig{
-		Account: h.scope.Account, Project: h.scope.Project,
-		Token:      token,
-		Timeout:    30 * time.Second,
-		HTTPClient: &http.Client{Timeout: 30 * time.Second},
+		HTTPClient: h.HTTP.Client(), Account: h.scope.Account, Project: h.scope.Project,
+		Token:   token,
+		Timeout: 30 * time.Second,
 	})
 	require.NoError(h.t, err)
 
@@ -501,7 +517,7 @@ func (h *harness) jetStream() jetstream.JetStream {
 	require.NotNil(h.t, h.nats, "the broker is stopped")
 
 	if h.diagnostics == nil || !h.diagnostics.IsConnected() {
-		conn, err := nats.Connect(h.natsURL())
+		conn, err := h.Config.NATS.Connect("test-diagnostics")
 		require.NoError(h.t, err)
 
 		h.diagnostics = conn
@@ -692,7 +708,7 @@ func (h *harness) dumpJetStream() {
 	}
 
 	if h.diagnostics == nil {
-		conn, err := nats.Connect(h.natsURL())
+		conn, err := h.Config.NATS.Connect("test-diagnostics")
 		if err != nil {
 			h.t.Logf("jetstream: cannot connect for diagnostics: %v", err)
 			return
@@ -824,6 +840,9 @@ func (h *harness) startWorker(runnerName manifest.ResourceName, options ...worke
 	token := h.enrolmentToken(runnerName)
 
 	cfg := worker.NewDefaultConfig()
+	cfg.AllowInsecureAPI = !h.secureHTTP
+	cfg.APIServerAddress = h.HTTP.URL
+	cfg.IdentityKeyFile = filepath.Join(h.t.TempDir(), "worker.key")
 	cfg.Name = manifest.ResourceName(fmt.Sprintf("test-worker-%s", randomSuffix()))
 	cfg.Concurrency = 2
 	cfg.APIRegistrationTimeout = 30 * time.Second
@@ -832,7 +851,7 @@ func (h *harness) startWorker(runnerName manifest.ResourceName, options ...worke
 	// Log streaming is a separate publication over the same connection and
 	// nothing here tails a run; leaving it on would only add traffic.
 	cfg.StreamLogs = false
-	cfg.NATS = natsq.ClientConfig{URL: h.natsURL()}
+	cfg.NATS = h.Config.NATS.ClientConfig
 	// The prober writes into it only through the log artifact, but
 	// runner.RunnerConfig declares it and puppeteer would use it.
 	cfg.WorkingDirectory = h.t.TempDir()

@@ -46,7 +46,7 @@ func RegisterIdentity(db *gorm.DB) error {
 			"Artifact":        {Table: "artifacts", IDColumn: "uid", Scope: "project"},
 			"DispatchFailure": {Table: "dispatch_failures", IDColumn: "uid", Scope: "project"},
 		},
-		AuxiliaryTables: []string{"dispatch_outbox"},
+		AuxiliaryTables: []string{"dispatch_outbox", "worker_challenge_records"},
 		GrantRoles:      []im.RoleType{"runner"},
 		Auditor: identity.AuditorFunc(func(ctx context.Context, tx *gorm.DB, a identity.Audit) error {
 			if machine, ok := a.Resource.(*im.AgentIdentity); ok {
@@ -102,6 +102,7 @@ func admitRunnerIdentity(ctx context.Context, tx *gorm.DB, action string, machin
 func WithIdentity(db *gorm.DB, service *identity.Service) ServiceOption {
 	return func(s *serviceImpl) {
 		s.identityDB, s.identity = db, service
+		s.workerDB = db
 		s.store = s.store.WithVisibility(scopedVisibility{DB: db})
 	}
 }

@@ -11,7 +11,9 @@ import (
 
 // RunnersCmd groups runner operations.
 type RunnersCmd struct {
-	Token RunnerTokenCmd `cmd:"" help:"Issue an enrolment token a runner's workers register with"`
+	Block   RunnerBlockCmd   `cmd:"" help:"Block a verified worker fingerprint"`
+	Unblock RunnerUnblockCmd `cmd:"" help:"Unblock a verified worker fingerprint"`
+	Token   RunnerTokenCmd   `cmd:"" help:"Issue an enrolment token a runner's workers register with"`
 }
 
 // RunnerTokenCmd issues the token a runner's workers start with (RUNNER_TOKEN).
@@ -127,4 +129,58 @@ func (c *RunnerAuthorizationsDeleteCmd) Run(cfg *commandContext) error {
 	}
 	fmt.Printf("Deleted runner authorization %q.\n", c.Name)
 	return nil
+}
+
+type RunnerBlockCmd struct {
+	Name        manifest.ResourceName `arg:"" help:"Runner name"`
+	Fingerprint string                `arg:"" help:"Verified sha256 worker fingerprint"`
+	Reason      string                `help:"Reason for blocking the worker"`
+}
+type RunnerUnblockCmd struct {
+	Name        manifest.ResourceName `arg:"" help:"Runner name"`
+	Fingerprint string                `arg:"" help:"Verified sha256 worker fingerprint"`
+}
+
+func (c *RunnerBlockCmd) Run(cfg *commandContext) error {
+	return editWorkerBlocklist(cfg, c.Name, c.Fingerprint, c.Reason, true)
+}
+func (c *RunnerUnblockCmd) Run(cfg *commandContext) error {
+	return editWorkerBlocklist(cfg, c.Name, c.Fingerprint, "", false)
+}
+func editWorkerBlocklist(cfg *commandContext, name manifest.ResourceName, fingerprint, reason string, block bool) error {
+	api, err := cfg.NewClient()
+	if err != nil {
+		return err
+	}
+	ctx, cancel := cfg.ClientCallContext()
+	defer cancel()
+	entry, found, err := api.Runners().Get(ctx, name)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return fmt.Errorf("runner %q not found", name)
+	}
+	runner, err := urth.NewRunner(entry)
+	if err != nil {
+		return err
+	}
+	entries := make([]urth.BlockedWorker, 0, len(runner.Spec.BlockedWorkers)+1)
+	for _, existing := range runner.Spec.BlockedWorkers {
+		if existing.Identity != fingerprint {
+			entries = append(entries, existing)
+		}
+	}
+	if block {
+		entries = append(entries, urth.BlockedWorker{Identity: fingerprint, Reason: reason})
+	}
+	runner.Spec.BlockedWorkers = entries
+	if _, err := urth.NewRunner(runner.ToManifest()); err != nil {
+		return err
+	}
+	_, err = api.Runners().Update(ctx, entry.Metadata.GetVersionedID(), runner.ToManifest())
+	if err == nil {
+		fmt.Printf("Updated blocked workers for runner %q.\n", name)
+	}
+	return err
 }

@@ -30,12 +30,13 @@ export const scenario = manifest('scenarios', z.object({
 }).loose(), z.object({nextScheduledRunTime: z.string().optional(), results: z.array(run).optional()}).loose())
 export const presence = z.enum(['online', 'offline', 'api-unreachable', 'nats-unreachable', 'unknown'])
 export const worker = manifest('workerInstances', z.object({requestedTTL: z.number().optional()}).loose(), z.object({
-  paused: z.boolean().optional(), ttl: z.number().optional(),
+  fingerprint: z.string().optional(), paused: z.boolean().optional(), ttl: z.number().optional(),
   lastSeenTime: z.string().nullable().optional(), natsLastSeenTime: z.string().nullable().optional(), leftAt: z.string().nullable().optional(), lastSeenVia: z.string().optional(),
   presence: z.object({condition: presence, api: z.string(), nats: z.string()}).optional(),
 }).loose())
+export const blockedWorker = z.object({identity: z.string().regex(/^sha256:[0-9a-f]{64}$/), reason: z.string().max(1024).optional()})
 export const runner = manifest('runners', z.object({
-  active: z.boolean(), description: z.string().optional(), requirements: selector.optional(), maxInstance: z.number().optional(),
+  active: z.boolean(), description: z.string().optional(), requirements: selector.optional(), maxInstance: z.number().optional(), blockedWorkers: z.array(blockedWorker).max(1024).optional(),
 }).loose(), z.object({
   numberInstances: z.number().optional(), activeInstances: z.array(z.unknown()).optional(),
   channel: z.object({observed: z.boolean().optional(), pullers: z.number().optional(), pending: z.number().optional()}).loose().optional(),

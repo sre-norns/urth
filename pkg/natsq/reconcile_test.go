@@ -52,7 +52,7 @@ func TestEnsureRunnerChannelRestoresADeletedConsumer(t *testing.T) {
 	defer cancel()
 
 	// Registration provisions the runner's queue.
-	if _, err := transport.ConnectionInfoFor(ctx, reconcileRunnerUID); err != nil {
+	if _, err := transport.ConnectionInfoFor(ctx, reconcileRunnerUID, "reconcile-worker", time.Now().Add(time.Hour)); err != nil {
 		t.Fatalf("failed to provision the runner channel: %v", err)
 	}
 
@@ -189,7 +189,7 @@ func dispatchEntry(eventUID string, resultUID manifest.ResourceID) urth.Dispatch
 func mustJetStreamFor(t *testing.T, url string) jetstream.JetStream {
 	t.Helper()
 
-	conn, err := natsq.ClientConfig{URL: url}.Connect("test-consumer")
+	conn, err := natsq.ClientConfig{AllowInsecure: true, URL: url}.Connect("test-consumer")
 	if err != nil {
 		t.Fatalf("failed to connect to NATS: %v", err)
 	}

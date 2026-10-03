@@ -37,9 +37,9 @@ func (w *Worker) execute(ctx context.Context, envelope natsq.DispatchEnvelope, a
 	defer cancel()
 
 	var playOptions []runner.PlayOption
-	if w.config.StreamLogs && w.conn != nil {
+	if w.config.StreamLogs {
 		playOptions = append(playOptions,
-			runner.WithLogPublisher(natsq.NewLogPublisher(w.conn, w.runnerUID, envelope.ResultUID)))
+			runner.WithLogPublisher(workerLogPublisher{worker: w, runnerUID: w.RunnerUID(), resultUID: envelope.ResultUID}))
 	}
 
 	log.Printf("running %v: kind=%v timeout=%v", envelope.ResultUID, auth.Prob.Kind, timeout)
@@ -109,8 +109,9 @@ func (w *Worker) report(ctx context.Context, envelope natsq.DispatchEnvelope, au
 	reportCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), reportTimeout)
 	defer cancel()
 
+	runnerMeta, workerMeta := w.executionMetadata()
 	labels := manifest.MergeLabels(
-		w.config.LabelJob(w.runnerMeta, w.workerMeta, urth.Job{
+		w.config.LabelJob(runnerMeta, workerMeta, urth.Job{
 			ResultName:   manifest.ResourceName(envelope.ResultUID),
 			ScenarioName: envelope.ScenarioName,
 		}),
@@ -200,4 +201,16 @@ func (w *Worker) reportFailure(ctx context.Context, auth urth.AuthJobResponse, r
 	if _, err := w.apiClient.Results("").UpdateStatus(reportCtx, auth.VersionedResourceID, auth.Token, status); err != nil {
 		log.Printf("failed to report run failure (%v): %v", reason, err)
 	}
+}
+
+// A run can outlive registration replacement. Resolve its transport per line so
+// best-effort logs continue on the newly bound connection with the same Runner.
+type workerLogPublisher struct {
+	worker    *Worker
+	runnerUID manifest.ResourceID
+	resultUID manifest.ResourceID
+}
+
+func (p workerLogPublisher) PublishLine(line []byte) {
+	natsq.NewLogPublisher(p.worker.currentConnection(), p.runnerUID, p.resultUID).PublishLine(line)
 }

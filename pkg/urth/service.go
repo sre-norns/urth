@@ -59,6 +59,8 @@ type RunnersAPI interface {
 	// GetToken issues a revocable machine token for runner enrolment.
 	GetToken(ctx context.Context, runID manifest.ResourceName) (APIToken, bool, error)
 
+	ChallengeWorker(ctx context.Context, token APIToken, worker manifest.ResourceManifest) (WorkerChallenge, error)
+
 	// AuthWorker registers a worker, returning its assigned identity, a session
 	// credential for authenticating later calls, and where to collect work.
 	AuthWorker(ctx context.Context, token APIToken, worker manifest.ResourceManifest) (WorkerRegistrationResponse, error)
@@ -321,10 +323,12 @@ var _ Service = (*serviceImpl)(nil)
 
 type (
 	serviceImpl struct {
-		store      *dbstore.DBStore
-		identityDB *gorm.DB
-		identity   *identity.Service
-		scheduler  Scheduler
+		store                 *dbstore.DBStore
+		identityDB            *gorm.DB
+		workerDB              *gorm.DB
+		storageTestEnrollment bool
+		identity              *identity.Service
+		scheduler             Scheduler
 
 		keys           SigningKeys
 		transport      WorkerTransportProvider
@@ -361,14 +365,16 @@ func (s *serviceImpl) workerHeartbeatInterval() time.Duration {
 
 func (s *serviceImpl) Runners() RunnersAPI {
 	return &runnersAPIImpl{
-		identity:         s.identity,
-		identityDB:       s.identityDB,
-		store:            s.store,
-		hmacSampleSecret: s.keys.Enrolment,
-		keys:             s.keys,
-		transport:        s.transport,
-		sessionTTL:       s.sessionTTL,
-		channels:         s.channels,
+		identity:              s.identity,
+		identityDB:            s.identityDB,
+		workerDB:              s.workerDB,
+		storageTestEnrollment: s.storageTestEnrollment,
+		store:                 s.store,
+		hmacSampleSecret:      s.keys.Enrolment,
+		keys:                  s.keys,
+		transport:             s.transport,
+		sessionTTL:            s.sessionTTL,
+		channels:              s.channels,
 	}
 }
 
@@ -970,6 +976,15 @@ func (m *resultsAPIImpl) claimRun(ctx context.Context, resultUID manifest.Resour
 		return AuthJobResponse{}, claimForbidden("claim requires a dispatch ID")
 	}
 
+	if m.identityDB != nil {
+		var locked Runner
+		if err := m.identityDB.WithContext(ctx).Clauses(clause.Locking{Strength: "SHARE"}).Where("uid = ?", claims.RunnerID).First(&locked).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return AuthJobResponse{}, claimForbidden("runner missing")
+			}
+			return AuthJobResponse{}, claimUnavailable("lock runner for claim", err)
+		}
+	}
 	worker, runner, err := m.loadClaimant(ctx, claims)
 	if err != nil {
 		return AuthJobResponse{}, err
@@ -1323,10 +1338,12 @@ func (m *resultsAPIImpl) Get(ctx context.Context, id manifest.ResourceName) (res
 // / Runners resources API
 // ------------------------------
 type runnersAPIImpl struct {
-	identity         *identity.Service
-	identityDB       *gorm.DB
-	store            resourceStore
-	hmacSampleSecret []byte
+	workerDB              *gorm.DB
+	storageTestEnrollment bool
+	identity              *identity.Service
+	identityDB            *gorm.DB
+	store                 resourceStore
+	hmacSampleSecret      []byte
 
 	keys       SigningKeys
 	transport  WorkerTransportProvider
@@ -1601,6 +1618,16 @@ func (m *workersAPIImpl) Heartbeat(ctx context.Context, session APIToken, reques
 		return WorkerHeartbeatResponse{}, bark.ErrResourceNotFound
 	}
 
+	if worker.Spec.RunnerID != claims.RunnerID {
+		return WorkerHeartbeatResponse{}, bark.ErrResourceUnauthorized
+	}
+	var runner Runner
+	if found, err := m.store.GetByUID(ctx, &runner, claims.RunnerID); err != nil {
+		return WorkerHeartbeatResponse{}, err
+	} else if !found || !runner.Spec.IsActive || worker.Status.Fingerprint == "" || runner.BlocksWorker(worker.Status.Fingerprint) {
+		return WorkerHeartbeatResponse{}, bark.ErrResourceUnauthorized
+	}
+
 	if m.presence != nil {
 		if found, err := m.presence.RecordContact(ctx, claims.WorkerID, time.Now(), WorkerContactHeartbeat, request.Leaving); err != nil {
 			return WorkerHeartbeatResponse{}, err
@@ -1728,6 +1755,9 @@ func (m *runnersAPIImpl) GetToken(ctx context.Context, runnerName manifest.Resou
 	if m.identity != nil {
 		return m.machineToken(ctx, runner)
 	}
+	if !m.storageTestEnrollment {
+		return "", true, bark.ErrResourceUnauthorized
+	}
 	now := time.Now()
 	// Generate JWT with valid-until clause, to give worker a time to post
 	claims := &jwt.RegisteredClaims{
@@ -1757,7 +1787,7 @@ func (m *runnersAPIImpl) GetToken(ctx context.Context, runnerName manifest.Resou
 // gets back: an identity it does not have to guess at, a credential it can
 // authenticate later calls with, and its queue.
 func (m *runnersAPIImpl) AuthWorker(ctx context.Context, apiToken APIToken, newEntry manifest.ResourceManifest) (WorkerRegistrationResponse, error) {
-	runner, worker, err := m.admitWorker(ctx, apiToken, newEntry)
+	runner, worker, err := m.admitVerifiedWorker(ctx, apiToken, newEntry)
 	if err != nil {
 		return WorkerRegistrationResponse{}, err
 	}
@@ -1784,8 +1814,8 @@ func (m *runnersAPIImpl) AuthWorker(ctx context.Context, apiToken APIToken, newE
 		// created before this transport existed still gets one the first time a
 		// worker shows up, rather than having its jobs published into a stream
 		// with nothing bound to it.
-		if connectionInfo, err = m.transport.ConnectionInfoFor(ctx, runner.UID); err != nil {
-			return WorkerRegistrationResponse{}, fmt.Errorf("failed to prepare worker transport: %w", err)
+		if connectionInfo, err = m.transport.ConnectionInfoFor(ctx, runner.UID, worker.UID, expiresAt); err != nil {
+			return WorkerRegistrationResponse{}, claimUnavailable("prepare worker transport", err)
 		}
 	}
 
@@ -1809,39 +1839,15 @@ func (m *runnersAPIImpl) admitWorker(ctx context.Context, apiToken APIToken, new
 	var result Runner
 	var registered WorkerInstance
 
-	var tokenSubj string
-	if m.identity != nil {
-		uid, err := m.machineRunner(ctx, apiToken)
-		if err != nil {
-			return result, registered, err
-		}
-		tokenSubj = string(uid)
-	} else {
-		token, err := jwt.Parse(string(apiToken), func(token *jwt.Token) (any, error) {
-			// Don't forget to validate the alg is what you expect:
-			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-			}
-
-			// hmacSampleSecret is a []byte containing your secret, e.g. []byte("my_secret_key")
-			return m.hmacSampleSecret, nil
-		})
-		if err != nil {
-			return result, registered, bark.ErrResourceUnauthorized
-		}
-
-		subject, err := token.Claims.GetSubject()
-		if err != nil {
-			return result, registered, bark.ErrResourceUnauthorized
-		}
-
-		tokenSubj = subject
+	runnerUID, err := m.enrollmentRunner(ctx, apiToken)
+	if err != nil {
+		return result, registered, err
 	}
 	ctx = controlContext(ctx)
 
 	var runner Runner
-	if ok, err := m.store.GetByUID(ctx, &runner, manifest.ResourceID(tokenSubj),
-		dbstore.Expand("Instances", manifestMatch(newEntry.Metadata))); err != nil {
+	if ok, err := m.store.GetByUID(ctx, &runner, runnerUID,
+		dbstore.Expand("Instances", manifest.SearchQuery{})); err != nil {
 		return result, registered, err
 	} else if !ok {
 		return result, registered, bark.ErrResourceUnauthorized
@@ -1862,6 +1868,17 @@ func (m *runnersAPIImpl) admitWorker(ctx context.Context, apiToken APIToken, new
 		return result, registered, err
 	}
 
+	fingerprint, err := m.verifyWorkerProof(ctx, runner, newEntry)
+	if err != nil {
+		return result, registered, err
+	}
+	if runner.BlocksWorker(fingerprint) {
+		return result, registered, bark.ErrResourceUnauthorized
+	}
+	worker.Spec.Proof = nil
+	worker.Status = WorkerInstanceStatus{Fingerprint: fingerprint}
+	worker.UID = ""
+	worker.Version = 0
 	if err := worker.ApplyScope(runner.Scope()); err != nil {
 		return result, registered, err
 	}
@@ -1893,25 +1910,25 @@ func (m *runnersAPIImpl) admitWorker(ctx context.Context, apiToken APIToken, new
 	worker.Spec.Runner = runner
 	worker.Spec.RunnerID = runner.UID
 
-	log.Printf("Runner has %d workers matches", len(runner.Status.Instances))
-	if len(runner.Status.Instances) > 0 && runner.Status.Instances[0].Name == worker.Name {
-		existingWorkerRecord := runner.Status.Instances[0]
-		// Re-auth attempt for the same worker?
-		log.Printf("Worker %q re-authenticating before TTL timeout", existingWorkerRecord.Name)
-
-		// Note: only Spec and Labels are taken from the re-registering worker.
-		// Status is left as the server has it, which is what keeps an operator's
-		// pause in force across a reconnect -- a worker must not be able to
-		// un-pause itself by restarting.
+	var existingWorkerRecord *WorkerInstance
+	for i := range runner.Status.Instances {
+		instance := &runner.Status.Instances[i]
+		if instance.Status.Fingerprint == fingerprint {
+			existingWorkerRecord = instance
+		}
+		if instance.Name == worker.Name && instance.Status.Fingerprint != fingerprint {
+			return result, registered, bark.NewErrorResponse(http.StatusConflict, fmt.Errorf("worker display name already belongs to another identity"))
+		}
+	}
+	if existingWorkerRecord != nil {
+		existingWorkerRecord.Name = worker.Name
 		existingWorkerRecord.Labels = manifest.MergeLabels(worker.Labels, workerLabels(runner))
-		worker.Spec.RunnerID = existingWorkerRecord.Spec.RunnerID
 		existingWorkerRecord.Spec = worker.Spec
-
-		_, err = m.store.Update(ctx, &existingWorkerRecord, existingWorkerRecord.UID, dbstore.WithVersion(existingWorkerRecord.Version), dbstore.Omit(clause.Associations))
-		registered = existingWorkerRecord
+		err = saveResourceAt(ctx, m.store, existingWorkerRecord, existingWorkerRecord.Version)
+		registered = *existingWorkerRecord
 	} else {
 		// Business Rule: Runner can only have a number of new worker up-to-a limit, if limit is set
-		if runner.Spec.MaxInstances > 0 && runner.Status.NumberInstances >= runner.Spec.MaxInstances {
+		if runner.Spec.MaxInstances > 0 && uint64(len(runner.Status.Instances)) >= runner.Spec.MaxInstances {
 			return result, registered, bark.ErrResourceUnauthorized
 		}
 

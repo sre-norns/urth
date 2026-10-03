@@ -6,3 +6,5 @@
 .monitoring .artifact-image { display: block; max-width: 100%; max-height: 36rem; object-fit: contain; }
 .monitoring .tags { display: flex; flex-wrap: wrap; gap: .375rem; }
 .sidebar { overflow-y: auto; }
+
+.worker-fingerprint { overflow-wrap: anywhere; }

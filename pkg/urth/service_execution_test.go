@@ -298,7 +298,7 @@ func claimRunErr(t *testing.T, srv urth.Service, result urth.Result) (urth.AuthJ
 	require.NoError(t, err)
 	require.True(t, found)
 
-	registration, err := srv.Runners().AuthWorker(ctx, enrolment, manifest.ResourceManifest{
+	registration, err := enrollTestWorker(t, srv, ctx, enrolment, manifest.ResourceManifest{
 		TypeMeta: manifest.TypeMeta{Kind: urth.KindWorkerInstance},
 		Metadata: manifest.ObjectMeta{Name: "test-worker"},
 		Spec:     &urth.WorkerInstanceSpec{},

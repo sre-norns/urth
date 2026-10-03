@@ -130,6 +130,7 @@ type BootstrapConfig struct {
 func Models() []any {
 	return append([]any{
 		&urth.WorkerInstance{},
+		&urth.WorkerChallengeRecord{},
 		&urth.Runner{},
 		&urth.Scenario{},
 		&urth.Result{},
@@ -312,7 +313,7 @@ func New(ctx context.Context, db *gorm.DB, cfg Config, options ...Option) (*Serv
 
 	// A separate connection for log tailing, so a browser holding a slow
 	// stream open cannot interfere with job publication.
-	conn, err := cfg.NATS.Connect("urth-api-server-logs")
+	conn, err := cfg.NATS.ObserverConfig().Connect("urth-api-server-observer")
 	if err != nil {
 		_ = server.scheduler.Close()
 		return nil, fmt.Errorf("failed to connect to NATS for run log streaming: %w", err)

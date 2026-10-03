@@ -32,7 +32,7 @@ func workerSession(t *testing.T, srv urth.Service, name manifest.ResourceName) u
 	require.NoError(t, err)
 	require.True(t, found)
 
-	registration, err := srv.Runners().AuthWorker(ctx, enrolment, manifest.ResourceManifest{
+	registration, err := enrollTestWorker(t, srv, ctx, enrolment, manifest.ResourceManifest{
 		TypeMeta: manifest.TypeMeta{Kind: urth.KindWorkerInstance},
 		Metadata: manifest.ObjectMeta{Name: name},
 		Spec:     &urth.WorkerInstanceSpec{},

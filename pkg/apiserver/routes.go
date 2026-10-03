@@ -257,13 +257,22 @@ func Routes(srv urth.Service, natsConn *nats.Conn, metrics *prometheus.Registry,
 		//------------
 		// Worker registration: exchange an enrolment token for an identity, a
 		// session credential, and the queue to pull from.
-		v1.POST("/auth/workers", bark.AuthBearerAPI(), bark.ManifestAPI(urth.KindWorkerInstance), supportedAPIVersion(), func(ctx *gin.Context) {
+		v1.POST("/auth/workers/challenge", workerEnrollmentNoStore(), bark.AuthBearerAPI(), workerEnrollmentGate(identityService), bark.ManifestAPI(urth.KindWorkerInstance), supportedAPIVersion(), func(ctx *gin.Context) {
+			ctx.Header(bark.HTTPHeaderCacheControl, "no-store")
+			challenge, err := srv.Runners().ChallengeWorker(ctx.Request.Context(), urth.APIToken(bark.RequireBearerToken(ctx)), bark.RequireManifest(ctx))
+			if err != nil {
+				bark.AbortWithError(ctx, workerRegistrationStatus(err), err)
+				return
+			}
+			bark.Ok(ctx, challenge)
+		})
+		v1.POST("/auth/workers", workerEnrollmentNoStore(), bark.AuthBearerAPI(), workerEnrollmentGate(identityService), bark.ManifestAPI(urth.KindWorkerInstance), supportedAPIVersion(), func(ctx *gin.Context) {
 			ctx.Header(bark.HTTPHeaderCacheControl, "no-store")
 
 			token := bark.RequireBearerToken(ctx)
 			registration, err := srv.Runners().AuthWorker(ctx.Request.Context(), urth.APIToken(token), bark.RequireManifest(ctx))
 			if err != nil {
-				bark.AbortWithError(ctx, http.StatusUnauthorized, err)
+				bark.AbortWithError(ctx, workerRegistrationStatus(err), err)
 				return
 			}
 

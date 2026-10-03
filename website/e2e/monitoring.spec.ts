@@ -69,3 +69,44 @@ test('project and account dead-letter details and confirmation dialogs are acces
     expect((await new AxeBuilder({page}).analyze()).violations).toEqual([])
   }
 })
+
+
+test('worker block controls use readable fields and accessible versioned dialogs', async ({page}) => {
+  const fingerprint = `sha256:${'a'.repeat(64)}`
+  let version = 1
+  let blockedWorkers: {identity: string; reason?: string}[] = []
+  const runner = () => ({apiVersion: 'urth.sre-norns.com/v1', kind: 'runners', metadata: {uid: 'runner-1', name: 'edge', account, version}, spec: {active: true, blockedWorkers}})
+  await page.route('**/v1/**', async (route) => {
+    const path = new URL(route.request().url()).pathname
+    if (path === '/v1/agent-identities/runner-1') return route.fulfill({json: identityResource('agent-identities', 'runner-1', {description: 'Edge runner'}, {}, {name: 'edge'})})
+    if (path === '/v1/agent-identities/runner-1/tokens' || path === '/v1/agent-identities/runner-1/project-authorizations' || path === `/v1/accounts/${account}/workers`) return route.fulfill({json: pageOf([])})
+    if (path !== `/v1/accounts/${account}/runners/edge`) return route.fallback()
+    expect(route.request().headers()['authorization']).toBe('Bearer access')
+    if (route.request().method() === 'PUT') {
+      expect(route.request().headers()['if-match']).toBe(`"${version}"`)
+      blockedWorkers = route.request().postDataJSON().spec.blockedWorkers
+      version++
+    }
+    return route.fulfill({json: runner(), headers: {ETag: `"${version}"`}})
+  })
+  await page.goto(`/a/${account}/runners/runner-1`)
+  await page.getByRole('button', {name: 'Block worker', exact: true}).click()
+  let dialog = page.getByRole('dialog')
+  await dialog.getByRole('textbox', {name: /Verified key fingerprint/}).fill(fingerprint)
+  await dialog.getByRole('textbox', {name: 'Reason', exact: true}).fill('Retired installation')
+  expect((await new AxeBuilder({page}).analyze()).violations).toEqual([])
+  await dialog.getByRole('button', {name: 'Block worker', exact: true}).click()
+  await expect(dialog).toHaveCount(0)
+  await expect(page.getByText(fingerprint, {exact: true})).toBeVisible()
+  expect(blockedWorkers).toEqual([{identity: fingerprint, reason: 'Retired installation'}])
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await page.screenshot({path: test.info().outputPath('worker-blocklist.png'), fullPage: true})
+  await page.getByRole('button', {name: 'Unblock', exact: true}).click()
+  dialog = page.getByRole('dialog')
+  await expect(dialog.getByText(fingerprint, {exact: true})).toBeVisible()
+  expect((await new AxeBuilder({page}).analyze()).violations).toEqual([])
+  await dialog.getByRole('button', {name: 'Unblock worker', exact: true}).click()
+  await expect(dialog).toHaveCount(0)
+  expect(blockedWorkers).toEqual([])
+  expect(version).toBe(3)
+})

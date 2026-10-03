@@ -56,6 +56,7 @@ func startNATS(t *testing.T) *nats.Conn {
 // the shipped system.
 func testConfig() natsq.Config {
 	return natsq.Config{AllowInsecureWorkers: true,
+		ClientConfig:     natsq.ClientConfig{AllowInsecure: true},
 		Replicas:         1,
 		MaxJobs:          64,
 		MaxBytes:         1 << 20,

@@ -78,3 +78,7 @@ func (c *runnersAPIClient) GetToken(ctx context.Context, runnerName manifest.Res
 func (c *runnersAPIClient) AuthWorker(ctx context.Context, token urth.APIToken, newEntry manifest.ResourceManifest) (urth.WorkerRegistrationResponse, error) {
 	return send[urth.WorkerRegistrationResponse](ctx, &c.RestAPIClient, http.MethodPost, urlForPath(c.baseURL, "v1/auth/workers", nil), string(token), "", newEntry)
 }
+
+func (c *runnersAPIClient) ChallengeWorker(ctx context.Context, token urth.APIToken, entry manifest.ResourceManifest) (urth.WorkerChallenge, error) {
+	return send[urth.WorkerChallenge](ctx, &c.RestAPIClient, http.MethodPost, urlForPath(c.baseURL, "v1/auth/workers/challenge", nil), string(token), "", entry)
+}

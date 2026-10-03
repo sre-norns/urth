@@ -20,7 +20,7 @@ func validateRunnerAddress(account manifest.ResourceID, name manifest.ResourceNa
 	return manifest.ValidateSubdomainName(string(name))
 }
 
-func (s *scheduler) workerCredential(runner urth.Runner) (urth.NATSCredential, error) {
+func (s *scheduler) workerCredential(runner urth.Runner, workerUID manifest.ResourceID, sessionExpiry time.Time) (urth.NATSCredential, error) {
 	if err := validateRunnerAddress(runner.Account, runner.Name); err != nil {
 		return urth.NATSCredential{}, err
 	}
@@ -53,8 +53,19 @@ func (s *scheduler) workerCredential(runner urth.Runner) (urth.NATSCredential, e
 		return urth.NATSCredential{}, err
 	}
 	claims := jwt.NewUserClaims(userPublic)
-	claims.Name = "urth-worker-" + string(runner.UID)
-	expires := time.Now().Add(time.Hour)
+	claims.Name = "urth-worker-" + string(workerUID)
+	ttl := s.cfg.WorkerCredentialTTL
+	if ttl <= 0 {
+		ttl = 5 * time.Minute
+	}
+	expires := time.Now().Add(ttl)
+	if sessionExpiry.Before(expires) {
+		expires = sessionExpiry
+	}
+	expires = time.Unix(expires.Unix(), 0).UTC()
+	if !expires.After(time.Now()) {
+		return urth.NATSCredential{}, fmt.Errorf("worker session expires too soon for broker authority")
+	}
 	claims.Expires = expires.Unix()
 	consumer := RunnerConsumerName(runner.Account, runner.Name)
 	claims.Pub.Allow = jwt.StringList{
@@ -62,9 +73,9 @@ func (s *scheduler) workerCredential(runner urth.Runner) (urth.NATSCredential, e
 		"$JS.API.CONSUMER.MSG.NEXT." + JobsStreamName + "." + consumer,
 		"$JS.ACK." + JobsStreamName + "." + consumer + ".>",
 		"$JS.ACK.*.*." + JobsStreamName + "." + consumer + ".>",
-		RunnerLogSubjectPrefix(runner.UID), RunnerPresenceSubjectPrefix(runner.UID),
+		RunnerLogSubjectPrefix(runner.UID), PresenceSubject(runner.UID, workerUID),
 	}
-	claims.Sub.Allow = jwt.StringList{"_INBOX." + string(runner.UID) + ".>"}
+	claims.Sub.Allow = jwt.StringList{"_INBOX." + string(workerUID) + ".>"}
 	token, err := claims.Encode(account)
 	if err != nil {
 		return urth.NATSCredential{}, err
@@ -73,6 +84,13 @@ func (s *scheduler) workerCredential(runner urth.Runner) (urth.NATSCredential, e
 	if err != nil {
 		return urth.NATSCredential{}, err
 	}
-	creds, err := jwt.FormatUserConfig(token, userSeed)
-	return urth.NATSCredential{Type: urth.NATSCredentialJWT, Value: string(creds), ExpiresAt: expires}, err
+	return urth.NATSCredential{Type: urth.NATSCredentialJWT, JWT: token, Seed: string(userSeed), ExpiresAt: expires}, nil
+}
+
+// WorkerCredentialBytes assembles the explicit JWT/NKey response for nats.go.
+func WorkerCredentialBytes(credential urth.NATSCredential) ([]byte, error) {
+	if credential.Type != urth.NATSCredentialJWT {
+		return nil, fmt.Errorf("expected issued NATS JWT credential")
+	}
+	return jwt.FormatUserConfig(credential.JWT, []byte(credential.Seed))
 }

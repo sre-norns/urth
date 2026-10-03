@@ -50,6 +50,9 @@ func resolveSession(ctx context.Context, store *dbstore.DBStore, claims WorkerSe
 		return worker, runner, claimForbidden("runner missing")
 	}
 
+	if worker.Status.Fingerprint == "" || runner.BlocksWorker(worker.Status.Fingerprint) {
+		return worker, runner, claimForbidden("worker identity blocked")
+	}
 	return worker, runner, nil
 }
 
@@ -94,10 +97,12 @@ const (
 
 // NATSCredential carries whatever a worker needs to authenticate to NATS.
 type NATSCredential struct {
+	JWT  string             `json:"jwt,omitempty" yaml:"jwt,omitempty"`
+	Seed string             `json:"seed,omitempty" yaml:"seed,omitempty"`
 	Type NATSCredentialType `form:"type" json:"type" yaml:"type" xml:"type"`
 
-	// Value is interpreted according to Type: empty for "none", a path for
-	// "creds", the credential itself for "jwt".
+	// Value is a local path for operator-provisioned credentials. Issued JWTs
+	// use explicit JWT and Seed fields. The API never returns a server path.
 	Value string `form:"value,omitempty" json:"value,omitempty" yaml:"value,omitempty" xml:"value,omitempty"`
 
 	// ExpiresAt is when the credential stops working, zero if it does not.
@@ -105,7 +110,7 @@ type NATSCredential struct {
 }
 
 // NATSConnectionInfoVersion is the schema version of NATSConnectionInfo.
-const NATSConnectionInfoVersion = 1
+const NATSConnectionInfoVersion = 2
 
 // NATSConnectionInfo tells a registered worker where its queue is.
 //
@@ -171,5 +176,10 @@ type WorkerRegistrationResponse struct {
 type WorkerTransportProvider interface {
 	// ConnectionInfoFor returns the connection details for a runner, ensuring
 	// any transport assets that runner needs exist.
-	ConnectionInfoFor(ctx context.Context, runnerUID manifest.ResourceID) (NATSConnectionInfo, error)
+	ConnectionInfoFor(ctx context.Context, runnerUID, workerUID manifest.ResourceID, expiresAt time.Time) (NATSConnectionInfo, error)
 }
+
+// String prevents accidental diagnostic formatting from exposing broker secrets.
+func (c NATSCredential) String() string { return "NATS credential (redacted)" }
+
+func (c NATSCredential) GoString() string { return c.String() }
