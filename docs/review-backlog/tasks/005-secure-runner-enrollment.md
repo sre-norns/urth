@@ -4,7 +4,7 @@ Shared context: [`CONTEXT.md`](../CONTEXT.md).
 
 | Field | Value |
 |---|---|
-| Status | `ready` |
+| Status | `done` |
 | Priority | `P0` |
 | Workstream | Authentication |
 | Depends on | — |
@@ -14,8 +14,9 @@ Shared context: [`CONTEXT.md`](../CONTEXT.md).
 ## Current evidence and remaining criteria (2026-10-03)
 
 The shared identity contract supersedes the standalone enrollment-store design.
-Keep this task open for the precise gaps below. Do not add a second token store,
-a legacy enrollment fallback or an operator-authorizer bypass.
+The current acceptance criteria are complete through merged Urth `1e37393`.
+Do not add a second token store, a legacy enrollment fallback or an
+operator-authorizer bypass. Release packaging and deployment remain separate.
 
 | Current criterion | Evidence / remaining work |
 | --- | --- |
@@ -23,8 +24,8 @@ a legacy enrollment fallback or an operator-authorizer bypass.
 | One-time secret and normal-read secrecy | `m8_contract_test.go` and the real-stack test prove operation-only issuance, idempotent replay redaction and ordinary token-read redaction. Runner resources contain no enrollment secret. |
 | Individual issue/revoke lifecycle | `TestMachineTokenRevocationDeniesFreshProofButPreservesSession` uses an unused valid proof after revocation: challenge and enrollment both return 401. A replacement token renews the same Worker UID. Existing session claims remain authorized independently. The real Worker also fails enrollment with the revoked token. |
 | Disable/delete and identity suspension | `TestEnrollmentLifecycleRejectsFreshAndRefresh` covers all six state/operation pairs through mounted routes. Each case first enrolls and refreshes successfully, obtains an unused valid proof, changes current state through the API, and receives 401 from challenge and enrollment. Rejected requests leave Worker records unchanged. |
-| Stored token protection and secret outputs | `TestEnrollmentStoredStateAndManifestsExcludeBearerSecret` verifies the published `v0.7.2` SHA-256 verifier for a random shared token. Credential and token rows exclude its plaintext. Replaying the verifier, row IDs or serialized rows returns 401 on challenge and enrollment. The original secret with the same proof succeeds. Runner/Worker manifests and normal Runner/identity/token reads exclude it. Client reads/errors and live logs remain part of the separate client validation. |
-| CLI/UI lifecycle equivalence | Open: prove authenticated issue/revoke and one-time secret handling through both clients. Current real-stack issuance/revocation evidence uses the identity endpoint; CLI device login is separate evidence. |
+| Stored token protection and secret outputs | `TestEnrollmentStoredStateAndManifestsExcludeBearerSecret` verifies the published `v0.7.2` SHA-256 verifier for a random shared token. Credential and token rows exclude its plaintext. Replaying the verifier, row IDs or serialized rows returns 401 on challenge and enrollment. The original secret with the same proof succeeds. Runner/Worker manifests and normal Runner/identity/token reads exclude it. The mounted client test excludes actual issued values from ordinary CLI reads/errors, captured API logs, browser storage and private CLI profiles. |
+| CLI/UI lifecycle equivalence | Merged PR 115 adds CLI issue/list/get/revoke and optional expiry. The real device-login/browser test issues in each client and revokes in the other. All three issuance paths, including the existing CLI command, authorize a mounted challenge before revocation and receive 401 afterward. Replay and one-time dialog dismissal exclude the secret. See [client evidence](../../m9-enrollment-client-validation.md). |
 
 Shared tokens are individually issued and revoked. More than one token can be
 active. Issue a replacement, update installations, then revoke the old token.
@@ -37,10 +38,14 @@ already issued Worker session or claimed run capability. Use the separate
 current-state controls for new-claim denial. The mounted and fresh-stack tests
 record those operations separately.
 
-The implementation and tests are merged in `d60d902`. The exact merged backend
-and website gates pass. See [the release record](../../m9-release-validation.md)
-and [the real-stack evidence](../../m9-fresh-stack-validation.md). Passing CI
-does not by itself cover the separate client cases above.
+PRs [113](https://github.com/sre-norns/urth/pull/113),
+[114](https://github.com/sre-norns/urth/pull/114) and
+[115](https://github.com/sre-norns/urth/pull/115) are merged through `1e37393`.
+The exact merged backend, website and CodeQL gates pass. The client source
+matches its tested PR head; the other two PRs add tests and documentation.
+See [the release record](../../m9-release-validation.md) for source identities
+and CI links, and [client evidence](../../m9-enrollment-client-validation.md)
+for the two live passes and precise secret-exclusion scope.
 
 ## Historical review baseline and superseded design
 
@@ -118,8 +123,8 @@ rotated and revoked as ADR 0002 requires.
   replacement issuance preserves the Runner and Worker UID contracts.
 - [x] Runner disable/delete and identity suspension deny enrollment and refresh.
 - [x] Stored database token state cannot serve as an enrollment bearer secret.
-- [ ] CLI and UI provide equivalent authenticated issue/revoke and secret handling.
-- [ ] Logs, ordinary CLI reads/errors and serialized manifests exclude secret
+- [x] CLI and UI provide equivalent authenticated issue/revoke and secret handling.
+- [x] Logs, ordinary CLI reads/errors and serialized manifests exclude secret
   values. Explicit authenticated one-time token issuance may return the secret
   to its caller.
 
@@ -149,7 +154,10 @@ git diff --check
   and the complete PostgreSQL audit (integration 152.776 seconds, broker 66.334
   seconds), with module verification, vet and Staticcheck 2026.2.1. Detailed
   source attribution is in the release record.
-- **Follow-ups:** CLI/UI issue/revoke equivalence and ordinary CLI read/error
-  and live-log secret assertions remain in the separate client change. The
-  backend state, storage and manifest cases now have mounted regressions.
-  The task remains open until the client change and merged checks are recorded.
+- **Client and merged evidence:** Final client full audit and uncached race suite
+  pass, including integration 125.791 seconds. The live case passes twice
+  (9.4 and 9.0 seconds), including expiry and secret handling. Exact merged
+  `1e37393` CI runs all backend tests together and passes.
+- **Follow-ups:** Deployment-specific issuer, mail, keys and operational checks
+  remain release gates. The shared narrow token table uses horizontal scrolling.
+  Task completion does not select a release version or claim deployment success.

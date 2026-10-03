@@ -14,28 +14,21 @@ sits outside the NATS workstreams; such a task says so in its Workstream field.
 
 ## Current M9 review (2026-10-03)
 
-Tasks 004/005/006/009/024 include a current evidence matrix above their historical
-review baseline. Scoped Worker NATS JWTs, shared machine-token enrollment and
-tenant/grant regressions exist. They do not close the remaining credential
-lifecycle, stable Worker proof and composed authorization criteria.
-
-[Authorization PR 105](https://github.com/sre-norns/urth/pull/105) is merged at
-`f97750a` and has a passing candidate PostgreSQL/race audit for its mounted
-authorization regressions. Task 024 and
-the release checklist record that candidate evidence. It does not close the
-Worker/broker or merged release gates. Task 006 retains dispatch binding and
-key rotation criteria. Task 008 remains separate Runner-policy backlog; its
-old migration proposals are historical under the fresh-install contract.
+Tasks 004/005/006/009/024 are complete through merged Urth `1e37393` and its
+passing PostgreSQL/race/static, website and CodeQL checks. Their current
+matrices map each criterion to attempted denials, positive controls and live
+client evidence. The historical review baseline remains for traceability.
 
 Shared identity supersedes task 005's separate enrollment store and generation
-rotation proposal. Read its current contract before implementing its original
-sequence. The fresh-install decision supersedes old resource/NATS migration
-requirements. Historical task and ADR discussions remain for traceability.
+rotation proposal. The current contract uses individually issued and revoked
+tokens. Worker blocking and Runner deletion deny new work while previously
+claimed reporting retains its independent, bounded authority. The fresh-install
+contract supersedes old resource and NATS migration proposals.
 
-Use the [M9 release checklist](../m9-release-validation.md). Security tasks stay
-open until their current criteria have exact evidence. Tasks outside M9 keep
-their status and owner; this reconciliation does not close scheduler, prober or
-operator feature work.
+Use the [M9 release record](../m9-release-validation.md) for exact source and CI
+links. Release packaging, version selection and deployment-specific checks
+remain separate gates. Task 008, the scheduler, prober defaults, retention and
+other product backlog retain their status and ownership.
 
 ## Agent Workflow
 
@@ -62,12 +55,12 @@ Status values:
 | 001 | P0 | done | [Preserve retryable claim failures](tasks/001-preserve-retryable-claim-failures.md) | — | 003, 010, 011 |
 | 002 | P0 | done | [Add the transactional dispatch outbox](tasks/002-transactional-dispatch-outbox.md) | — | 003, 007, 011, 012 |
 | 003 | P0 | done | [Reconcile dispatch and execution lifecycle](tasks/003-reconcile-dispatch-and-execution.md) | 002 | 001, 011, 012 |
-| 004 | P0 | ready | [Validate Runner-scoped NATS credential lifecycle](tasks/004-runner-scoped-nats-credentials.md) | — | 005, 009, 011, 013 |
-| 005 | P0 | ready | [Verify shared machine-token enrollment lifecycle](tasks/005-secure-runner-enrollment.md) | — | 004, 006, 009 |
-| 006 | P0 | ready | [Harden run capabilities and reporting authorization](tasks/006-harden-run-capabilities.md) | — | 005, 007, 008, 011 |
+| 004 | P0 | done | [Validate Runner-scoped NATS credential lifecycle](tasks/004-runner-scoped-nats-credentials.md) | — | 005, 009, 011, 013 |
+| 005 | P0 | done | [Verify shared machine-token enrollment lifecycle](tasks/005-secure-runner-enrollment.md) | — | 004, 006, 009 |
+| 006 | P0 | done | [Harden run capabilities and reporting authorization](tasks/006-harden-run-capabilities.md) | — | 005, 007, 008, 011 |
 | 007 | P0 | done | [Snapshot immutable execution input on Result](tasks/007-snapshot-result-execution-input.md) | — | 002, 006, 008, 011 |
 | 008 | P0 | ready | [Complete the Runner channel policy contract](tasks/008-runner-channel-policy.md) | — | 006, 007, 009, 014 |
-| 009 | P0 | blocked | [Add stable Worker identity and Runner blocklists](tasks/009-worker-identity-and-blocklist.md) | 005 | 004, 008 |
+| 009 | P0 | done | [Add stable Worker identity and Runner blocklists](tasks/009-worker-identity-and-blocklist.md) | 005 | 004, 008 |
 | 010 | P1 | done | [Synchronously acknowledge claimed dispatches](tasks/010-synchronous-jetstream-ack.md) | — | 001, 003, 011 |
 | 011 | P1 | done | [Exercise the NATS Worker end to end and at crash points](tasks/011-nats-worker-failure-integration-tests.md) | 001, 002, 003, 007, 010 (done) | all runtime tasks |
 | 012 | P1 | done | [Implement an operational dead-letter workflow](tasks/012-dead-letter-workflow.md) | 003 (done) | 002, 003, 013 |
@@ -82,7 +75,7 @@ Status values:
 | 021 | P1 | blocked | [Address Runner queues by name and reap orphaned ones](tasks/021-name-keyed-runner-queues.md) | 022 | 004, 013, 014, 016 |
 | 022 | P1 | ready | [Recheck execution requirements at claim time](tasks/022-recheck-requirements-at-claim.md) | — | 008, 014, 018, 021 |
 | 023 | P2 | done | [Give a Worker its own detail page](tasks/023-worker-detail-page.md) | — | 016 |
-| 024 | P1 | blocked | [Exercise authorization end to end](tasks/024-authorization-integration-scenarios.md) | 004, 005, 006, 009, 011 (done) | 004, 005, 006, 009 |
+| 024 | P1 | done | [Exercise authorization end to end](tasks/024-authorization-integration-scenarios.md) | 004, 005, 006, 009, 011 (done) | 004, 005, 006, 009 |
 | 025 | P2 | ready | [Make `urthctl get script` work](tasks/025-urthctl-script-parity.md) | — | 017 |
 
 Priority meanings:

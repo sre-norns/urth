@@ -2,8 +2,10 @@
 
 This record identifies the merged source and validation evidence on 2026-10-03.
 It does not authorize a release. The maintainer selects product versions and
-records the disposition of remaining risks. No shared package release is needed
-for the validated changes.
+records the disposition of remaining risks. M9 source acceptance is complete
+through Urth `1e37393` and Exp-Bench `929f574`. Product packaging, version
+selection and deployment validation remain separate. No shared package release
+is needed for the validated changes.
 
 ## Installation and dependency contract
 
@@ -24,11 +26,49 @@ Historical ADR and backlog migration text describes earlier design work.
 M9 requires a shared patch only if a reproduced shared defect needs one. Record
 and validate any new published pin in both consumers before release selection.
 
+## Final merged acceptance checkpoint
+
+Urth PRs [113](https://github.com/sre-norns/urth/pull/113),
+[114](https://github.com/sre-norns/urth/pull/114) and
+[115](https://github.com/sre-norns/urth/pull/115) merge as `0453da8`, `65f34d7`
+and `1e37393dc8ea2b3d69b8d98dcdda42f14aaf3c1f`. All checks at the final combined
+commit pass: [PostgreSQL/race/static/build](https://github.com/sre-norns/urth/actions/runs/37116653885),
+[website](https://github.com/sre-norns/urth/actions/runs/37116653883) and
+[CodeQL](https://github.com/sre-norns/urth/actions/runs/37116653809). The earlier
+two main-branch runs are cancelled when later merges supersede them; they are
+not counted as passes.
+
+The two new backend test files match their reviewed PR heads. CLI and website
+files match tested PR 115 head `ad1bd16`; the other changes from that head are
+backend tests and documentation. The exact merged CI runs all backend cases
+together. The prior live client passes remain attributed to their actual
+candidate source, not to a new live run at the merge commit.
+
+The [client record](m9-enrollment-client-validation.md) proves reciprocal
+CLI/browser issue and revoke, optional expiry, replay redaction, one-time dialog
+dismissal, secret-free ordinary reads/errors/logs/storage and compatibility of
+`runners token`. The final live case passes twice, in 9.4 and 9.0 seconds.
+Its full audit and uncached race suite pass (integration 125.791 seconds).
+The backend enrollment and executor matrix records retain their independent
+full audits and fault controls. Evidence lives in
+`~/workspace/m9-review/enrollment-followup/`, `executor-binding-followup/`
+and `enrollment-clients/`.
+
+Exp-Bench `929f5743bd1c4ca91a3c7d6dec87377faafe1381` also passes exact merged
+[CI and image publication](https://github.com/sre-norns/exp-bench/actions/runs/37112147342)
+and [website checks](https://github.com/sre-norns/exp-bench/actions/runs/37112147447).
+Its change from the validated `dc0069a` is the release record only. The earlier
+race and live evidence below keeps its original source attribution.
+
+Tasks 004, 005, 006, 009 and 024 are complete against their current acceptance
+criteria. This closes the source-validation work; it does not claim that a
+production deployment or a tagged product release exists.
+
 ## Validated source and checks
 
 | Repository | Source identity | Local evidence | Exact merged-head CI | Disposition |
 | --- | --- | --- | --- | --- |
-| Urth | `d60d9021dcf52a89e9c8aaba680f5ae403b1671f`; tree `1e86a529399ccfe68b0182dcaaa502f4333e5d60` is identical to tested combined commit `c9720b465ae108abb61a57bf7dc633d175fac377` | Full PostgreSQL/race/static audit for the run-capability change; combined API/NATS/Worker/integration pass at `37cb719`; frontend 33 unit tests, build, eight fixture browser/axe cases, and two real-stack tests pass | [Website](https://github.com/sre-norns/urth/actions/runs/37108548817), [CodeQL](https://github.com/sre-norns/urth/actions/runs/37108548872), [Build And Verify](https://github.com/sre-norns/urth/actions/runs/37108548882) pass at `d60d902` | Source validation passes; remaining criteria below stay explicit |
+| Urth earlier baseline | `d60d9021dcf52a89e9c8aaba680f5ae403b1671f`; tree `1e86a529399ccfe68b0182dcaaa502f4333e5d60` is identical to tested combined commit `c9720b465ae108abb61a57bf7dc633d175fac377` | Full PostgreSQL/race/static audit for the run-capability change; combined API/NATS/Worker/integration pass at `37cb719`; frontend 33 unit tests, build, eight fixture browser/axe cases, and two real-stack tests pass | [Website](https://github.com/sre-norns/urth/actions/runs/37108548817), [CodeQL](https://github.com/sre-norns/urth/actions/runs/37108548872), [Build And Verify](https://github.com/sre-norns/urth/actions/runs/37108548882) pass at `d60d902` | Baseline evidence retained; final follow-up acceptance is recorded above |
 | Exp-Bench | `dc0069ad65a31e9b3127948e5afb933fbd7b43ac`; tree `45d3224cc0821be467cfbfd255b2ced00f82d603` is identical to tested `1f87384` | Fresh five-role browser/CLI/MCP verifier passes; 13 real-system browser tests pass in 2.1 minutes; 223 fixture browser tests pass in 8.3 minutes; 122 unit tests, formatting/lint/build and focused race/static checks pass | [Website](https://github.com/sre-norns/exp-bench/actions/runs/37108587549) passes; [CI](https://github.com/sre-norns/exp-bench/actions/runs/37108587526) passes, including image publication | Complete merged-source race gate passes in aggregate; verify/vet/static pass |
 | Urth broker follow-up | Source `e4c3483b5f33cc1de3bca52de315840a32c07070`; final head `82b23384bf689e4efc5bb494e583e0c2fe069830` adds reviewed runbook wording only; base `d60d902` | Route rollover race count 10 passes in 287.249 seconds; complete PostgreSQL audit passes, including broker 64.745 seconds and integration 144.609 seconds; final sensitivity controls fail as intended | [PR 111](https://github.com/sre-norns/urth/pull/111) merges as `f93767a`; subsequent docs merge `4990b229` passes [Build And Verify](https://github.com/sre-norns/urth/actions/runs/37112080233), [Website](https://github.com/sre-norns/urth/actions/runs/37112080193) and [CodeQL](https://github.com/sre-norns/urth/actions/runs/37112080155) | Tests/docs only; no production code or dependency change |
 | components | `49c16562b9de8c5dd4906cd54ba22cd591341717`; package `0.5.0` tag `224bb6c5aca62a4fa3b7baf726bc19573372dacb`; only README differs | 177 unit/theme tests in 21 files pass in 68.31 seconds; lint/typecheck/build pass; 82 browser/axe/snapshot tests pass in 2.3 minutes; package has 81 expected files | [CI](https://github.com/sre-norns/norns-components/actions/runs/37085957314) passes at `49c1656` | No package source change or new version required |
@@ -89,13 +129,14 @@ plaintext exclusion in credential/token rows. Stored verifiers, IDs and rows
 all fail as enrollment authority. The original secret and same unused proof
 still enroll. Serialized Runner/Worker resources and normal identity/token
 reads exclude the secret. No shared implementation or dependency change is
-required. CLI/UI lifecycle and live-log evidence remain a separate change.
+required. CLI/UI lifecycle and log secrecy now have merged evidence from
+PR 115, linked above.
 
 Focused race checks pass in 14.032 seconds. The complete
 `GOWORK=off make audit/postgres` passes with module verification, vet,
 Staticcheck 2026.2.1 and race tests. Broker and integration packages pass in
-66.334 and 152.776 seconds. This is candidate evidence on base `4990b229`;
-merge and exact-head CI remain required for the new tests. Logs are preserved
+66.334 and 152.776 seconds. This local evidence is on base `4990b229`;
+PR 113 is now merged and final `1e37393` CI passes. Logs are preserved
 in `~/workspace/m9-review/enrollment-followup/m9-enrollment-focused.log` and
 `m9-enrollment-audit.log`.
 
@@ -103,11 +144,11 @@ in `~/workspace/m9-review/enrollment-followup/m9-enrollment-focused.log` and
 
 | Area | Evidenced behavior | Remaining criterion |
 | --- | --- | --- |
-| Enrollment / [005](review-backlog/tasks/005-secure-runner-enrollment.md) | Paired Runner identity; authenticated one-time issue and replay/read redaction; revoked token cannot obtain a challenge or enroll; replacement token refreshes the same UID; an existing session retains its own authority | Backend candidate adds all six Runner disable/delete and identity-suspension enrollment/refresh denials, shared token verifier replay refusal and serialized resource secrecy. CLI/UI issue/revoke and ordinary CLI read/error/live-log secret checks remain in the client follow-up; merge checks remain required |
+| Enrollment / [005](review-backlog/tasks/005-secure-runner-enrollment.md) | Paired Runner identity; authenticated one-time issue and replay/read redaction; revoked token cannot obtain a challenge or enroll; replacement token refreshes the same UID; an existing session retains its own authority | Acceptance complete: all six state/operation pairs, stored verifier replay refusal, serialized resource secrecy and live CLI/UI issue/revoke/output checks pass. Exact merged CI passes; deployment-specific checks remain |
 | Broker / [004](review-backlog/tasks/004-runner-scoped-nats-credentials.md) | Own consumer/ack/log/presence works; foreign consumer/inbox, own and foreign job publication, event subscription, other-Worker presence, stream/consumer deletion fail; live expiry disconnects; renewal and new-UID reconnect work; session and five-minute lifetime bounds; mTLS/config fail-closed tests; delegated signer overlap/retirement, client/server CA rollover and secured three-node failover pass | Merged PR 111 proves concrete foreign-log, stream create/update, consumer create and service-role denials plus cluster-route certificate rollover. Exact merged-head CI passes; deployment verification remains |
 | Worker / [009](review-backlog/tasks/009-worker-identity-and-blocklist.md) | Private persistent Ed25519 key; verified two-minute single-use proof; same-name different-key conflict; versioned block/unblock; immediate next-claim denial; bounded broker disconnection; independent in-flight report authority; CLI/UI equivalence | Acceptance evidence complete; deployment-specific key provisioning and revocation timing remain release operations |
 | Run capability / [006](review-backlog/tasks/006-harden-run-capabilities.md) | Exact algorithm/key/issuer/audience/time/tenant/executor/dispatch/scope checks; current Result state; bounded artifact grace; multi-replica key overlap/retirement; server-derived linkage; duplicate reporting and race tests | Acceptance evidence complete; operator key distribution and overlap settings remain deployment responsibilities |
-| Composed authorization / [024](review-backlog/tasks/024-authorization-integration-scenarios.md) | Shared PostgreSQL/HTTP/JetStream harness covers token revoke/replacement, active block/delete, session expiry, broker expiry/renewal, bounded reports, wrong Result/dispatch and expired status/artifact authority; project grant revocation preserves claimed work | Mounted status/artifact denials for changed stored Runner/Worker executor bindings are not separately evidenced; broker follow-up merge/exact merged-head CI now passes |
+| Composed authorization / [024](review-backlog/tasks/024-authorization-integration-scenarios.md) | Shared PostgreSQL/HTTP/JetStream harness covers token revoke/replacement, active block/delete, session expiry, broker expiry/renewal, bounded reports, wrong Result/dispatch and expired status/artifact authority; project grant revocation preserves claimed work | Acceptance complete: production-issued capabilities fail both mounted status paths and artifact creation after stored Runner/Worker binding changes, with same-token restored-binding positives. Exact merged CI passes |
 | OAuth and HTTP tenancy | Mounted credential-purpose, route/catalogue isolation, trusted proxy, Origin, limiter failure/retry and stream membership/session-removal/expiry regressions pass | Production issuer, redirect, proxy trust and provider/mail configuration need deployment review |
 | UI foundation | Both brands, wide/narrow layouts, populated routes, axe, theme/unit and package checks pass; real-stack screenshots reviewed | Published images and deployment-specific UI configuration remain untested |
 
@@ -115,7 +156,7 @@ in `~/workspace/m9-review/enrollment-followup/m9-enrollment-focused.log` and
 [PR 106](https://github.com/sre-norns/urth/pull/106),
 [PR 108](https://github.com/sre-norns/urth/pull/108),
 [PR 109](https://github.com/sre-norns/urth/pull/109) and
-[PR 110](https://github.com/sre-norns/urth/pull/110) are merged in the source set
+[PR 110](https://github.com/sre-norns/urth/pull/110) and follow-ups 111–115 are merged in the source set
 above. Task closure records apply to their acceptance criteria. They do not
 close the product release or unrelated backlog.
 
@@ -157,10 +198,9 @@ close the product release or unrelated backlog.
 - [x] Run Urth website units/build/fixture Playwright/axe and real-stack tests;
   review wide/narrow screenshots.
 - [x] Run focused run-capability, Worker proof and secured broker lifecycle tests.
-- [ ] Complete the remaining enrollment and composed broker/HTTP negative matrix
-  rows identified above. Backend enrollment cases pass in the current candidate;
-  client and executor-binding follow-ups remain separate PRs. Broker follow-up
-  merge and exact merged-head CI pass.
+- [x] Complete the enrollment and composed broker/HTTP matrix, including client
+  lifecycle and executor-binding follow-ups. PRs 113/114/115 are merged and all
+  exact-head checks pass at `1e37393`.
 - [x] Validate fresh Urth registration/mail/password/fake-IdP/device login,
   project/Runner/token/grant/Scenario/execution/log/artifact flow.
 - [x] Validate Exp-Bench's fresh browser/CLI/MCP five-role canonical workflow and
@@ -188,7 +228,7 @@ close the product release or unrelated backlog.
 
 | Risk / remaining work | Owner | Release impact |
 | --- | --- | --- |
-| Task 005/024 follow-up acceptance cases | Security validation owners | Enrollment backend candidate passes; client and executor-binding follow-ups remain separate review/merge gates. Task 004 acceptance and merged CI are complete |
+| M9 source acceptance | Complete | Tasks 004/005/006/009/024 have mapped acceptance evidence and passing combined merged CI. Product release and deployment remain separate |
 | Cluster-route certificate rollover | Broker validation owner | PR 111 passes rolling three-node route leaf/trust reload and current delivery/acks; merged CI passes; deployment-specific operations remain |
 | Production deployment profile | Maintainer / operator | HTTPS/authenticated client and route TLS, private signing keys, replica configuration, external mail/provider, images, metrics and failure alerts require deployment review |
 | Product version selection | Maintainer | No versions or releases are authorized by this record |

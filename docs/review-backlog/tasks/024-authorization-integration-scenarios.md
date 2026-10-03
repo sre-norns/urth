@@ -4,7 +4,7 @@ Shared context: [`CONTEXT.md`](../CONTEXT.md).
 
 | Field | Value |
 |---|---|
-| Status | `implemented; pending merged validation` |
+| Status | `done` |
 | Priority | `P1` |
 | Workstream | Authentication |
 | Depends on | 004, 005, 006, 009, 011 |
@@ -14,9 +14,9 @@ Shared context: [`CONTEXT.md`](../CONTEXT.md).
 ## Current evidence and remaining criteria (2026-10-03)
 
 The shared task 011 PostgreSQL/HTTP/JetStream harness runs the M9 composed tests.
-Urth `4990b229` passes the complete merged backend gate, including PR 111.
-The executor-binding matrix below now has local candidate evidence. Keep this
-task open until its candidate change has exact CI and merged-head validation.
+Urth `1e37393` passes the complete merged backend gate, including the broker,
+enrollment and executor-binding follow-ups. The current acceptance criteria
+are complete. Deployment configuration remains a separate release gate.
 
 | Scenario | Evidence / exact remaining check |
 | --- | --- |
@@ -45,9 +45,9 @@ claim denial and successful bounded completion; it is no longer an open claim.
 108, 109 and 110, exact merged CI and source equivalence. The fresh-stack tests
 provide independent process/browser execution evidence. Deployment-specific
 rotation/transport configuration still requires operator review. These facts
-do not replace candidate CI and merged-head validation for the new
-executor-binding matrix. Deployment-specific configuration remains a separate
-M9 gate.
+are now supplemented by exact merged `1e37393` CI for the executor-binding
+matrix from PR 114. Deployment-specific configuration remains a separate
+release gate.
 
 ## Historical review baseline and requirements under reconciliation
 
@@ -128,9 +128,9 @@ test credentials, and add the scenarios that turn on authorization:
 
 ## Acceptance Criteria / Definition of Done
 
-- [ ] Every current scenario and capability-binding variant has real
-  PostgreSQL/HTTP/JetStream CI evidence. The new executor-binding candidate
-  still needs exact CI and merged-head validation.
+- [x] Every current scenario and capability-binding variant has real
+  PostgreSQL/HTTP/JetStream CI evidence at merged `1e37393`, including the new
+  executor-binding matrix. CI links are in the release record.
 - [x] Every required matrix entry has attempted denial with a positive control.
   The mounted executor-binding matrix now supplies the remaining attempts.
 - [x] The harness is shared with task 011.
@@ -161,8 +161,9 @@ make audit/postgres
   Worker comparison, or artifact binding guard. All three fail at the intended
   mounted denial assertion (status 200, status 200, and artifact 201). These
   deliberate failures do not represent candidate defects.
-- **Follow-ups:** Exact candidate CI and merged-head validation for the new
-  executor-binding matrix. Task remains open for that evidence. This test
-  changes stored authority as a fixture; it does not introduce a public API
-  that changes the executor of a claimed Result. No production code changes.
-  Deployment-specific M9 validation remains separate.
+- **Merged validation:** PR 114 merges as `65f34d7`; all exact-head checks pass
+  on the combined source at `1e37393`. Its executor test is unchanged from the
+  reviewed and locally validated PR head. This test changes stored authority
+  as a fixture; it does not add a public executor-change API.
+- **Follow-ups:** Deployment-specific verification remains a separate release
+  gate. No missing matrix case remains in this task.
