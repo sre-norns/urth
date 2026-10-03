@@ -64,6 +64,36 @@ does; `urthctl run` runs a scenario locally.
 
 issues the enrolment token a runner's workers register with. It replaced `auth-worker`
 and, like every command talking to the API, needs a signed-in profile or `--token`.
+The existing command continues to print only the newly issued secret.
+
+Use the shared identity token commands to name, inspect and revoke individual
+tokens:
+
+```shell
+urthctl runners tokens issue my-runner installation --expires-at=2099-01-02T03:04:05Z
+urthctl runners tokens list my-runner
+urthctl runners tokens get TOKEN_ID -o yaml
+urthctl runners tokens revoke TOKEN_ID
+```
+
+`--expires-at` accepts an RFC3339 timestamp. Omit it for a token without an
+expiration. The API validates its lifetime, as it does for UI issuance.
+
+`issue` prints the secret once. With `-o json` or `-o yaml`, it prints the shared
+operation envelope with `resource` and `token`. List, get and revoke print only
+canonical token metadata. Structured lists are arrays. Table, wide, JSON and
+YAML reads omit the secret. Keep issuance output in a private token file.
+
+For a retried issuance, reuse the same name, expiration and
+`--idempotency-key=OPERATION_KEY`.
+The server returns the same token metadata without its secret on replay.
+Structured replay output omits `token`; ordinary replay reports that the secret
+is unavailable. Do not select a new key merely to repeat a lost response.
+Each new issuance creates an independent token. Issue a replacement, update
+installations, then revoke the old token by ID. Revocation reads its current
+version and sends the shared guarded operation. It prevents enrollment or
+refresh with that token; existing Worker sessions and claimed run capabilities
+retain their separate lifetimes.
 
 To run a test script:
 ```shell

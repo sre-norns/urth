@@ -112,6 +112,31 @@ Failure traces can contain credentials: keep them private and remove
 them after diagnosis. Use a separate database for `make audit/postgres`, which
 runs destructive integration fixtures.
 
+The client enrollment test needs the isolated API, PostgreSQL, NATS, website,
+bootstrap owner and built `urthctl`. It uses the real device grant, browser
+controls and shared token endpoints. Start the API with stdout/stderr in a
+private task log, then run:
+
+```sh
+URTH_LIVE_E2E=1 URTH_ENROLLMENT_LIVE_E2E=1 \
+URTH_E2E_BASE_URL=http://localhost:13007 \
+URTH_E2E_API_URL=http://127.0.0.1:18087 \
+URTH_E2E_API_LOG=/path/to/private/task-api.log \
+URTH_E2E_CLI=/path/to/built/urthctl \
+npm run test:e2e -- e2e/enrollment-client-live.spec.ts --project=desktop --workers=1
+```
+
+The test issues through the CLI and revokes through the UI, then issues through
+the UI and revokes through the CLI. Mounted Worker challenge requests prove
+each secret works before revocation and returns 401 afterward. It checks
+requested CLI expiration, replay redaction, one-time UI dismissal, browser
+storage, ordinary CLI reads/errors, captured API/CLI output, legacy
+`runners token` compatibility, private CLI profile storage and axe checks.
+Browser traces are disabled for this test because issuance responses contain
+secrets. Explicit issuance output is allowed to contain the secret. Private
+CLI profiles are removed in cleanup. `URTH_E2E_CLIENT_SCREENSHOT` can select the
+final narrow screenshot path; the screenshot contains revoked metadata only.
+
 ## Production image
 
 From the repository root:

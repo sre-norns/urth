@@ -14,6 +14,7 @@ type RunnersCmd struct {
 	Block   RunnerBlockCmd   `cmd:"" help:"Block a verified worker fingerprint"`
 	Unblock RunnerUnblockCmd `cmd:"" help:"Unblock a verified worker fingerprint"`
 	Token   RunnerTokenCmd   `cmd:"" help:"Issue an enrolment token a runner's workers register with"`
+	Tokens  RunnerTokensCmd  `cmd:"" help:"Issue, inspect and revoke a runner's identity tokens"`
 }
 
 // RunnerTokenCmd issues the token a runner's workers start with (RUNNER_TOKEN).
