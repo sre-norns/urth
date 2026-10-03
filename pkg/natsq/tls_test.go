@@ -6,14 +6,16 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
-	"github.com/sre-norns/urth/pkg/natsq"
-	"github.com/stretchr/testify/require"
 	"math/big"
 	"net"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/nats-io/nkeys"
+	"github.com/sre-norns/urth/pkg/natsq"
+	"github.com/stretchr/testify/require"
 )
 
 func brokerTLS(t *testing.T) (*tls.Config, string, string, string) {
@@ -39,6 +41,44 @@ func brokerTLS(t *testing.T) (*tls.Config, string, string, string) {
 	pool := x509.NewCertPool()
 	require.True(t, pool.AppendCertsFromPEM(certPEM))
 	return &tls.Config{MinVersion: tls.VersionTLS12, Certificates: []tls.Certificate{certificate}, ClientCAs: pool, ClientAuth: tls.RequireAndVerifyClientCert}, ca, cert, private
+}
+
+func TestWorkerSigningAccountConfiguration(t *testing.T) {
+	account, err := nkeys.CreateAccount()
+	require.NoError(t, err)
+	defer account.Wipe()
+	public, err := account.PublicKey()
+	require.NoError(t, err)
+	seed, err := account.Seed()
+	require.NoError(t, err)
+	seedFile := filepath.Join(t.TempDir(), "account.seed")
+	require.NoError(t, os.WriteFile(seedFile, seed, 0600))
+	user, err := nkeys.CreateUser()
+	require.NoError(t, err)
+	defer user.Wipe()
+	userPublic, err := user.PublicKey()
+	require.NoError(t, err)
+	for _, tc := range []struct {
+		name, public, seedFile string
+		valid                  bool
+	}{
+		{"primary-key-compatible-default", "", seedFile, true},
+		{"explicit-owning-account", public, seedFile, true},
+		{"malformed-account-key", "not-an-account-key", seedFile, false},
+		{"user-key-is-not-account", userPublic, seedFile, false},
+		{"account-without-signing-seed", public, "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := testConfig()
+			cfg.WorkerAccountPublicKey = tc.public
+			cfg.WorkerAccountSeedFile = tc.seedFile
+			if tc.valid {
+				require.NoError(t, cfg.Validate())
+			} else {
+				require.Error(t, cfg.Validate())
+			}
+		})
+	}
 }
 func TestNATSSecurityConfigurationFailsClosed(t *testing.T) {
 	for _, tc := range []struct {
