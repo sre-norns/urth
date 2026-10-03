@@ -131,7 +131,12 @@ func (a *brokerAuthority) scheduler(t *testing.T, ctx context.Context, client na
 
 func issuedBrokerClient(t *testing.T, ctx context.Context, transport natsq.Transport, client natsq.ClientConfig) (*nats.Conn, urth.NATSConnectionInfo) {
 	t.Helper()
-	info, err := transport.ConnectionInfoFor(ctx, "runner-operations", "worker-operations", time.Now().Add(time.Minute))
+	return issuedBrokerClientUntil(t, ctx, transport, client, time.Now().Add(time.Minute))
+}
+
+func issuedBrokerClientUntil(t *testing.T, ctx context.Context, transport natsq.Transport, client natsq.ClientConfig, expiry time.Time) (*nats.Conn, urth.NATSConnectionInfo) {
+	t.Helper()
+	info, err := transport.ConnectionInfoFor(ctx, "runner-operations", "worker-operations", expiry)
 	require.NoError(t, err)
 	data, err := natsq.WorkerCredentialBytes(info.Credential)
 	require.NoError(t, err)

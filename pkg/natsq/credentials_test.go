@@ -185,8 +185,15 @@ func TestWorkerCredentialsEnforceAccountQueueIsolation(t *testing.T) {
 	assertDenied(func() error { _, err := conn.Subscribe("urth.v1.events.>", func(*nats.Msg) {}); return err })
 	assertDenied(func() error { return conn.Publish("$JS.API.STREAM.DELETE."+a.Stream, nil) })
 	assertDenied(func() error { return conn.Publish("$JS.API.CONSUMER.DELETE."+a.Stream+"."+a.Consumer, nil) })
+	for _, subject := range []string{
+		"$JS.API.STREAM.CREATE." + a.Stream,
+		"$JS.API.STREAM.UPDATE." + a.Stream,
+		"$JS.API.CONSUMER.CREATE." + a.Stream + "." + a.Consumer,
+	} {
+		assertDenied(func() error { return conn.Publish(subject, []byte(`{}`)) })
+	}
 	assertDenied(func() error { return conn.Publish(natsq.PresenceSubject("a", "other-worker"), nil) })
-	assertDenied(func() error { return conn.Publish(natsq.RunnerLogSubjectPrefix("b"), nil) })
+	assertDenied(func() error { return conn.Publish(natsq.LogSubject("b", "result-b"), []byte("foreign-log")) })
 	require.NoError(t, conn.Publish(natsq.PresenceSubject("a", "worker-a"), nil))
 	require.NoError(t, conn.Publish("urth.v1.logs.a.result-a", []byte("own-log")))
 	require.NoError(t, conn.Flush())
