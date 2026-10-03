@@ -135,6 +135,11 @@ the revoked-metadata screenshot are saved under
 API/Vite processes and both named task containers are removed. Private runtime
 files and failure traces are removed. The PR handoff removes the branch
 worktree after publication. User PostgreSQL 5432, NATS 4222/8222, main checkouts
-and protected Exp-Bench OpenSpec directories are preserved. Hosted checks and
-the exact merged-head gate remain pending until the candidate PR is checked
-and merged.
+and protected Exp-Bench OpenSpec directories are preserved.
+
+PR [115](https://github.com/sre-norns/urth/pull/115) merges as `1e37393`.
+The exact merged backend, website and CodeQL checks pass; links are in the
+[release record](m9-release-validation.md). CLI and website files match the
+locally tested PR head `ad1bd16`. The other merged follow-ups add backend tests
+and documentation, so this attribution does not claim another live run at the
+merge commit. Deployment and release-version gates remain open.
