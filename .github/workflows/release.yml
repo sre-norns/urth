@@ -72,14 +72,9 @@ jobs:
           else
             python3 scripts/build-release.py --snapshot --metadata-only > "$RUNNER_TEMP/source.json"
           fi
-          python3 - <<'PY'
-          import json, os
-          from pathlib import Path
-          data = json.loads((Path(os.environ['RUNNER_TEMP']) / 'source.json').read_text())
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
-              for key in ('version', 'revision', 'created', 'stable'):
-                  print(f'{key}={str(data[key]).lower()}', file=output)
-          PY
+          jq -r '"version=\(.version)", "revision=\(.revision)",
+            "created=\(.created)", "stable=\(.stable)"' \
+            "$RUNNER_TEMP/source.json" >> "$GITHUB_OUTPUT"
 
   backend:
     if: github.event_name == 'push'
