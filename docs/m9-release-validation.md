@@ -30,7 +30,7 @@ and validate any new published pin in both consumers before release selection.
 | --- | --- | --- | --- | --- |
 | Urth | `d60d9021dcf52a89e9c8aaba680f5ae403b1671f`; tree `1e86a529399ccfe68b0182dcaaa502f4333e5d60` is identical to tested combined commit `c9720b465ae108abb61a57bf7dc633d175fac377` | Full PostgreSQL/race/static audit for the run-capability change; combined API/NATS/Worker/integration pass at `37cb719`; frontend 33 unit tests, build, eight fixture browser/axe cases, and two real-stack tests pass | [Website](https://github.com/sre-norns/urth/actions/runs/37108548817), [CodeQL](https://github.com/sre-norns/urth/actions/runs/37108548872), [Build And Verify](https://github.com/sre-norns/urth/actions/runs/37108548882) pass at `d60d902` | Source validation passes; remaining criteria below stay explicit |
 | Exp-Bench | `dc0069ad65a31e9b3127948e5afb933fbd7b43ac`; tree `45d3224cc0821be467cfbfd255b2ced00f82d603` is identical to tested `1f87384` | Fresh five-role browser/CLI/MCP verifier passes; 13 real-system browser tests pass in 2.1 minutes; 223 fixture browser tests pass in 8.3 minutes; 122 unit tests, formatting/lint/build and focused race/static checks pass | [Website](https://github.com/sre-norns/exp-bench/actions/runs/37108587549) passes; [CI](https://github.com/sre-norns/exp-bench/actions/runs/37108587526) passes, including image publication | Complete merged-source race gate passes in aggregate; verify/vet/static pass |
-| Urth broker follow-up | Source `e4c3483b5f33cc1de3bca52de315840a32c07070`; final head `82b23384bf689e4efc5bb494e583e0c2fe069830` adds reviewed runbook wording only; base `d60d902` | Route rollover race count 10 passes in 287.249 seconds; complete PostgreSQL audit passes, including broker 64.745 seconds and integration 144.609 seconds; final sensitivity controls fail as intended | [PR 111](https://github.com/sre-norns/urth/pull/111) is open; review passes; merge and exact merged-head CI pending | Tests/docs only; no production code or dependency change |
+| Urth broker follow-up | Source `e4c3483b5f33cc1de3bca52de315840a32c07070`; final head `82b23384bf689e4efc5bb494e583e0c2fe069830` adds reviewed runbook wording only; base `d60d902` | Route rollover race count 10 passes in 287.249 seconds; complete PostgreSQL audit passes, including broker 64.745 seconds and integration 144.609 seconds; final sensitivity controls fail as intended | [PR 111](https://github.com/sre-norns/urth/pull/111) merges as `f93767a`; subsequent docs merge `4990b229` passes [Build And Verify](https://github.com/sre-norns/urth/actions/runs/37112080233), [Website](https://github.com/sre-norns/urth/actions/runs/37112080193) and [CodeQL](https://github.com/sre-norns/urth/actions/runs/37112080155) | Tests/docs only; no production code or dependency change |
 | components | `49c16562b9de8c5dd4906cd54ba22cd591341717`; package `0.5.0` tag `224bb6c5aca62a4fa3b7baf726bc19573372dacb`; only README differs | 177 unit/theme tests in 21 files pass in 68.31 seconds; lint/typecheck/build pass; 82 browser/axe/snapshot tests pass in 2.3 minutes; package has 81 expected files | [CI](https://github.com/sre-norns/norns-components/actions/runs/37085957314) passes at `49c1656` | No package source change or new version required |
 
 The Urth merged backend workflow runs `make audit/postgres` with PostgreSQL 18.
@@ -76,15 +76,38 @@ verification, vet and pinned static checks also pass at the merged source.
 Exp-Bench's CI test command does not enable race detection; the independent
 local race evidence closes that check separately.
 
+## Enrollment backend follow-up
+
+`enrollment_lifecycle_test.go` runs against the mounted API and a private
+PostgreSQL schema. All six Runner disable/delete or identity-suspension pairs
+first prove successful enrollment and refresh. Each case then obtains an
+unused proof, changes state through the API and receives 401 from both challenge
+and enrollment. Worker records remain unchanged after refusal.
+
+The storage case checks the published identity `v0.7.2` SHA-256 verifier and
+plaintext exclusion in credential/token rows. Stored verifiers, IDs and rows
+all fail as enrollment authority. The original secret and same unused proof
+still enroll. Serialized Runner/Worker resources and normal identity/token
+reads exclude the secret. No shared implementation or dependency change is
+required. CLI/UI lifecycle and live-log evidence remain a separate change.
+
+Focused race checks pass in 14.032 seconds. The complete
+`GOWORK=off make audit/postgres` passes with module verification, vet,
+Staticcheck 2026.2.1 and race tests. Broker and integration packages pass in
+66.334 and 152.776 seconds. This is candidate evidence on base `4990b229`;
+merge and exact-head CI remain required for the new tests. Logs are preserved
+in `~/workspace/m9-review/enrollment-followup/m9-enrollment-focused.log` and
+`m9-enrollment-audit.log`.
+
 ## Security criterion matrix
 
 | Area | Evidenced behavior | Remaining criterion |
 | --- | --- | --- |
-| Enrollment / [005](review-backlog/tasks/005-secure-runner-enrollment.md) | Paired Runner identity; authenticated one-time issue and replay/read redaction; revoked token cannot obtain a challenge or enroll; replacement token refreshes the same UID; an existing session retains its own authority | Mounted Runner disable/delete and identity-suspension enrollment/refresh denials; shared token at-rest protection; CLI/UI issue/revoke equivalence and ordinary CLI read/error/log/manifest secret checks; authenticated one-time issuance output is allowed |
-| Broker / [004](review-backlog/tasks/004-runner-scoped-nats-credentials.md) | Own consumer/ack/log/presence works; foreign consumer/inbox, own and foreign job publication, event subscription, other-Worker presence, stream/consumer deletion fail; live expiry disconnects; renewal and new-UID reconnect work; session and five-minute lifetime bounds; mTLS/config fail-closed tests; delegated signer overlap/retirement, client/server CA rollover and secured three-node failover pass | PR 111 now proves concrete foreign-log, stream create/update, consumer create and service-role denials plus cluster-route certificate rollover; its merge/exact merged-head CI and deployment verification remain |
+| Enrollment / [005](review-backlog/tasks/005-secure-runner-enrollment.md) | Paired Runner identity; authenticated one-time issue and replay/read redaction; revoked token cannot obtain a challenge or enroll; replacement token refreshes the same UID; an existing session retains its own authority | Backend candidate adds all six Runner disable/delete and identity-suspension enrollment/refresh denials, shared token verifier replay refusal and serialized resource secrecy. CLI/UI issue/revoke and ordinary CLI read/error/live-log secret checks remain in the client follow-up; merge checks remain required |
+| Broker / [004](review-backlog/tasks/004-runner-scoped-nats-credentials.md) | Own consumer/ack/log/presence works; foreign consumer/inbox, own and foreign job publication, event subscription, other-Worker presence, stream/consumer deletion fail; live expiry disconnects; renewal and new-UID reconnect work; session and five-minute lifetime bounds; mTLS/config fail-closed tests; delegated signer overlap/retirement, client/server CA rollover and secured three-node failover pass | Merged PR 111 proves concrete foreign-log, stream create/update, consumer create and service-role denials plus cluster-route certificate rollover. Exact merged-head CI passes; deployment verification remains |
 | Worker / [009](review-backlog/tasks/009-worker-identity-and-blocklist.md) | Private persistent Ed25519 key; verified two-minute single-use proof; same-name different-key conflict; versioned block/unblock; immediate next-claim denial; bounded broker disconnection; independent in-flight report authority; CLI/UI equivalence | Acceptance evidence complete; deployment-specific key provisioning and revocation timing remain release operations |
 | Run capability / [006](review-backlog/tasks/006-harden-run-capabilities.md) | Exact algorithm/key/issuer/audience/time/tenant/executor/dispatch/scope checks; current Result state; bounded artifact grace; multi-replica key overlap/retirement; server-derived linkage; duplicate reporting and race tests | Acceptance evidence complete; operator key distribution and overlap settings remain deployment responsibilities |
-| Composed authorization / [024](review-backlog/tasks/024-authorization-integration-scenarios.md) | Shared PostgreSQL/HTTP/JetStream harness covers token revoke/replacement, active block/delete, session expiry, broker expiry/renewal, bounded reports, wrong Result/dispatch and expired status/artifact authority; project grant revocation preserves claimed work | Mounted status/artifact denials for changed stored Runner/Worker executor bindings are not separately evidenced; broker follow-up merge/exact merged-head CI remains |
+| Composed authorization / [024](review-backlog/tasks/024-authorization-integration-scenarios.md) | Shared PostgreSQL/HTTP/JetStream harness covers token revoke/replacement, active block/delete, session expiry, broker expiry/renewal, bounded reports, wrong Result/dispatch and expired status/artifact authority; project grant revocation preserves claimed work | Mounted status/artifact denials for changed stored Runner/Worker executor bindings are not separately evidenced; broker follow-up merge/exact merged-head CI now passes |
 | OAuth and HTTP tenancy | Mounted credential-purpose, route/catalogue isolation, trusted proxy, Origin, limiter failure/retry and stream membership/session-removal/expiry regressions pass | Production issuer, redirect, proxy trust and provider/mail configuration need deployment review |
 | UI foundation | Both brands, wide/narrow layouts, populated routes, axe, theme/unit and package checks pass; real-stack screenshots reviewed | Published images and deployment-specific UI configuration remain untested |
 
@@ -135,8 +158,9 @@ close the product release or unrelated backlog.
   review wide/narrow screenshots.
 - [x] Run focused run-capability, Worker proof and secured broker lifecycle tests.
 - [ ] Complete the remaining enrollment and composed broker/HTTP negative matrix
-  rows identified above. Broker follow-up cases now pass locally; its merge and
-  exact merged-head CI remain pending.
+  rows identified above. Backend enrollment cases pass in the current candidate;
+  client and executor-binding follow-ups remain separate PRs. Broker follow-up
+  merge and exact merged-head CI pass.
 - [x] Validate fresh Urth registration/mail/password/fake-IdP/device login,
   project/Runner/token/grant/Scenario/execution/log/artifact flow.
 - [x] Validate Exp-Bench's fresh browser/CLI/MCP five-role canonical workflow and
@@ -158,14 +182,14 @@ close the product release or unrelated backlog.
   route rollover check and final-source sensitivity controls.
 - [x] Remove the broker task database, private test directories and worktree;
   preserve sanitized evidence. User NATS/PostgreSQL remain intact.
-- [ ] Complete broker follow-up merge and exact merged-head CI.
+- [x] Complete broker follow-up merge and exact merged-head CI at `4990b229`.
 
 ## Outstanding risks and ownership
 
 | Risk / remaining work | Owner | Release impact |
 | --- | --- | --- |
-| Task 005/024 missing cases; task 004 follow-up merge gate | Security validation owners | Enrollment/executor-binding cases remain missing; broker cases now pass in PR 111 and need merged validation |
-| Cluster-route certificate rollover | Broker validation owner | PR 111 passes rolling three-node route leaf/trust reload and current delivery/acks; merge/CI and deployment-specific operations remain |
+| Task 005/024 follow-up acceptance cases | Security validation owners | Enrollment backend candidate passes; client and executor-binding follow-ups remain separate review/merge gates. Task 004 acceptance and merged CI are complete |
+| Cluster-route certificate rollover | Broker validation owner | PR 111 passes rolling three-node route leaf/trust reload and current delivery/acks; merged CI passes; deployment-specific operations remain |
 | Production deployment profile | Maintainer / operator | HTTPS/authenticated client and route TLS, private signing keys, replica configuration, external mail/provider, images, metrics and failure alerts require deployment review |
 | Product version selection | Maintainer | No versions or releases are authorized by this record |
 | Shared identity provider confirmation copy | Identity owner | Urth intermediate provider page uses Exp-Bench wording; workflow passes; separate cosmetic correction |
@@ -198,5 +222,5 @@ explicit consumer-update positive is claimed.
 
 Evidence is preserved under
 `/home/soultaker/workspace/m9-review/cluster-route-followup/`.
-This candidate does not prove a production deployment or replace its future
-exact merged-head gate. See [the candidate broker runbook](https://github.com/sre-norns/urth/blob/82b23384bf689e4efc5bb494e583e0c2fe069830/docs/m9-broker-operations.md).
+PR 111 is merged and exact merged-head checks pass at `4990b229`. This evidence
+does not prove a production deployment. See [the candidate broker runbook](https://github.com/sre-norns/urth/blob/82b23384bf689e4efc5bb494e583e0c2fe069830/docs/m9-broker-operations.md).

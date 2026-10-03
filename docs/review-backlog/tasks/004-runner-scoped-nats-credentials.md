@@ -4,7 +4,7 @@ Shared context: [`CONTEXT.md`](../CONTEXT.md).
 
 | Field | Value |
 |---|---|
-| Status | `implemented; pending merged follow-up validation` |
+| Status | `done` |
 | Priority | `P0` |
 | Workstream | Authentication |
 | Depends on | — |
@@ -13,15 +13,16 @@ Shared context: [`CONTEXT.md`](../CONTEXT.md).
 
 ## Current evidence and remaining criteria (2026-10-03)
 
-The implementation is merged in Urth `d60d902`. Keep this task open for the
-follow-up merge/CI and deployment checks below. The historical source review
-describes `1e13334`; it does not describe the current credential API.
+The implementation and broker follow-up are merged through Urth `4990b229`.
+All exact-head backend, website and CodeQL checks pass. The acceptance criteria
+are complete. Deployment checks remain separate release operations. The
+historical source review describes `1e13334`, not the current credential API.
 
 | Criterion | Merged evidence / exact remaining check |
 | --- | --- |
 | Separate secured API/Worker identities | `credentials_test.go` creates independent provisioner, publisher, observer and Worker credentials against an authenticated mutual-TLS broker. The Worker receives its own JWT/seed, not an API credentials path. |
 | Exact Runner consumption/publication | Own consumer fetch/confirmed ack, own log and exact Worker presence publication succeed. Foreign consumer/pull/inbox and other-Worker presence fail. The old merged negative uses a wildcard prefix. PR 111 now attempts valid `LogSubject("b", "result-b")` and asserts denial. |
-| Jobs/events/JetStream administration denied | Own and foreign Runner job publication, event subscription and stream/consumer deletion fail. PR 111 now attempts stream create/update, consumer create and cross-role provisioner/publisher/observer denials with positive controls. Its merge and exact merged-head CI remain pending. |
+| Jobs/events/JetStream administration denied | Own and foreign Runner job publication, event subscription and stream/consumer deletion fail. PR 111 now attempts stream create/update, consumer create and cross-role provisioner/publisher/observer denials with positive controls. The follow-up is merged and its exact-head CI passes. |
 | Expiry and renewal | Already-connected authority expires/disconnects; expired authority cannot reconnect. Renewal reconnects the existing consumer and survives original expiry. Real Worker runtime tests preserve in-flight reporting and prove presence/claim/report after same/new-UID replacement. Authority ends by Worker session expiry and the default five-minute cap. |
 | No server credentials path | Secured registration asserts the legacy `Value` path is empty. The decorated JWT/seed DTO and redacted String method replace the overloaded path. |
 | Fail-closed production transport | `tls_test.go` and Worker API transport tests reject missing authentication, accidental plaintext, untrusted/missing client TLS and non-loopback insecure mode. Production deployment configuration still needs operator verification. |
@@ -47,7 +48,10 @@ permission attempts and route rollover test. Source is
 `e4c3483b5f33cc1de3bca52de315840a32c07070`; final head
 `82b23384bf689e4efc5bb494e583e0c2fe069830` adds reviewed runbook wording only.
 It changes tests/docs on `d60d902`, with no production or dependency change.
-Independent source review passes. Merge and exact merged-head validation remain pending.
+Independent source review passes. PR 111 merges as `f93767a`; the subsequent
+documentation merge `4990b229` passes [Build And Verify](https://github.com/sre-norns/urth/actions/runs/37112080233),
+[Website](https://github.com/sre-norns/urth/actions/runs/37112080193) and
+[CodeQL](https://github.com/sre-norns/urth/actions/runs/37112080155).
 
 The full `GOWORK=off make audit/postgres` passes: broker race 64.745 seconds,
 integration 144.609 seconds, repository vet, Staticcheck 2026.2.1 and module
@@ -150,11 +154,10 @@ record a superseding ADR selecting Auth Callout before implementing another sche
 ## Acceptance Criteria / Definition of Done
 
 - [x] A secured test deployment uses separate API and Worker identities.
-- [ ] A Worker consumes only its exact Runner consumer and publishes only its
-  log/presence authority; PR 111 proves valid concrete foreign-log denial,
-  pending merged follow-up validation.
-- [ ] Cross-Runner reads, job/event authority and all required administration
-  denials are evidenced in PR 111, pending merged follow-up validation.
+- [x] A Worker consumes only its exact Runner consumer and publishes only its
+  log/presence authority; merged PR 111 proves valid concrete foreign-log denial.
+- [x] Cross-Runner reads, job/event authority and all required administration
+  denials are evidenced in merged PR 111 and pass the exact-head CI.
 - [x] Credentials expire and renew within the Worker session bound.
 - [x] No server-local credentials path is sent to a Worker.
 - [x] Production configuration rejects accidental unauthenticated/plaintext NATS.
@@ -184,7 +187,6 @@ git diff --check
   delegated signing rotation, client/server CA rollover and secured failover.
 - **Validation evidence:** Full merged `d60d902` backend gate passes. Additional
   PR 111 permission and route-rotation audit passes as attributed above.
-- **Follow-ups:** PR 111 merge/exact merged-head CI and deployment
-  key/no-store/secrecy/TLS verification. The permission and route-rollover tests
-  now pass; do not retain the historical broad missing-matrix claim. Task stays
-  open until the follow-up release gates are recorded.
+- **Follow-ups:** Deployment key/no-store/secrecy/TLS verification remains a
+  release operation. Acceptance evidence and the follow-up merged CI pass.
+  Task closure does not approve a production deployment.
