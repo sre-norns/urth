@@ -24,6 +24,9 @@ changes, add a new ADR that supersedes the old one instead of rewriting the old 
 [M8 canonical adoption](./m8-canonical-adoption.md) records the released dependencies,
 Urth/identity boundaries, token operation and coordinated client cutover.
 
+[M9 release validation](./m9-release-validation.md) records the current evidence
+matrix, fresh-install checklist and outstanding release risks.
+
 ## Implementation review backlog
 
 [`review-backlog/`](./review-backlog/README.md) turns the NATS Worker implementation

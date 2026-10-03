@@ -12,6 +12,23 @@ Tasks 001–016 came out of that review. Later numbers may be work found while
 executing it, which belongs in the same tracker and same format even where it
 sits outside the NATS workstreams; such a task says so in its Workstream field.
 
+## Current M9 review (2026-10-03)
+
+Tasks 004/005/009/024 include a current evidence matrix above their historical
+review baseline. Scoped Worker NATS JWTs, shared machine-token enrollment and
+tenant/grant regressions exist. They do not close the remaining credential
+lifecycle, stable Worker proof and composed authorization criteria.
+
+Shared identity supersedes task 005's separate enrollment store and generation
+rotation proposal. Read its current contract before implementing its original
+sequence. The fresh-install decision supersedes old resource/NATS migration
+requirements. Historical task and ADR discussions remain for traceability.
+
+Use the [M9 release checklist](../m9-release-validation.md). Security tasks stay
+open until their current criteria have exact evidence. Tasks outside M9 keep
+their status and owner; this reconciliation does not close scheduler, prober or
+operator feature work.
+
 ## Agent Workflow
 
 1. Choose a `ready` task whose dependencies are `done`.
@@ -37,8 +54,8 @@ Status values:
 | 001 | P0 | done | [Preserve retryable claim failures](tasks/001-preserve-retryable-claim-failures.md) | — | 003, 010, 011 |
 | 002 | P0 | done | [Add the transactional dispatch outbox](tasks/002-transactional-dispatch-outbox.md) | — | 003, 007, 011, 012 |
 | 003 | P0 | done | [Reconcile dispatch and execution lifecycle](tasks/003-reconcile-dispatch-and-execution.md) | 002 | 001, 011, 012 |
-| 004 | P0 | ready | [Issue Runner-scoped NATS credentials](tasks/004-runner-scoped-nats-credentials.md) | — | 005, 009, 011, 013 |
-| 005 | P0 | ready | [Secure Runner enrollment issuance and rotation](tasks/005-secure-runner-enrollment.md) | — | 004, 006, 009 |
+| 004 | P0 | ready | [Validate Runner-scoped NATS credential lifecycle](tasks/004-runner-scoped-nats-credentials.md) | — | 005, 009, 011, 013 |
+| 005 | P0 | ready | [Verify shared machine-token enrollment lifecycle](tasks/005-secure-runner-enrollment.md) | — | 004, 006, 009 |
 | 006 | P0 | ready | [Harden run capabilities and reporting authorization](tasks/006-harden-run-capabilities.md) | — | 005, 007, 008, 011 |
 | 007 | P0 | done | [Snapshot immutable execution input on Result](tasks/007-snapshot-result-execution-input.md) | — | 002, 006, 008, 011 |
 | 008 | P0 | ready | [Complete the Runner channel policy contract](tasks/008-runner-channel-policy.md) | — | 006, 007, 009, 014 |
@@ -107,7 +124,8 @@ git diff --check
 ```
 
 `make audit/postgres` is what CI runs, and it needs a Postgres —
-`make run-postgres-podman`. Plain `go test ./...` and `make audit` silently skip
+a disposable database supplied as `store-url`. The Makefile default is the
+local development database. Plain `go test ./...` and `make audit` silently skip
 every test that needs a real transaction or real row locking — and, since task
 011, the whole of `test/integration` — so they are not sufficient evidence for a
 task in the Durability workstream.

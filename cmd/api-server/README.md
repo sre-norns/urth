@@ -17,7 +17,7 @@ runners and project-owned scenarios/results/artifacts. Lists are cursor-only.
 See [M4 configuration and API notes](../../docs/m4-backend-tenancy.md) for routes,
 runner grants, token issuance and NATS signing credentials. The local Makefile
 explicitly enables an unauthenticated development broker. Production requires
-restricted NATS worker credentials. M6/M7 bring the CLI login and websites onto
+restricted NATS worker credentials. The CLI and website use
 these APIs.
 
 ### Identity: issuer, sign-in, mail and the first user
@@ -53,7 +53,7 @@ away from its Runner, because the Runner's name is its queue address. Suspending
 runner's identity through them stays allowed.
 
 **Local development.** `make run-api-server` sets the development values: the
-issuer and redirect URI are `website-experiment`'s origin (`http://localhost:3001`),
+issuer and redirect URI are `website/`'s origin (`http://localhost:3001`),
 because that dev server fronts the API; mail goes to `.dev/mail`; and it
 bootstraps `admin@urth.example` (password `urth-dev-password`) as an account
 owner. Sign-in forms are then accepted only through that origin, not directly on
@@ -524,13 +524,14 @@ Things worth knowing:
   an authenticated claim (`AuthJobResponse.Prob`). `GET /results` and
   `GET /results/{id}` expose `probKind` and the `urth/scenario.*` labels, not the
   script. There is deliberately no operator endpoint that returns it yet; adding
-  one needs the operator authentication of
+  one requires an explicit product access and redaction contract. Enrollment token
+  lifecycle is separate; see
   [task 005](../../docs/review-backlog/tasks/005-secure-runner-enrollment.md).
 - **The labels describe the snapshot.** `urth/scenario.version` on a `Result`
   names the revision that run actually executes, so "which runs used the bad
   script" stays a label query after the scenario has moved on.
-- **A run with no snapshot fails closed.** Rows written before this column
-  existed read back as NULL. Such a run is refused at claim, its dispatch is
+- **A run with no snapshot fails closed.** A missing execution snapshot is
+  invalid. Such a run is refused at claim, its dispatch is
   acknowledged rather than redelivered forever, and the `Result` becomes
   `errored` and labelled `urth/result.unschedulable=missing-execution-snapshot`.
   It is never repaired from the current `Scenario`: that would run something
@@ -792,7 +793,7 @@ queued" is always exact; only "for which of these two hundred runners" degrades.
 | NATS storage | container filesystem | persistent volumes, one per server |
 | Servers | one, `-js` | three, clustered across failure domains |
 | TLS | off | required, both client and route connections |
-| Auth | none | credentials file per participant (`--nats.creds-file`) |
+| Auth | explicit `--nats.allow-insecure-workers` | configured service credentials and restricted Worker JWTs |
 | Postgres | container | managed or replicated, with backups |
 
 A single non-replicated NATS server is fine for local development and tests, and
@@ -801,8 +802,20 @@ not be described as such: it holds every queued job on one disk, and losing that
 disk loses the jobs that had been accepted but not yet claimed. Three replicas on
 persistent volumes is the production shape ADR 0004 §11 requires.
 
-Urth does not yet issue NATS identities — ADR 0004 leaves the choice between Auth
-Callout and minted NKey/JWT open ([task
-004](../../docs/review-backlog/tasks/004-runner-scoped-nats-credentials.md)) — so
-until then `--nats.creds-file` points at credentials an operator provisioned, and
-the same file is handed to workers through the registration response.
+Urth issues Runner-scoped NATS user JWTs from the account signing seed at
+`--nats.worker-account-seed-file`. The API service connects with its own
+`--nats.creds-file`; that local path is not sent to Workers. Workers receive
+short-lived decorated JWT/NKey credentials and bind an existing Runner consumer.
+The signing seed stays on the API service host. Restrict both files to the
+service user and keep them outside resource manifests and logs.
+
+Configure the broker's operator/account resolver to accept the signing account.
+Configure service permissions for provisioning, relay publication, log subscription
+and presence ingestion. These roles currently share the composed API process;
+independent per-loop service identities remain a task 004 validation requirement.
+Require broker client and cluster-route TLS in the production deployment.
+The local Makefile explicitly enables unauthenticated Workers for its local broker.
+
+The [M9 evidence matrix](../../docs/m9-release-validation.md) records which
+permission, expiry, renewal and revocation checks remain open. A production
+configuration recommendation is not evidence that all checks pass.

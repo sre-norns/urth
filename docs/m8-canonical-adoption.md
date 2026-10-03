@@ -1,6 +1,6 @@
 # M8: Urth adoption of canonical identity
 
-Urth pins wyrd `v0.7.0`, identity `v0.7.0` and components `0.5.0`. Backend, CLI,
+Urth pins wyrd `v0.7.0`, identity `v0.7.2` and components `0.5.0`. Backend, CLI,
 worker and website ship together. No legacy resource reader/writer or data
 migration is provided. Tests use new PostgreSQL schemas/databases.
 

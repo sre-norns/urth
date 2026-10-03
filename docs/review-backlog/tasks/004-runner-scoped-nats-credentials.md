@@ -1,4 +1,4 @@
-# 004: Issue Runner-Scoped NATS Credentials
+# 004: Validate Runner-Scoped NATS Credential Lifecycle
 
 Shared context: [`CONTEXT.md`](../CONTEXT.md).
 
@@ -10,6 +10,27 @@ Shared context: [`CONTEXT.md`](../CONTEXT.md).
 | Depends on | — |
 | Likely conflicts | 005, 009, 011, 013 |
 | Owner | Unclaimed |
+
+## Current evidence and remaining criteria (2026-10-03)
+
+Status remains open. The original source review below describes commit `1e13334`;
+it is not a description of the current API.
+
+| Classification | Evidence / remaining requirement |
+| --- | --- |
+| Completed mechanism | `pkg/natsq/credentials.go` issues decorated NATS user JWT/NKey credentials. Permissions identify an account-qualified Runner consumer, Runner log/presence prefixes and inbox. |
+| Completed regression | `TestWorkerCredentialsEnforceAccountQueueIsolation` in `pkg/natsq/credentials_test.go` uses a secured broker. It consumes its own queue and asserts denials for the other account's queue, pull API, publication and inbox. |
+| Superseded diagnosis | The API does not return its service credentials-file path to Workers. Worker credentials are separate from configured service credentials. |
+| Outstanding | Prove log/presence prefix, event, job and JetStream administration denials comprehensively. Prove existing-connection expiry, rotation and reconnect during execution. |
+| Outstanding | Close the fixed one-hour NATS expiry versus shorter Worker session gap. Prove production TLS rejection and signing-key/redaction/no-store behavior. |
+| Outstanding | Review least privilege for the service roles in the composed API process. Separate per-loop configured identities are not established by the existing worker permission test. |
+
+Current completion requires evidence for all six original acceptance criteria.
+Task 009 supplies stable Worker proof. Broker revocation must have an explicit
+maximum delay; an API claim denial alone does not prove broker disconnection.
+Use the [release checklist](../../m9-release-validation.md).
+
+## Historical review baseline and requirements
 
 ## Why This Matters
 

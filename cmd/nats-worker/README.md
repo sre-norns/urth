@@ -31,7 +31,8 @@ asynq, the whole job including its script sat in a shared Redis queue that every
 worker read.
 
 **It only sees its own runner's work.** Each runner has a durable pull consumer
-filtered to `urth.v1.jobs.<runner-uid>`, and workers of that runner share it. The
+filtered to `urth.v2.jobs.<account-uid>.<encoded-runner-name>`. Workers of that
+Runner share it. The
 prototype had one queue that every worker competed on, so a scenario's placement
 requirements were computed and then discarded.
 
@@ -128,21 +129,26 @@ must carry their own idempotency.
 
 ## Running it
 
+Use the authenticated project, Runner, grant and Scenario setup in the
+[repository quick start](../../README.md#quick-start). Then issue a token into a
+private file and start the Worker:
+
 ```bash
-make run-postgres-podman
-make run-nats-podman
-make run-api-server-nats
-
-go run ./cmd/urthctl apply ./examples/runner.yaml
-go run ./cmd/urthctl apply ./examples/scenario.tcp.yaml
-
-export RUNNER_TOKEN=$(go run ./cmd/urthctl runners token -f ./examples/runner.yaml)
-make run-nats-worker
+RUNNER_TOKEN_FILE=$(mktemp)
+chmod 600 "$RUNNER_TOKEN_FILE"
+go run ./cmd/urthctl runners token example-runner-yaml > "$RUNNER_TOKEN_FILE"
+go run ./cmd/nats-worker --token-file "$RUNNER_TOKEN_FILE"
 ```
 
-The enrolment token can come from `--client.token`, or from `--token-file`.
-Prefer the file: a secret passed as a command-line argument is visible in the
-process table to every user on the host.
+The token is a shared machine token. It authorizes enrollment for the paired
+Runner; a project grant separately authorizes work. Revoke a compromised token
+through the identity token controls. Issue a replacement before you revoke an
+old token when continuity is required. Multiple tokens can be active; issuance
+does not automatically revoke an earlier token.
+
+Keep the file private and remove it when it is no longer needed. `--client.token`
+accepts the same secret, but process arguments can expose it to other local users.
+The local Makefile uses that argument and is for isolated development.
 
 ## Flags worth knowing
 
@@ -219,5 +225,7 @@ links.
 
 The remaining production work is tracked in the
 [NATS Runner review backlog](../../docs/review-backlog/README.md). It covers
-scoped NATS credentials, enrolment and Runner policy, and worker identity.
+credential lifetime and revocation, production TLS, Runner policy and stable
+Worker identity. Runner-scoped JWTs and shared machine-token enrollment exist.
+See the [M9 evidence matrix](../../docs/m9-release-validation.md).
 The task files are the source of truth for scope and ordering.

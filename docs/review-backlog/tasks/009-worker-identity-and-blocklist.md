@@ -11,6 +11,26 @@ Shared context: [`CONTEXT.md`](../CONTEXT.md).
 | Likely conflicts | 004, 008 |
 | Owner | Unclaimed |
 
+## Current evidence and remaining criteria (2026-10-03)
+
+Shared machine-token enrollment exists. The dependency on task 005 means its
+current enrollment contract and tests; it does not require the historical
+standalone token store. Stable Worker identity is still a distinct requirement.
+
+| Classification | Evidence / remaining requirement |
+| --- | --- |
+| Completed prerequisite | Paired Runner machine identities and revocable shared machine tokens. |
+| Outstanding baseline | `admitWorker` in `pkg/urth/service.go` matches the display name. This does not prove possession of a persistent installation key. |
+| Outstanding | Persistent private key, verified fingerprint, expiring single-use challenge and explicit same-name/different-key denial. |
+| Outstanding | Versioned Runner blocklist with equivalent CLI/UI controls, enrollment/refresh/next-claim enforcement and secrecy tests. |
+| Outstanding | Bounded broker credential revocation and independent in-flight run reporting evidence. |
+
+Fresh installations only. Do not add a legacy enrollment fallback or migration
+window. Current completion needs evidence for every acceptance criterion below.
+See the [release checklist](../../m9-release-validation.md).
+
+## Historical review baseline and retained requirements
+
 ## Why This Matters
 
 Workers currently choose a display name and the server uses that name to find an

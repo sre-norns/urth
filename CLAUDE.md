@@ -15,7 +15,11 @@ different team. Runners advertise labels, scenarios declare label-selector
 requirements, and the scheduler only dispatches to a runner that matches. If
 you've written a Kubernetes `nodeSelector`, it's that.
 
-Read `README.md` for the user-facing version. It is accurate as of this session.
+Read `README.md` for current user guidance. This file includes development
+history; revalidate historical version and failure observations against source.
+Use `docs/m9-release-validation.md` for the current security and release gates.
+Fresh installations use a new PostgreSQL database and NATS store. Earlier
+resource formats and existing-resource migration are not supported.
 
 ## Layout
 
@@ -64,8 +68,9 @@ cannot be scanned into `time.Time`, so the claim, worker heartbeats and listing
 runs all error. Measured, not inferred. Changing the default is in TODO.md.
 
 The same wyrd bug hid on Postgres, silently: `CREATE INDEX IF NOT EXISTS idx_name`
-indexed only the first table migrated. A database created before v0.3.0 gains
-`idx_<table>_name` on its next migration and keeps one redundant `idx_name`.
+indexed only the first table migrated. That observation describes the pre-M8
+development baseline. It does not define a supported upgrade path for the
+current fresh-install contract.
 
 ```bash
 make run-postgres-podman        # or podman run … postgres:18
@@ -204,7 +209,7 @@ working) and `status.natsLastSeenTime` are stored and reported separately, and
 `nats-unreachable` / `unknown`. The worker publishes both **unconditionally**: if
 the NATS announcement were skipped when the heartbeat failed, `api-unreachable`
 could never be observed, which is the case the split exists for. `unknown` is a
-real third state — records predating this feature have neither signal — and
+real third state — records with neither signal — and
 it is what keeps the reconciler's eviction pass off them.
 
 **Labels have a grammar and violating it is silent or fatal.** Values must match
@@ -217,12 +222,13 @@ could not register at all. Always go through `urth.LabelSafeValue` / `putLabel`.
 **Spec is worker-owned; Status is server-owned.** A worker rewrites its whole
 `Spec` every time it registers. Anything an operator sets must live in `Status`
 or it evaporates on reconnect — that is why `WorkerInstanceStatus.IsPaused` sits
-there. Its zero value means *working*, deliberately, so records predating the
-field keep taking jobs rather than going dark.
+there. Its zero value means *working*, deliberately, so a new instance can
+accept work by default.
 
-**All product results use manifests.** Read names and labels from `metadata`.
-Some responses omit `apiVersion`; the UI accepts that without falling back to
-flat results. Lists use `items/limit/next`, and totals never drive pagination.
+**All product results use canonical manifests.** Read names and labels from
+`metadata`. Resource documents require their published API group and kind.
+Protocol DTOs remain separate. Lists use `items/limit/next`; totals never drive
+pagination. See `docs/m8-canonical-adoption.md`.
 
 **Timestamps need `TIMESTAMPTZ`.** `TIMESTAMP` in Postgres is *without* time zone,
 so local wall-clock was stored naive and read back as UTC — every run time off by
