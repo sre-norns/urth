@@ -9,9 +9,10 @@ M8 canonical API and client adoption is merged. Both products use published
 wyrd `v0.7.0`, identity `v0.7.2` and components `0.5.0`. The
 [M9 evidence matrix](docs/m9-release-validation.md) records security controls,
 acceptance evidence and release checks. Tasks 004/005/006/009/024 are complete
-through merged `1e37393` and its passing CI. Release packaging, version selection
-and deployment checks remain separate. Earlier session notes do not define
-current release status.
+through merged `1e37393` and its passing CI. Urth packaging and prerelease
+publication have a [delivery record](docs/m9-publication-validation.md). Stable
+promotion and deployment checks remain separate. Earlier session notes do not
+define current release status.
 
 The maintainer assigns the outstanding feature work below. The scheduler remains
 required for v1.0 and is outside M9. Prober defaults (task 017), retention,
