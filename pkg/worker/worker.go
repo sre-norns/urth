@@ -60,11 +60,11 @@ type Config struct {
 	// table to every user on the host, and tends to end up in shell history.
 	// The file, or the environment variable on APIClientConfig.Token, keeps it
 	// out of both.
+	TokenFile string `help:"Path to a file holding the runner enrolment token" type:"existingfile"`
+
 	AllowInsecureAPI bool `help:"Allow HTTP enrollment only on loopback for local development" default:"false"`
 
 	IdentityKeyFile string `help:"Persistent Ed25519 worker identity key file" env:"URTH_WORKER_IDENTITY_KEY_FILE"`
-
-	TokenFile string `help:"Path to a file holding the runner enrolment token" type:"existingfile"`
 
 	Name manifest.ResourceName `help:"Custom name for this worker" env:"WORKER_NAME"`
 
