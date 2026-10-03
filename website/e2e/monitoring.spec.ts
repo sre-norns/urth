@@ -50,6 +50,18 @@ test('scenario → placement → run → authenticated log, with accessible layo
   expect(errors).toEqual([])
   await page.screenshot({path: test.info().outputPath('run.png'), fullPage: true})
 })
+test('run detail links its scenario and artifacts and offers no reconnect once finished', async ({page}) => {
+  await page.goto(`${base}/runs/run-1`)
+  await expect(page.getByLabel('Run log', {exact: true})).toContainText('authenticated browser log')
+  await expect(page.getByRole('button', {name: 'Reconnect log'})).toHaveCount(0)
+  expect((await new AxeBuilder({page}).analyze()).violations).toEqual([])
+  await page.screenshot({path: test.info().outputPath('run-detail.png'), fullPage: true})
+  await page.getByRole('link', {name: '0', exact: true}).click()
+  await expect(page).toHaveURL(`${base}/artifacts?labels=urth%2Fresult.uid%3Drun-1`)
+  await page.goBack()
+  await page.locator('.page-heading').getByRole('link', {name: 'checkout-health', exact: true}).click()
+  await expect(page).toHaveURL(`${base}/scenarios/checkout-health`)
+})
 test('artifact reveal and download are authenticated and accessible', async ({page}) => {
   await page.goto(`${base}/artifacts`)
   await page.getByRole('link', {name: 'trace-1', exact: true}).click()

@@ -5,7 +5,7 @@ import {ApiProblem} from '../api/http'
 import {streamLogs} from '../api/logs'
 import {resourcePath} from '../api/queries'
 
-export function LiveRunLog({project, scenario, run, running}: {project: string; scenario: string; run: string; running: boolean}) {
+export function LiveRunLog({project, scenario, run, running, terminal}: {project: string; scenario: string; run: string; running: boolean; terminal: boolean}) {
   const {session} = useIdentity()
   const account = useAccountId()
   const epoch = useSessionEpoch()
@@ -47,8 +47,10 @@ export function LiveRunLog({project, scenario, run, running}: {project: string; 
   useEffect(() => {if (surface.current && pinned.current) surface.current.scrollTop = surface.current.scrollHeight}, [lines])
   return <>
     {state === 'connecting' && <LoadingState />}
-    <div className="actions"><Status value={state} /><Button variant="secondary" onClick={() => setRetry((r) => r + 1)}>Reconnect log</Button></div>
-    {Boolean(error) && <ErrorState error={error} />}
+    {/* A finished run's log is stored, not live: there is nothing to reconnect to.
+        When a run finishes while open, `running` changes and the effect fetches the stored log. */}
+    <div className="actions"><Status value={state} />{!terminal && <Button variant="secondary" onClick={() => setRetry((r) => r + 1)}>Reconnect log</Button>}</div>
+    {Boolean(error) && <ErrorState error={error} retry={terminal ? () => setRetry((r) => r + 1) : undefined} />}
     {gap && state !== 'complete' && <p>Some live output may be missing after a reconnect. The stored log replaces it when the run finishes.</p>}
     <pre className="run-log" ref={surface} aria-label="Run log" tabIndex={0} onScroll={(event) => {const el = event.currentTarget; pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 32}}>{lines.length ? lines.join('\n') : 'No log lines received.'}</pre>
   </>
