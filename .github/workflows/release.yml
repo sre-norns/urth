@@ -255,6 +255,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Promote stable images and create the GitHub release
+        shell: bash
         env:
           VERSION: ${{ needs.metadata.outputs.version }}
           STABLE: ${{ needs.metadata.outputs.stable }}
@@ -262,12 +263,10 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           if [ "$STABLE" = true ]; then
-            python3 - <<'PY'
-          import json, subprocess
-          from pathlib import Path
-          for entry in json.loads(Path('dist/release/images.json').read_text())['images']:
-              subprocess.run(['docker', 'buildx', 'imagetools', 'create', '--tag', entry['image'] + ':latest', entry['image'] + '@' + entry['digest']], check=True)
-          PY
+            jq -r '.images[] | [.image, .digest] | @tsv' dist/release/images.json |
+              while IFS=$'\t' read -r image digest; do
+                docker buildx imagetools create --tag "$image:latest" "$image@$digest"
+              done
             gh release create "$VERSION" dist/release/* --verify-tag --title "Urth $VERSION" --generate-notes --latest
           else
             gh release create "$VERSION" dist/release/* --verify-tag --title "Urth $VERSION" --generate-notes --prerelease --latest=false

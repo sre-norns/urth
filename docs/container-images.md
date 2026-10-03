@@ -30,17 +30,17 @@ credentials and web dependencies.
 For a local native amd64 build with Podman:
 
 ```sh
-podman build --target api-server \
+podman build --platform linux/amd64 --target api-server \
   --build-arg BUILDPLATFORM=linux/amd64 \
-  --build-arg TARGETPLATFORM=linux/amd64 --build-arg TARGETARCH=amd64 \
+  --build-arg TARGETARCH=amd64 \
   -t localhost/urth-api-server:dev .
-podman build --target worker \
+podman build --platform linux/amd64 --target worker \
   --build-arg BUILDPLATFORM=linux/amd64 \
-  --build-arg TARGETPLATFORM=linux/amd64 --build-arg TARGETARCH=amd64 \
+  --build-arg TARGETARCH=amd64 \
   -t localhost/urth-worker:dev .
-podman build --target cli \
+podman build --platform linux/amd64 --target cli \
   --build-arg BUILDPLATFORM=linux/amd64 \
-  --build-arg TARGETPLATFORM=linux/amd64 --build-arg TARGETARCH=amd64 \
+  --build-arg TARGETARCH=amd64 \
   -t localhost/urthctl:dev .
 podman build --build-arg BUILDPLATFORM=linux/amd64 \
   --secret id=npmrc,src="$HOME/.npmrc" \
@@ -183,9 +183,10 @@ uses `/run/nginx.pid`; the corrected recipe replaces the `pid` directive with
 
 An initial Podman arm64 attempt inherits empty compile-stage arguments and
 produces amd64 bytes. The recipe now persists `GOOS`/`GOARCH` in the builder
-and sets the scratch target platform explicitly. All three final arm64 images
-pass executable and metadata inspection. No native arm64 execution or local
-arm64 website execution is claimed; those remain platform validation limits.
+and uses the build command's target platform for the scratch runtime. All three
+final arm64 images pass executable and metadata inspection. No native arm64
+execution or local arm64 website execution is claimed; those remain platform
+validation limits.
 Earlier smoke fixtures also use the wrong token flag, string JSON duration,
 IPv6 defaults and YAML-only field names. They are corrected; failed attempts
 remain preserved as provenance, not passing evidence.
