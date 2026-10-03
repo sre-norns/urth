@@ -4,7 +4,7 @@ Shared context: [`CONTEXT.md`](../CONTEXT.md).
 
 | Field | Value |
 |---|---|
-| Status | `blocked` |
+| Status | `implemented; pending merged validation` |
 | Priority | `P1` |
 | Workstream | Authentication |
 | Depends on | 004, 005, 006, 009, 011 |
@@ -14,8 +14,9 @@ Shared context: [`CONTEXT.md`](../CONTEXT.md).
 ## Current evidence and remaining criteria (2026-10-03)
 
 The shared task 011 PostgreSQL/HTTP/JetStream harness runs the M9 composed tests.
-Urth `d60d902` passes the complete merged backend gate. Keep this task open for
-an explicit mounted capability-binding matrix and broker follow-up merged validation below.
+Urth `4990b229` passes the complete merged backend gate, including PR 111.
+The executor-binding matrix below now has local candidate evidence. Keep this
+task open until its candidate change has exact CI and merged-head validation.
 
 | Scenario | Evidence / exact remaining check |
 | --- | --- |
@@ -23,8 +24,8 @@ an explicit mounted capability-binding matrix and broker follow-up merged valida
 | Worker block/delete during claimed work | `TestWorkerBlockAndDeleteComposeWithSecuredBroker` attempts next claim after block and deletion and receives 403; already issued capability completes status and artifact reporting. A blocked connected broker identity closes by issued expiry. This preserves the selected bounded reporting contract. |
 | Worker session expires during execution | `TestExpiredWorkerSessionKeepsOnlyBoundedInFlightAuthority` claims before expiry, attempts a later claim with the expired session and receives 403, then completes the original Result with its independent capability. |
 | Renewal and new registration UID | Runtime renewal/rebind tests keep a held probe running, reconnect with current credentials, publish new-UID presence, claim/report a second run and complete the original run. |
-| Runner broker boundaries | Secured own consumer/ack/log/presence controls and foreign consumer/inbox/jobs/events/deletion negatives pass. PR 111 proves valid concrete foreign-log, stream create/update, consumer create and service-role denials; its full audit passes, pending merge/exact merged-head CI. |
-| Result/executor/deadline/scope bindings | Mounted tests attempt wrong Result status, changed dispatch on status/artifact, credential-purpose confusion and expired lease/status/artifact reporting. Validator tests reject wrong Runner/Worker/tenant and missing scope. Open: use a production-issued capability after stored Runner/Worker bindings change; attempt mounted status and artifact operations with denial status classes and unchanged-binding positive controls. Unit claims mutations are not this composed route evidence. |
+| Runner broker boundaries | Secured own consumer/ack/log/presence controls and foreign consumer/inbox/jobs/events/deletion negatives pass. PR 111 proves valid concrete foreign-log, stream create/update, consumer create and service-role denials. It merged as `f93767a`, an ancestor of `4990b229`. Exact merged-head Build And Verify `37112080233`, Website `37112080193` and CodeQL `37112080155` pass. |
+| Result/executor/deadline/scope bindings | Mounted tests attempt wrong Result status, changed dispatch on status/artifact, credential-purpose confusion and expired lease/status/artifact reporting. Validator tests reject wrong Runner/Worker/tenant and missing scope. `TestM9RunCapabilityRejectsChangedStoredExecutor` uses production enrollment and claim issuance. It changes only the stored Runner or Worker UID to another valid resource. Both mounted status path forms (Scenario name and UID) and artifact creation return 401. Restoration of the stored binding permits the same original capability to upload an artifact (201) and complete status (200). Denied requests leave Result state/version and artifact count unchanged. Ten race repetitions pass (40 subcases; 88.746s). |
 | Grant and log revocation | Tenancy tests deny new work after grant removal while claimed work completes. Mounted open-stream tests close after membership/session removal or session expiry. |
 
 Each negative above records an attempted protected operation. The mounted HTTP
@@ -44,7 +45,9 @@ claim denial and successful bounded completion; it is no longer an open claim.
 108, 109 and 110, exact merged CI and source equivalence. The fresh-stack tests
 provide independent process/browser execution evidence. Deployment-specific
 rotation/transport configuration still requires operator review. These facts
-do not fill the missing executor-binding route attempts.
+do not replace candidate CI and merged-head validation for the new
+executor-binding matrix. Deployment-specific configuration remains a separate
+M9 gate.
 
 ## Historical review baseline and requirements under reconciliation
 
@@ -126,9 +129,10 @@ test credentials, and add the scenarios that turn on authorization:
 ## Acceptance Criteria / Definition of Done
 
 - [ ] Every current scenario and capability-binding variant has real
-  PostgreSQL/HTTP/JetStream CI evidence; exact missing attempts are listed above.
-- [ ] Every required matrix entry has attempted denial with a positive control;
-  existing cases meet this, the missing entries do not yet have evidence.
+  PostgreSQL/HTTP/JetStream CI evidence. The new executor-binding candidate
+  still needs exact CI and merged-head validation.
+- [x] Every required matrix entry has attempted denial with a positive control.
+  The mounted executor-binding matrix now supplies the remaining attempts.
 - [x] The harness is shared with task 011.
 - [x] Revoked/expired enrollment, session and broker authority stop the operation
   each authorizes; independent bounded claimed-run reporting remains valid.
@@ -145,10 +149,20 @@ make audit/postgres
 - **Implemented:** Shared mounted and secured composition harness; production
   enrollment/claim issuance; explicit credential lifetime and revocation checks.
 - **Tests added/updated:** Tenancy/runlogs, mounted M9 authorization and live-log
-  tests, secured Worker block/delete/expiry/renewal/rebind tests, broker negatives.
-- **Validation evidence:** Full merged `d60d902` PostgreSQL/race/static gate,
-  prior complete candidate audits and combined secured integration pass; source
-  attribution appears in the release record.
-- **Follow-ups:** Mounted Runner/Worker executor-binding denials for both status
-  and artifacts, plus PR 111 merge/exact merged-head validation.
-  Task remains open; no blanket stale lifecycle gap remains.
+  tests, secured Worker block/delete/expiry/renewal/rebind tests, broker negatives,
+  and production-issued Runner/Worker executor-binding attempts for both
+  mounted status path forms and artifact creation.
+- **Validation evidence:** Full merged `4990b229` PostgreSQL/race/static gate;
+  executor-binding focused race run (8.526s) and ten final-source race
+  repetitions (88.746s). Full candidate `make audit/postgres` exits 0: all
+  backend race tests, vet, staticcheck `2026.2.1`, and module verification pass;
+  integration takes 151.001s and `pkg/natsq` takes 64.231s. Isolated fault
+  controls remove the Runner comparison,
+  Worker comparison, or artifact binding guard. All three fail at the intended
+  mounted denial assertion (status 200, status 200, and artifact 201). These
+  deliberate failures do not represent candidate defects.
+- **Follow-ups:** Exact candidate CI and merged-head validation for the new
+  executor-binding matrix. Task remains open for that evidence. This test
+  changes stored authority as a fixture; it does not introduce a public API
+  that changes the executor of a claimed Result. No production code changes.
+  Deployment-specific M9 validation remains separate.
