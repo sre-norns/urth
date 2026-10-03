@@ -2,16 +2,27 @@
 
 This record covers an isolated local development stack on 2026-10-03. It does
 not authorize a release. Initial API, Worker and CLI binaries use Urth commit
-`6039e961b7b66477bb2f27762767f2e01aa4a72f`. This validation branch changes
-browser verification and its development dependency lock. It changes no Go
-runtime code. A merged candidate needs its own exact-head checks.
+`6039e961b7b66477bb2f27762767f2e01aa4a72f`.
+[Fresh-stack PR 110](https://github.com/sre-norns/urth/pull/110) changes browser
+verification and its development dependency lock. It changes no Go runtime code.
+The merged source attribution appears below.
 
 The final integrated API, Worker and CLI use
 `37cb719c0eb9e3a3efa83075b408d62b947c32c0`. All three binaries report this
 revision and `vcs.modified=false`. The final pass uses a new empty
 `urth_final` database and recreated task-owned NATS container. The website uses
-the validated frontend source and lock from this branch. Root's combined Go
+the validated frontend source and lock from PR 110. The release validator's combined Go
 checks cover this integrated backend separately.
+
+The validated backend plus frontend forms combined commit `c9720b465ae108abb61a57bf7dc633d175fac377`. Its tree
+`1e86a529399ccfe68b0182dcaaa502f4333e5d60` is exactly identical to merged Urth
+`d60d9021dcf52a89e9c8aaba680f5ae403b1671f`. Exact merged-head
+[Website](https://github.com/sre-norns/urth/actions/runs/37108548817),
+[CodeQL](https://github.com/sre-norns/urth/actions/runs/37108548872) and
+[Build And Verify](https://github.com/sre-norns/urth/actions/runs/37108548882)
+checks pass. The backend gate includes the full PostgreSQL/race/static audit.
+Source equivalence connects this live evidence to the merged set; it does not
+change the actual binary revision or claim a second live run at `d60d902`.
 
 ## Environment
 
@@ -88,7 +99,7 @@ and binary paths shown above, plus `URTH_E2E_SLOW_PROBE_PORT=18581`.
 The initial install reports two moderate notices for the same Vitest/mock
 redirect advisory, [GHSA-82fw-gwwq-j7x9](https://github.com/vitest-dev/vitest/security/advisories/GHSA-82fw-gwwq-j7x9).
 The publisher identifies versions below 4.1.11 as affected and 4.1.11 as patched.
-The registry confirms Node 24 and Vite 8 support. This branch pins Vitest 4.1.11
+The registry confirms Node 24 and Vite 8 support. PR 110 pins Vitest 4.1.11
 and updates its eight-package family. It preserves other dependency versions.
 The minimal lock clean-installs with `npm ci`. Its install audit reports zero
 vulnerabilities. All 33 unit tests pass with `npm test -- --maxWorkers=1` in
@@ -119,9 +130,8 @@ revocation. The grant check proves subsequent placement refusal. It does not
 replace composed next-claim or bounded reporting tests. The security owners
 retain those release requirements and record their separate evidence.
 
-Exact merged-head CI and maintainer release disposition remain open. The
-task-owned stack, private mail, profiles, identity keys, tokens and failure
-traces require cleanup before handoff. Cleanup completes: the two task containers
+Exact merged-head CI passes as linked above. Maintainer version selection and
+deployment disposition remain open. Cleanup completes: the two task containers
 are removed, the three verified task service PIDs stop, and private mail and
 failure traces are removed. Test cleanup removes Worker keys, tokens and CLI
 profiles. A final listener/container check confirms the user database on 5432

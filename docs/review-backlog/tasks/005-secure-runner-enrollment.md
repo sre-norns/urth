@@ -13,27 +13,34 @@ Shared context: [`CONTEXT.md`](../CONTEXT.md).
 
 ## Current evidence and remaining criteria (2026-10-03)
 
-Shared identity supersedes the proposed standalone enrollment store. Status stays
-open for lifecycle verification; do not implement a second token store or a
-fallback operator authorizer.
+The shared identity contract supersedes the standalone enrollment-store design.
+Keep this task open for the precise gaps below. Do not add a second token store,
+a legacy enrollment fallback or an operator-authorizer bypass.
 
-| Classification | Evidence / remaining requirement |
+| Current criterion | Evidence / remaining work |
 | --- | --- |
-| Completed mechanism | `pkg/urth/runner_identity.go` creates the paired Runner machine identity transactionally. `machineToken` uses shared `MachineTokens().Create`; `machineRunner` validates through shared identity. |
-| Completed contract | The canonical shared token endpoint returns an operation-only secret. `test/integration/m8_contract_test.go` covers replay redaction. List/Get resources do not return a token secret. |
-| Superseded | Public `GET /auth/runners/:id`, a global enrollment JWT, the separate salted verifier/generation store, automatic token-on-Runner-create and a provisional `OperatorAuthorizer`. The mounted API uses shared authenticated identity. |
-| Superseded | Rotation as one generation switch. Shared tokens are individually issued and revoked; more than one token can be active. Issue a replacement, update installations, then revoke the old token. |
-| Outstanding | Prove unauthorized token issuance denial on the mounted router, immediate old-token enrollment denial after revocation, fresh-token success, Runner disable/delete and identity suspension. |
-| Outstanding | Record shared token storage protection, secret exclusion and matching CLI/UI issue/revoke workflows with exact tests. |
+| Authenticated issuance | The fresh-stack test attempts anonymous machine-token issue and receives 401. An authenticated owner issues the token successfully. |
+| One-time secret and normal-read secrecy | `m8_contract_test.go` and the real-stack test prove operation-only issuance, idempotent replay redaction and ordinary token-read redaction. Runner resources contain no enrollment secret. |
+| Individual issue/revoke lifecycle | `TestMachineTokenRevocationDeniesFreshProofButPreservesSession` uses an unused valid proof after revocation: challenge and enrollment both return 401. A replacement token renews the same Worker UID. Existing session claims remain authorized independently. The real Worker also fails enrollment with the revoked token. |
+| Disable/delete and identity suspension | Open: attempt both fresh enrollment and refresh after Runner disable, Runner deletion and paired identity suspension, with positive controls. `TestRunnerIdentityStaysPairedWithItsRunner` proves suspension is allowed, but does not attempt enrollment after suspension. |
+| Stored token protection and secret outputs | Open: record the shared `v0.7.2` token storage representation and prove stored state is unusable as bearer authority. Add explicit secret-exclusion assertions for logs, ordinary CLI reads/errors and serialized manifests; ordinary reads/replays alone do not cover every output. |
+| CLI/UI lifecycle equivalence | Open: prove authenticated issue/revoke and one-time secret handling through both clients. Current real-stack issuance/revocation evidence uses the identity endpoint; CLI device login is separate evidence. |
 
-Revoking enrollment prevents new enrollment or refresh with that token. It does
-not by itself cancel already issued Worker sessions or claimed run capabilities.
-Use Runner disable, Worker deletion or blocklisting for new-claim denial, subject
-to the documented current-state checks. Prove each operation independently.
+Shared tokens are individually issued and revoked. More than one token can be
+active. Issue a replacement, update installations, then revoke the old token.
+This replaces the historical single-generation switch and concurrent-rotation
+requirement. Runner creation creates its paired identity; it does not return an
+automatic initial enrollment secret.
 
-Current completion requires the remaining checks above. The original
-single-generation rotation criteria below are historical requirements, not an
-instruction to add a competing credential mechanism.
+Revocation prevents enrollment or refresh with that token. It does not cancel an
+already issued Worker session or claimed run capability. Use the separate
+current-state controls for new-claim denial. The mounted and fresh-stack tests
+record those operations separately.
+
+The implementation and tests are merged in `d60d902`. The exact merged backend
+and website gates pass. See [the release record](../../m9-release-validation.md)
+and [the real-stack evidence](../../m9-fresh-stack-validation.md). Passing CI
+does not cover the missing lifecycle/storage/client cases above.
 
 ## Historical review baseline and superseded design
 
@@ -103,22 +110,21 @@ rotated and revoked as ADR 0002 requires.
 - Stable per-Worker proof and blocklisting (task 009).
 - Run capability scopes (task 006).
 
-## Acceptance Criteria / Definition of Done
+## Current Acceptance Criteria / Definition of Done
 
-- [ ] Unauthenticated callers cannot obtain enrollment authority.
-- [ ] Initial and rotated secrets are returned once and never appear in resources.
-- [ ] Rotation immediately rejects the old credential without changing Runner UID.
-- [ ] Disable/delete prevents registration and refresh.
-- [ ] Stored database state cannot be used directly as an enrollment bearer secret.
-- [ ] CLI and UI offer equivalent authenticated create/rotate workflows.
+- [x] Unauthenticated callers cannot obtain enrollment authority.
+- [x] Issuance returns an operation-only secret; normal reads and replay redact it.
+- [x] Revocation immediately rejects the old token for proof/enrollment;
+  replacement issuance preserves the Runner and Worker UID contracts.
+- [ ] Runner disable/delete and identity suspension deny enrollment and refresh.
+- [ ] Stored database token state cannot serve as an enrollment bearer secret.
+- [ ] CLI and UI provide equivalent authenticated issue/revoke and secret handling.
+- [ ] Logs, ordinary CLI reads/errors and serialized manifests exclude secret
+  values. Explicit authenticated one-time token issuance may return the secret
+  to its caller.
 
-## Required Tests
-
-- Unauthenticated create/rotate/token request fails without revealing Runner existence.
-- Runner creation returns a secret once; Get/List do not.
-- Old secret fails immediately after successful rotation; new secret works.
-- Concurrent rotations produce one valid generation.
-- Logs and serialized Runner manifests do not contain the secret.
+The historical create/rotate and one-active-generation design above is
+superseded. Tests must target the current shared issue/revoke contract.
 
 ## Validation
 
@@ -132,8 +138,13 @@ git diff --check
 
 ## Completion Record
 
-- **Implemented:**
-- **Tests added/updated:**
-- **Documentation updated:**
-- **Validation evidence:**
-- **Follow-ups:**
+- **Implemented:** Shared paired machine identity and individually revocable
+  tokens; no standalone store or compatibility mechanism.
+- **Tests added/updated:** Canonical replay/read redaction, mounted valid-proof
+  revocation/replacement and real-stack anonymous issue/revoked Worker checks.
+- **Validation evidence:** Merged `d60d902` backend audit and website checks pass;
+  detailed source attribution is in the release record.
+- **Follow-ups:** The three lifecycle-state pairs, at-rest protection,
+  ordinary-read/error/log/manifest secret assertions and CLI/UI equivalence
+  listed above.
+  The task remains open.

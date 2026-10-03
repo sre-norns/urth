@@ -4,40 +4,36 @@ Shared context: [`CONTEXT.md`](../CONTEXT.md).
 
 | Field | Value |
 |---|---|
-| Status | `implemented; pending merge validation` |
+| Status | `done` |
 | Priority | `P0` |
 | Workstream | Authentication / Claim lifecycle |
 | Depends on | — |
 | Likely conflicts | 005, 007, 008, 011 |
 | Owner | M9 run-capability workstream |
 
-## Current evidence and remaining criteria (2026-10-03)
+## Current evidence and completion criteria (2026-10-03)
 
-Implementation is ready for review. Exact merged-head validation remains open.
-The generic-token diagnosis below is the pre-M9 review
-baseline. [Authorization PR 105](https://github.com/sre-norns/urth/pull/105)
-is merged as `f97750a` and changes that contract. The candidate passes the full
-PostgreSQL/race audit at `200bf30`.
-Its evidence document receives wording clarifications at `806c35c`.
+All six acceptance criteria have evidence. Authorization PR 105 and
+[run-capability PR 108](https://github.com/sre-norns/urth/pull/108) are merged in
+Urth `d60d902`. The generic-token diagnosis below is the pre-M9 review baseline.
 
-| Classification | Evidence / remaining requirement |
+| Criterion | Evidence |
 | --- | --- |
-| Merged mechanism; candidate tests pass | Central HS256 issuer/validator requires an exact configured key ID (default `run`), issuer `urth`, audience `urth-run`, time claims, Result/Runner/Worker, account/project and `run.status`/`run.artifacts` scopes. Validation compares the stored Result executor and tenant bindings. |
-| Merged mechanism; candidate tests pass | Running-state/current-version checks prevent terminal rewrites. Artifact admission locks the Result row and allows bounded final uploads for completed runs. Expiry cannot exceed the stored deadline plus five minutes. |
-| Superseded detail | The proposed literal audience `urth-api` below. The selected run-capability audience is `urth-run`. |
-| Implemented follow-up | Dispatch ID is required at issuance and validation. Mounted status and artifact routes reject an old token after a stored dispatch change. |
-| Implemented follow-up | Active key ID plus additional verification keys support pre-staging, overlap and retirement. Three API replicas share PostgreSQL and verify old/new reporting during rotation. |
-| Implemented follow-up | Artifact linkage and reserved labels come from the stored Result. Mounted retry tests prove 409 duplicate rejection with the first report preserved. See [the contract](../../m9-authorization.md). |
-| Release validation | Run the combined and exact merged-head checks before release closure. |
+| Explicit authority | Central HS256 validator requires the configured key ID, issuer `urth`, audience `urth-run`, time claims, Result/Runner/Worker, tenant, dispatch and scope. `m9_run_capability_test.go`, signing and rotation tests cover wrong/incomplete claims with a positive control. |
+| Shared status/artifact authorization | Both operations use the central validated principal and stored Result bindings. Mounted credential-purpose, wrong-Result, changed-dispatch and expired-run tests exercise production routes. |
+| Lifecycle and bounded artifacts | Terminal rewrite/retry/concurrent status tests preserve the first result. Artifact row locking permits bounded final upload and derives linkage from stored state. Expiry cannot exceed the stored deadline plus five minutes. |
+| Rotation | `TestM9RunKeyRotationAcrossAPIReplicas` pre-stages verification keys, switches the signer, reports old/new runs across three API replicas sharing PostgreSQL, and retires the old key. |
+| Authoritative labels | Label tests and mounted artifact linkage/retry tests reject Worker overrides, preserve server identity and return 409 for duplicate reports. |
+| Merged validation | Full PostgreSQL/race/static audit and exact merged-head Build And Verify, Website and CodeQL pass. Combined secured integration and real execution evidence connect the tested source set to the merged tree. |
 
-Grant or Worker revocation does not cancel a previously issued bounded run
-capability. Status and artifact authority still depend on Result state and
-expiry. Fresh installations only; old credentials without required claims are
-rejected. No compatibility reader or migration window is required.
+The selected audience `urth-run` supersedes the historical literal `urth-api`
+below. Grant or Worker revocation does not cancel a previously issued bounded
+run capability. Result state and expiry still constrain reporting. Fresh
+installations reject old credentials without required claims; no compatibility
+reader, migration or shared package release is needed.
 
-See the [release checklist](../../m9-release-validation.md). Regression
-evidence covers the implementation criteria below. It does not close M9 or the
-product release.
+See [the release record](../../m9-release-validation.md) for source identities
+and CI links. Task completion does not close M9 or select a product version.
 
 ## Historical review baseline and retained requirements
 
@@ -157,5 +153,9 @@ git diff --check
   staticcheck and race tests (integration 160.674s). The focused dispatch
   regression first fails with an accepted upload on the preceding code; the
   artifact label regression first retains the supplied false Runner ID.
-- **Follow-ups:** Maintainer review/merge, exact merged-head CI and final
-  combined release validation. This task does not close M9.
+- **Merged validation:** Urth `d60d902` passes the complete PostgreSQL/race/static
+  backend gate, website gate and CodeQL. The tested combined tree is identical
+  to that merged tree; the release record preserves actual runtime attribution.
+- **Follow-ups:** Operators must distribute persistent keys and configure
+  verification overlap consistently. All implementation criteria are complete.
+  Maintainer deployment disposition and product version selection remain open.

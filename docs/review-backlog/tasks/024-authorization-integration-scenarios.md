@@ -13,52 +13,38 @@ Shared context: [`CONTEXT.md`](../CONTEXT.md).
 
 ## Current evidence and remaining criteria (2026-10-03)
 
-Use the existing PostgreSQL/HTTP/JetStream harness. Status remains open until the
-composed revocation, expiry and capability matrix has evidence.
+The shared task 011 PostgreSQL/HTTP/JetStream harness runs the M9 composed tests.
+Urth `d60d902` passes the complete merged backend gate. Keep this task open for
+an explicit mounted capability-binding matrix and broker follow-up merged validation below.
 
-| Classification | Evidence / remaining requirement |
+| Scenario | Evidence / exact remaining check |
 | --- | --- |
-| Completed regressions | `test/integration/tenancy_test.go` covers project-grant placement, revocation before claim, scope/cursor isolation, same-name Runners in separate accounts and grant mutation authority. |
-| Completed bounded-run contract | `TestTenancyRevocationDoesNotInterruptClaimedRun` proves grant revocation denies new work while an already claimed Result can complete with its separate capability. |
-| Completed log coverage | `test/integration/runlogs_test.go` covers project-session authorization, authenticated streaming and stored log artifacts. |
-| Superseded | A rotated enrollment generation. Shared token issue/revoke replaces that design (task 005). |
-| Superseded assumption | Revocation always stops every action in flight immediately. New claims, broker access and claimed-run reporting have distinct credential lifetimes. Grant revocation or blocking does not cancel an already claimed execution. |
-| Outstanding | Token revocation during enrollment, session expiry during execution, Worker deletion/blocking, existing broker connection expiry/revocation, wrong-Result/wrong-Runner capabilities and lease expiry. |
+| Enrollment revocation and replacement | `TestMachineTokenRevocationDeniesFreshProofButPreservesSession` attempts challenge/enrollment with an unused valid proof after revocation and receives 401; prior session claim succeeds; replacement token renews the same UID. Individually revoked shared tokens supersede generation rotation. |
+| Worker block/delete during claimed work | `TestWorkerBlockAndDeleteComposeWithSecuredBroker` attempts next claim after block and deletion and receives 403; already issued capability completes status and artifact reporting. A blocked connected broker identity closes by issued expiry. This preserves the selected bounded reporting contract. |
+| Worker session expires during execution | `TestExpiredWorkerSessionKeepsOnlyBoundedInFlightAuthority` claims before expiry, attempts a later claim with the expired session and receives 403, then completes the original Result with its independent capability. |
+| Renewal and new registration UID | Runtime renewal/rebind tests keep a held probe running, reconnect with current credentials, publish new-UID presence, claim/report a second run and complete the original run. |
+| Runner broker boundaries | Secured own consumer/ack/log/presence controls and foreign consumer/inbox/jobs/events/deletion negatives pass. PR 111 proves valid concrete foreign-log, stream create/update, consumer create and service-role denials; its full audit passes, pending merge/exact merged-head CI. |
+| Result/executor/deadline/scope bindings | Mounted tests attempt wrong Result status, changed dispatch on status/artifact, credential-purpose confusion and expired lease/status/artifact reporting. Validator tests reject wrong Runner/Worker/tenant and missing scope. Open: use a production-issued capability after stored Runner/Worker bindings change; attempt mounted status and artifact operations with denial status classes and unchanged-binding positive controls. Unit claims mutations are not this composed route evidence. |
+| Grant and log revocation | Tenancy tests deny new work after grant removal while claimed work completes. Mounted open-stream tests close after membership/session removal or session expiry. |
 
-Worker deletion must have explicit reporting evidence. The selected M9 contract
-keeps a previously issued run capability valid within its Result state and
-expiry bounds. It supersedes the historical requirement to refuse every status
-upload after deletion. Test new-claim denial and bounded reporting separately.
-Each negative test must attempt the protected operation and assert denial with a positive control.
-The [release checklist](../../m9-release-validation.md) keeps the release gate open.
+Each negative above records an attempted protected operation. The mounted HTTP
+checks assert response status classes; broker checks assert permission refusal
+and confirm permitted operations. The harness shares production issuance,
+fixtures and diagnostic mechanisms with task 011. Complete merged CI executes
+these tests against PostgreSQL 18; the secured scenarios use real HTTPS and
+mutual-TLS NATS, not canned claim responses.
 
-## M9 changes and validation evidence
+Historical deletion text below proposes blanket status refusal. The current
+contract supersedes it: block/delete deny new claims, broker authority expires
+within its bound, and previously claimed reporting remains authorized only
+within Result state/deadline. The session-expiry scenario has actual mounted
+claim denial and successful bounded completion; it is no longer an open claim.
 
-[Authorization PR 105](https://github.com/sre-norns/urth/pull/105) is merged at
-`f97750a`. Its candidate passes the full PostgreSQL/race audit at `200bf30`. Its mounted tests cover credential purposes,
-wrong-Result and expired capabilities, terminal status rewrite denial,
-concurrent completion, artifact row locking, item/catalogue isolation and
-OAuth boundaries. Open-stream tests cover membership removal, session removal
-and session expiry. The evidence document receives wording fixes at `806c35c`.
-
-Focused Worker proof/blocklist tests pass. Secured composition checks pass with
-PostgreSQL, HTTPS and mutual-TLS NATS in 13.524 seconds. They cover blocked and
-deleted session claim denial, bounded status/artifact completion after Worker deletion,
-Runner lock/block commit order, same-UID renewal and new-UID transport replacement.
-The runtime test proves the new UID publishes presence, claims and reports a
-second run, while the old in-flight run completes. Focused CLI/session-expiry
-checks pass. This proves the selected deletion contract instead of the
-historical blanket reporting refusal.
-
-[Worker PR 106](https://github.com/sre-norns/urth/pull/106) at `609e129` has the
-same Go/UI source as locally validated `7cfdbbf`. The complete PostgreSQL/race
-suite and verify/vet/static checks pass per the implementation owner. Final
-focused tests also deny revoked-token proof/enrollment with an unused valid
-challenge, preserve old-session claims and renew under a replacement token.
-
-Operational rotation/failover, complete acceptance criteria, Worker merge,
-exact merged-head CI and fresh-stack validation remain open. Candidate
-evidence does not close this task or the release gate.
+[The release record](../../m9-release-validation.md) attributes PRs 105, 106,
+108, 109 and 110, exact merged CI and source equivalence. The fresh-stack tests
+provide independent process/browser execution evidence. Deployment-specific
+rotation/transport configuration still requires operator review. These facts
+do not fill the missing executor-binding route attempts.
 
 ## Historical review baseline and requirements under reconciliation
 
@@ -139,10 +125,13 @@ test credentials, and add the scenarios that turn on authorization:
 
 ## Acceptance Criteria / Definition of Done
 
-- [ ] Every scenario above runs in CI against real Postgres, HTTP and JetStream.
-- [ ] Each proves an attempted action and its refusal, by status class.
-- [ ] The harness is shared with task 011, not duplicated.
-- [ ] A revoked or expired credential is shown to stop work already in flight.
+- [ ] Every current scenario and capability-binding variant has real
+  PostgreSQL/HTTP/JetStream CI evidence; exact missing attempts are listed above.
+- [ ] Every required matrix entry has attempted denial with a positive control;
+  existing cases meet this, the missing entries do not yet have evidence.
+- [x] The harness is shared with task 011.
+- [x] Revoked/expired enrollment, session and broker authority stop the operation
+  each authorizes; independent bounded claimed-run reporting remains valid.
 
 ## Validation
 
@@ -153,8 +142,13 @@ make audit/postgres
 
 ## Completion Record
 
-- **Implemented:**
-- **Tests added/updated:**
-- **Documentation updated:**
-- **Validation evidence:**
-- **Follow-ups:**
+- **Implemented:** Shared mounted and secured composition harness; production
+  enrollment/claim issuance; explicit credential lifetime and revocation checks.
+- **Tests added/updated:** Tenancy/runlogs, mounted M9 authorization and live-log
+  tests, secured Worker block/delete/expiry/renewal/rebind tests, broker negatives.
+- **Validation evidence:** Full merged `d60d902` PostgreSQL/race/static gate,
+  prior complete candidate audits and combined secured integration pass; source
+  attribution appears in the release record.
+- **Follow-ups:** Mounted Runner/Worker executor-binding denials for both status
+  and artifacts, plus PR 111 merge/exact merged-head validation.
+  Task remains open; no blanket stale lifecycle gap remains.
