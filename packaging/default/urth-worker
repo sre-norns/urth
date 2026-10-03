@@ -1,0 +1,4 @@
+# Settings for urth-worker.service. See `urth-worker --help` and
+# cmd/nats-worker/README.md. Put the Runner token in /etc/urth/runner-token,
+# mode 0600, owned by root; the unit passes it to the worker as a credential.
+URTH_WORKER_ARGS="--client.api-server-address=https://urth.example"

@@ -9,6 +9,8 @@ on:
       - '.github/actions/build-image/**'
       - '.github/workflows/**'
       - 'scripts/**'
+      - '.goreleaser.yaml'
+      - 'packaging/**'
       - 'Dockerfile'
       - '.dockerignore'
       - '.gitignore'
@@ -26,6 +28,8 @@ permissions:
 env:
   # Match the patched compiler used by the image recipes, not an older module floor.
   RELEASE_GO_VERSION: '1.27.1'
+  # GoReleaser builds the binaries, archives, Debian packages and snaps.
+  GORELEASER_VERSION: 'v2.18.2'
 
 # Serialize release tags so stable alias promotion does not race another tag.
 # Snapshot validation has its own group and cannot cancel a publishing run.
@@ -87,7 +91,7 @@ jobs:
     uses: ./.github/workflows/website.yml
 
   archives:
-    name: Build and inspect all archives
+    name: Build and inspect all archives and packages
     needs: [metadata, backend, website]
     # PRs already run the ordinary quality workflows; snapshots never publish.
     # Tags cannot build release assets until both exact-tag gates succeed.
@@ -105,11 +109,18 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.RELEASE_GO_VERSION }}
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: '24'
           registry-url: https://npm.pkg.github.com
           scope: '@sre-norns'
+      - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          version: ${{ env.GORELEASER_VERSION }}
+          install-only: true
+      # GoReleaser packs snaps with snapcraft; packing needs no build provider.
+      - name: Install snapcraft
+        run: sudo snap install snapcraft --classic
       - name: Build website assets
         working-directory: website
         env:
@@ -266,3 +277,36 @@ jobs:
           else
             gh release create "$VERSION" dist/release/* --verify-tag --title "Urth $VERSION" --generate-notes --prerelease --latest=false
           fi
+
+  # Optional: the Snap Store needs an account credential that this repository
+  # does not have by default. Without SNAPCRAFT_STORE_CREDENTIALS the snaps stay
+  # GitHub release assets only, and this job reports that and succeeds.
+  snap-store:
+    name: Upload snaps to the Snap Store
+    if: github.event_name == 'push'
+    needs: [metadata, release]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: urth-archives
+          path: dist/release
+      - name: Upload to the stable or candidate channel
+        env:
+          STABLE: ${{ needs.metadata.outputs.stable }}
+        run: |
+          if [ -z "$SNAPCRAFT_STORE_CREDENTIALS" ]; then
+            echo '::notice::SNAPCRAFT_STORE_CREDENTIALS is not set; snaps are published only as release assets.'
+            exit 0
+          fi
+          channel=candidate
+          if [ "$STABLE" = true ]; then channel=stable; fi
+          sudo snap install snapcraft --classic
+          for snap in dist/release/*.snap; do
+            snapcraft upload --release="$channel" "$snap"
+          done

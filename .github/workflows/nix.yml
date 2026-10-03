@@ -1,0 +1,38 @@
+name: Nix flake
+
+# flake.nix pins a vendorHash for the Go module graph. Any go.mod or go.sum
+# change makes it stale, and the flake then fails for every user. This check
+# builds all packages for Linux so the stale hash fails the PR instead.
+
+on:
+  push:
+    branches: [ "main" ]
+    paths: [ "flake.nix", "flake.lock", "go.mod", "go.sum", ".github/workflows/nix.yml" ]
+  pull_request:
+    branches: [ "main" ]
+    paths: [ "flake.nix", "flake.lock", "go.mod", "go.sum", ".github/workflows/nix.yml" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nix-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  flake:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+      - name: Build and check every package
+        run: nix flake check -L
+      - name: Run each command's help
+        run: |
+          for package in urthctl urth-api-server urth-worker; do
+            nix run ".#$package" -- --help | grep 'Usage:' > /dev/null
+          done

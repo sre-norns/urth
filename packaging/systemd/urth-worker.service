@@ -1,0 +1,28 @@
+[Unit]
+Description=Urth worker
+Documentation=https://github.com/sre-norns/urth/blob/main/cmd/nats-worker/README.md
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+# The package installs this unit disabled. Configure /etc/default/urth-worker,
+# then: systemctl enable --now urth-worker
+EnvironmentFile=/etc/default/urth-worker
+# systemd passes the root-only Runner token to the dynamic user as a credential.
+LoadCredential=runner-token:/etc/urth/runner-token
+ExecStart=/usr/bin/urth-worker --token-file=%d/runner-token $URTH_WORKER_ARGS
+DynamicUser=yes
+# The installation key persists at %S/urth-worker/.config/urth/worker.key.
+# Each installation keeps its own key; do not copy it to another host.
+StateDirectory=urth-worker
+StateDirectoryMode=0700
+WorkingDirectory=%S/urth-worker
+Environment=HOME=%S/urth-worker XDG_CONFIG_HOME=%S/urth-worker/.config
+Restart=on-failure
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
