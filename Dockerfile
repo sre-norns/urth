@@ -1,6 +1,5 @@
 # syntax=docker/dockerfile:1
 ARG BUILDPLATFORM
-ARG TARGETPLATFORM
 FROM --platform=$BUILDPLATFORM golang:1.27.1 AS build
 WORKDIR /src
 ENV GOWORK=off CGO_ENABLED=0
@@ -28,7 +27,7 @@ RUN go build -tags=urth_native -trimpath -buildvcs=false -ldflags='-s -w' -o /ou
 FROM build AS cli-build
 RUN go build -trimpath -buildvcs=false -ldflags='-s -w' -o /out/urth ./cmd/urthctl
 
-FROM --platform=$TARGETPLATFORM scratch AS runtime
+FROM scratch AS runtime
 ARG VERSION=dev
 ARG REVISION=unknown
 ARG CREATED
