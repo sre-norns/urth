@@ -79,7 +79,8 @@ type Config struct {
 	WebRedirectURIs []string `name:"identity.web-redirect-uri" env:"URTH_WEB_REDIRECT_URI" default:"http://localhost:8080/oauth/callback" help:"OAuth redirect URI of the urth-web client; repeat for several"`
 	// PrivacyURL is the privacy notice the sign-in pages link to. Empty hides
 	// the link: Urth serves no privacy page of its own.
-	PrivacyURL string `name:"identity.privacy-url" env:"URTH_PRIVACY_URL" help:"Privacy notice the sign-in pages link to: an https URL or a path that starts with /"`
+	PrivacyURL     string   `name:"identity.privacy-url" env:"URTH_PRIVACY_URL" help:"Privacy notice the sign-in pages link to: an https URL or a path that starts with /"`
+	TrustedProxies []string `name:"http.trusted-proxy" env:"URTH_TRUSTED_PROXIES" help:"Trusted reverse proxy IP address or CIDR; repeat for several. Empty uses the direct peer address"`
 
 	Bootstrap BootstrapConfig `embed:"" prefix:"bootstrap." envprefix:"URTH_BOOTSTRAP_"`
 
@@ -205,6 +206,9 @@ type Server struct {
 // is not this server's: a command opens it from flags, a test opens one scoped
 // to a private schema, and neither wants the other's connection settings.
 func New(ctx context.Context, db *gorm.DB, cfg Config, options ...Option) (*Server, error) {
+	if err := gin.New().SetTrustedProxies(cfg.TrustedProxies); err != nil {
+		return nil, fmt.Errorf("invalid trusted proxy configuration: %w", err)
+	}
 	var opts settings
 	for _, option := range options {
 		option(&opts)
@@ -384,6 +388,8 @@ func New(ctx context.Context, db *gorm.DB, cfg Config, options ...Option) (*Serv
 		Service: identityService,
 		Pages:   SignInPages(cfg.PrivacyURL),
 	})
+	// Validated before composition, so this cannot fail after resources open.
+	_ = server.Router.SetTrustedProxies(cfg.TrustedProxies)
 
 	return server, nil
 }

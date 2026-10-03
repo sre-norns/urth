@@ -428,7 +428,8 @@ func (s *serviceImpl) AllResults() RunResultsAPI {
 
 func (s *serviceImpl) Artifacts() ArtifactAPI {
 	return &artifactAPIImp{
-		store: s.store,
+		store:      s.store,
+		identityDB: s.identityDB,
 
 		resultsSigningKey: s.keys.Run,
 	}
@@ -1207,18 +1208,19 @@ func (m *resultsAPIImpl) authorizeRun(_ context.Context, entry Result, deadline 
 
 	now := time.Now()
 
-	claims := &jwt.RegisteredClaims{
-		Issuer:    TokenIssuer,
-		Subject:   string(entry.UID),
-		IssuedAt:  jwt.NewNumericDate(now),
-		NotBefore: jwt.NewNumericDate(now),
-		// A small grace beyond the deadline, so a run that used its full budget
-		// can still report what happened. A worker that cannot upload its
-		// result is a worker whose failure looks identical to a crash.
-		ExpiresAt: jwt.NewNumericDate(deadline.Add(artifactUploadGrace)),
+	claims := &RunCapabilityClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer: TokenIssuer, Subject: string(entry.UID), Audience: jwt.ClaimStrings{runAudience},
+			IssuedAt: jwt.NewNumericDate(now), NotBefore: jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(deadline.Add(artifactUploadGrace)),
+		},
+		RunnerID: entry.Status.Executor.RunnerID, WorkerID: entry.Status.Executor.WorkerID,
+		Account: entry.Account, Project: entry.Project,
+		Scope: []string{runStatusScope, runArtifactScope},
 	}
-
-	signed, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(m.keys.Run)
+	credential := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	credential.Header["kid"] = "run"
+	signed, err := credential.SignedString(m.keys.Run)
 	if err != nil {
 		return AuthJobResponse{}, claimUnavailable("sign run capability", err)
 	}
@@ -1260,35 +1262,14 @@ func clampRunDuration(requested, maximum time.Duration) time.Duration {
 }
 
 func (m *resultsAPIImpl) validateUpdateRequest(_ context.Context, entry Result, bearerToken APIToken) error {
-	token, err := jwt.Parse(string(bearerToken), func(token *jwt.Token) (any, error) {
-		// Don't forget to validate the alg is what you expect:
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-		}
-
-		// hmacSampleSecret is a []byte containing your secret, e.g. []byte("my_secret_key")
-		// return m.hmacSampleSecret, nil
-		return m.resultsSigningKey, nil // FIXME: Terribly insecure way to confirm token signature. Should use results auth-token
-	})
+	claims, err := parseRunCapability(m.resultsSigningKey, bearerToken, runStatusScope)
 	if err != nil {
+		return err
+	}
+	if entry.Status.Status != JobRunning {
 		return bark.ErrResourceUnauthorized
 	}
-
-	if token.Claims == nil {
-		return bark.ErrResourceUnauthorized
-	}
-
-	subj, err := token.Claims.GetSubject()
-	if err != nil {
-		return bark.ErrResourceUnauthorized
-	}
-
-	if subj != string(entry.UID) {
-		return bark.ErrResourceUnauthorized
-	}
-
-	// TODO: Do more validation!
-	return nil
+	return validateRunBinding(entry, claims)
 }
 
 func (m *resultsAPIImpl) UpdateStatus(ctx context.Context, id manifest.VersionedResourceID, token APIToken, runResults ResultStatus) (bark.CreatedResponse, error) {
@@ -1948,7 +1929,8 @@ func (m *runnersAPIImpl) admitWorker(ctx context.Context, apiToken APIToken, new
 // / ArtifactsApis implementation
 // ------------------------------
 type artifactAPIImp struct {
-	store resourceStore
+	store      resourceStore
+	identityDB *gorm.DB
 
 	resultsSigningKey []byte
 }
@@ -2026,32 +2008,56 @@ func artifactLabels(workerLabels manifest.Labels, spec ArtifactSpec, result Resu
 }
 
 func (m *artifactAPIImp) Create(ctx context.Context, apiToken APIToken, newEntry manifest.ResourceManifest) (manifest.ResourceManifest, error) {
+	if m.identityDB == nil {
+		return m.create(ctx, apiToken, newEntry)
+	}
+	// Serialize upload admission with Result status changes. The token still
+	// bounds authority after a worker, runner, or grant is revoked.
 	ctx = controlContext(ctx)
-	token, err := jwt.Parse(string(apiToken), func(token *jwt.Token) (any, error) {
-		// Don't forget to validate the alg is what you expect:
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+	claims, err := parseRunCapability(m.resultsSigningKey, apiToken, runArtifactScope)
+	if err != nil {
+		return manifest.ResourceManifest{}, err
+	}
+	var response manifest.ResourceManifest
+	err = m.identityDB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var result Result
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("uid = ?", claims.Subject).First(&result).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return bark.ErrResourceUnauthorized
+			}
+			return err
 		}
-
-		// hmacSampleSecret is a []byte containing your secret, e.g. []byte("my_secret_key")
-		return m.resultsSigningKey, nil
+		store, err := dbstore.NewDBStore(tx, dbstore.ManifestModel)
+		if err != nil {
+			return err
+		}
+		copy := *m
+		copy.store = store.WithVisibility(scopedVisibility{DB: tx})
+		response, err = copy.create(ctx, apiToken, newEntry)
+		return err
 	})
-	if err != nil {
-		return manifest.ResourceManifest{}, bark.ErrResourceUnauthorized
-	}
+	return response, err
+}
 
-	tokenSubj, err := token.Claims.GetSubject()
+func (m *artifactAPIImp) create(ctx context.Context, apiToken APIToken, newEntry manifest.ResourceManifest) (manifest.ResourceManifest, error) {
+	ctx = controlContext(ctx)
+	claims, err := parseRunCapability(m.resultsSigningKey, apiToken, runArtifactScope)
 	if err != nil {
-		return manifest.ResourceManifest{}, bark.ErrResourceUnauthorized
+		return manifest.ResourceManifest{}, err
 	}
-
-	// Find result this artifact is for:
-	// Subject:   string(entry.UID),
 	var result Result
-	if ok, err := m.store.GetByUID(ctx, &result, manifest.ResourceID(tokenSubj),
+	if ok, err := m.store.GetByUID(ctx, &result, manifest.ResourceID(claims.Subject),
 		dbstore.Expand("Artifacts", manifestMatch(newEntry.Metadata))); err != nil {
 		return manifest.ResourceManifest{}, err
 	} else if !ok {
+		return manifest.ResourceManifest{}, bark.ErrResourceUnauthorized
+	}
+	if err := validateRunBinding(result, claims); err != nil {
+		return manifest.ResourceManifest{}, err
+	}
+	// Completed executions may upload their final artifacts during the grace
+	// period. Unclaimed and reconciler-expired runs have no upload authority.
+	if result.Status.Status != JobRunning && result.Status.Status != JobCompleted {
 		return manifest.ResourceManifest{}, bark.ErrResourceUnauthorized
 	}
 

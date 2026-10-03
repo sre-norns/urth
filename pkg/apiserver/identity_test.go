@@ -25,6 +25,14 @@ func parseConfig(t *testing.T, args ...string) (Config, *kong.Kong) {
 	return cfg, parser
 }
 
+func TestTrustedProxyEnvironmentAndFlags(t *testing.T) {
+	t.Setenv("URTH_TRUSTED_PROXIES", "192.0.2.0/24,203.0.113.8")
+	cfg, _ := parseConfig(t)
+	require.Equal(t, []string{"192.0.2.0/24", "203.0.113.8"}, cfg.TrustedProxies)
+	cfg, _ = parseConfig(t, "--http.trusted-proxy=198.51.100.1", "--http.trusted-proxy=198.51.100.2")
+	require.Equal(t, []string{"198.51.100.1", "198.51.100.2"}, cfg.TrustedProxies)
+}
+
 // makefileIdentityVariables reads the URTH_ variables the run targets export.
 func makefileIdentityVariables(t *testing.T) map[string]string {
 	t.Helper()

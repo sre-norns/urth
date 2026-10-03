@@ -198,6 +198,9 @@ type IdentityRoutes struct {
 // assumed rather than the one that ships. See test/integration.
 func Routes(srv urth.Service, natsConn *nats.Conn, metrics *prometheus.Registry, identities ...IdentityRoutes) *gin.Engine {
 	router := gin.Default()
+	// Forwarded addresses are authoritative only after the host configures
+	// trusted proxies. The default must use the direct peer for OAuth limits.
+	_ = router.SetTrustedProxies(nil)
 	router.UseRawPath = true
 	var identityService *identity.Service
 	if len(identities) > 0 && identities[0].Service != nil {
@@ -555,7 +558,7 @@ func Routes(srv urth.Service, natsConn *nats.Conn, metrics *prometheus.Registry,
 		// SSE writes its own media type; the manifest negotiation middleware
 		// rejects text/event-stream. Keep the same user and project guards.
 		router.GET("/v1/projects/:id/scenarios/:resource/results/:runId/logs",
-			userAuthentication(identityService), requestScope(identityService, true), runLogHandler(srv, natsConn))
+			userAuthentication(identityService), requestScope(identityService, true), runLogHandler(srv, natsConn, identityService))
 		v1.PUT("/scenarios/:id/results/:runId/status", bark.AuthBearerAPI(), bark.VersionedResourceAPI(), func(ctx *gin.Context) {
 			var resourceRequest urth.ScenarioRunResultsRequest
 			if err := ctx.ShouldBindUri(&resourceRequest); err != nil {
