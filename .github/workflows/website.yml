@@ -1,5 +1,6 @@
 name: Website
 on:
+  workflow_call:
   pull_request:
     branches: [main]
   push:
@@ -8,7 +9,7 @@ permissions:
   contents: read
   packages: read
 concurrency:
-  group: website-${{ github.ref }}
+  group: website-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   website:

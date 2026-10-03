@@ -1,0 +1,274 @@
+name: Urth release packaging
+
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/actions/build-image/**'
+      - '.github/workflows/**'
+      - 'scripts/**'
+      - 'Dockerfile'
+      - '.dockerignore'
+      - '.gitignore'
+      - 'Makefile'
+      - 'website/Dockerfile'
+      - 'website/.dockerignore'
+      - 'website/nginx.conf.template'
+      - 'docs/releases.md'
+      - 'docs/container-images.md'
+
+permissions:
+  contents: read
+  packages: read
+
+env:
+  # Match the patched compiler used by the image recipes, not an older module floor.
+  RELEASE_GO_VERSION: '1.27.1'
+
+# Serialize release tags so stable alias promotion does not race another tag.
+# Snapshot validation has its own group and cannot cancel a publishing run.
+concurrency:
+  group: urth-packaging-${{ github.event_name == 'push' && 'publication' || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  metadata:
+    name: Validate source and version
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.source.outputs.version }}
+      revision: ${{ steps.source.outputs.revision }}
+      created: ${{ steps.source.outputs.created }}
+      stable: ${{ steps.source.outputs.stable }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate the tag or snapshot
+        id: source
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          EVENT: ${{ github.event_name }}
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          python3 -B -m unittest discover -s scripts -p 'test_*.py'
+          if [ "$EVENT" = push ]; then
+            test "$REF_TYPE" = tag
+            python3 scripts/build-release.py --version "$TAG" --metadata-only > "$RUNNER_TEMP/source.json"
+            # Do not replace an existing GitHub release. Unexpected API errors
+            # fail closed rather than treating access failure as absence.
+            if gh api "repos/$GH_REPO/releases/tags/$TAG" > /dev/null 2> "$RUNNER_TEMP/release-query.err"; then
+              echo 'This version already has a release; select a new version.' >&2
+              exit 1
+            elif ! grep -q '(HTTP 404)' "$RUNNER_TEMP/release-query.err"; then
+              cat "$RUNNER_TEMP/release-query.err" >&2
+              exit 1
+            fi
+          else
+            python3 scripts/build-release.py --snapshot --metadata-only > "$RUNNER_TEMP/source.json"
+          fi
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          data = json.loads((Path(os.environ['RUNNER_TEMP']) / 'source.json').read_text())
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              for key in ('version', 'revision', 'created', 'stable'):
+                  print(f'{key}={str(data[key]).lower()}', file=output)
+          PY
+
+  backend:
+    if: github.event_name == 'push'
+    needs: metadata
+    uses: ./.github/workflows/go.yml
+
+  website:
+    if: github.event_name == 'push'
+    needs: metadata
+    uses: ./.github/workflows/website.yml
+
+  archives:
+    name: Build and inspect all archives
+    needs: [metadata, backend, website]
+    # PRs already run the ordinary quality workflows; snapshots never publish.
+    # Tags cannot build release assets until both exact-tag gates succeed.
+    if: >-
+      always() && !cancelled() && needs.metadata.result == 'success' &&
+      (github.event_name == 'pull_request' ||
+      (needs.backend.result == 'success' && needs.website.result == 'success'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.RELEASE_GO_VERSION }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          registry-url: https://npm.pkg.github.com
+          scope: '@sre-norns'
+      - name: Build website assets
+        working-directory: website
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npm ci
+          npm run build
+      - name: Build archives
+        env:
+          EVENT: ${{ github.event_name }}
+          VERSION: ${{ needs.metadata.outputs.version }}
+        run: |
+          if [ "$EVENT" = push ]; then
+            python3 scripts/build-release.py --version "$VERSION"
+          else
+            python3 scripts/build-release.py --snapshot
+          fi
+          python3 scripts/check-release.py --output dist/release --smoke
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: urth-archives
+          path: dist/release/*
+          if-no-files-found: error
+
+  image-snapshots:
+    name: Validate ${{ matrix.image }} without publication
+    if: >-
+      always() && !cancelled() && github.event_name == 'pull_request' &&
+      needs.metadata.result == 'success' && needs.archives.result == 'success'
+    needs: [metadata, archives]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {image: urth-api-server, context: '.', file: Dockerfile, target: api-server}
+          - {image: urth-worker, context: '.', file: Dockerfile, target: worker}
+          - {image: urthctl, context: '.', file: Dockerfile, target: cli}
+          - {image: urth-website, context: website, file: website/Dockerfile, target: ''}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/build-image
+        with:
+          image: ${{ matrix.image }}
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          target: ${{ matrix.target }}
+          version: ${{ needs.metadata.outputs.version }}
+          revision: ${{ needs.metadata.outputs.revision }}
+          created: ${{ needs.metadata.outputs.created }}
+          registry-token: ${{ secrets.GITHUB_TOKEN }}
+
+  image-publication:
+    name: Publish ${{ matrix.image }} version tag
+    if: github.event_name == 'push'
+    needs: [metadata, backend, website, archives]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {image: urth-api-server, context: '.', file: Dockerfile, target: api-server}
+          - {image: urth-worker, context: '.', file: Dockerfile, target: worker}
+          - {image: urthctl, context: '.', file: Dockerfile, target: cli}
+          - {image: urth-website, context: website, file: website/Dockerfile, target: ''}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/build-image
+        id: image
+        with:
+          image: ${{ matrix.image }}
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          target: ${{ matrix.target }}
+          version: ${{ needs.metadata.outputs.version }}
+          revision: ${{ needs.metadata.outputs.revision }}
+          created: ${{ needs.metadata.outputs.created }}
+          publish: 'true'
+          registry-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Record image digest
+        env:
+          IMAGE: ghcr.io/sre-norns/${{ matrix.image }}
+          DIGEST: ${{ steps.image.outputs.digest }}
+          VERSION: ${{ needs.metadata.outputs.version }}
+          REVISION: ${{ needs.metadata.outputs.revision }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          record = {key.lower(): os.environ[key] for key in ('IMAGE', 'DIGEST', 'VERSION', 'REVISION')}
+          Path('image.json').write_text(json.dumps(record) + '\n')
+          PY
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: digest-${{ matrix.image }}
+          path: image.json
+
+  release:
+    name: Record complete release and stable aliases
+    if: github.event_name == 'push'
+    needs: [metadata, backend, website, archives, image-publication]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.RELEASE_GO_VERSION }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: urth-archives
+          path: dist/release
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: digest-*
+          path: dist/digests
+      - name: Validate digest records
+        run: |
+          python3 scripts/record-release-images.py --output dist/release --images dist/digests
+          python3 scripts/check-release.py --output dist/release
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Promote stable images and create the GitHub release
+        env:
+          VERSION: ${{ needs.metadata.outputs.version }}
+          STABLE: ${{ needs.metadata.outputs.stable }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if [ "$STABLE" = true ]; then
+            python3 - <<'PY'
+          import json, subprocess
+          from pathlib import Path
+          for entry in json.loads(Path('dist/release/images.json').read_text())['images']:
+              subprocess.run(['docker', 'buildx', 'imagetools', 'create', '--tag', entry['image'] + ':latest', entry['image'] + '@' + entry['digest']], check=True)
+          PY
+            gh release create "$VERSION" dist/release/* --verify-tag --title "Urth $VERSION" --generate-notes --latest
+          else
+            gh release create "$VERSION" dist/release/* --verify-tag --title "Urth $VERSION" --generate-notes --prerelease --latest=false
+          fi
