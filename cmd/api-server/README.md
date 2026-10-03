@@ -98,16 +98,50 @@ secret configuration; keep them out of command arguments, manifests and logs.
 Use independent cryptographically random values with at least 32 bytes of
 entropy. Every API replica needs the same values for its credential tier.
 
-Unset keys are generated in memory. This supports local development, but issued
-Worker sessions and run capabilities then fail after restart or on another API
-replica. Changing a key invalidates credentials signed by the previous key;
-there is no multi-key rotation window in this configuration. Shared machine
-identity tokens have their own identity storage and lifecycle. The historical
-`Enrolment` signing tier does not replace shared machine-token issuance.
+Unset keys are generated in memory for local development. Those credentials
+fail after restart or on another API replica. Worker-session keys still have no
+overlap window. Shared machine identity tokens have their own identity storage
+and lifecycle. The historical `Enrolment` signing tier does not replace shared
+machine-token issuance.
 
-Key entropy enforcement, rotation and the complete run-capability contract are
-security review criteria. See [task 006](../../docs/review-backlog/tasks/006-harden-run-capabilities.md)
-and the [release checklist](../../docs/m9-release-validation.md).
+Run capabilities support an explicit key ID and verification overlap:
+
+| Environment variable | Flag | Meaning |
+| --- | --- | --- |
+| `URTH_RUN_SIGNING_KEY_ID` | `--signing.run-key-id` | ID for the active run signing key; default `run` |
+| `URTH_RUN_SIGNING_KEY` | `--signing.run-key` | Secret for that active ID |
+| `URTH_RUN_VERIFICATION_KEYS` | `--signing.run-verification-keys` | Additional `ID=secret` pairs, separated by semicolons |
+
+Use a new ID for every new secret. IDs contain 1–64 letters, digits, dots,
+underscores or hyphens and start with a letter or digit. Additional keys must
+have non-empty secrets and IDs different from the active ID. Rotation settings
+require an explicit active secret; the server refuses an ephemeral replacement.
+Load the semicolon-separated values from private deployment secret configuration.
+The application does not enforce secret entropy; generate independent random
+values with at least 32 bytes of entropy, for example encoded as base64.
+
+To rotate from `old` to `next` without interrupting in-flight runs:
+
+1. Keep `old` active. Add `next` and its new secret to the verification map on
+   **every** replica, then restart or replace each replica. Confirm that all
+   replicas accept the new key before any replica issues with it.
+2. Change the active ID and secret to `next`. Keep `old` in the verification
+   map. Roll out this configuration across all replicas. Remove `next` from
+   the additional map because it is now the active key.
+3. After the last replica stops issuing with `old`, retain it for at least the
+   largest run duration issued with that key plus the five-minute upload grace.
+   Include deployment clock uncertainty in that interval. Then remove `old`
+   from all verification maps and roll out again.
+
+Configuration is a startup snapshot; there is no live reload. A token must name
+one exact known key ID. Missing or unknown IDs fail; the API does not try every
+key. Removing a key immediately rejects its credentials on that replica. Use
+immediate removal when revoking a compromised key, accepting the loss of its
+in-flight reports. Keep enrollment, session, run and NATS keys separate.
+
+See [run authorization](../../docs/m9-authorization.md),
+[task 006](../../docs/review-backlog/tasks/006-harden-run-capabilities.md), and the
+[release checklist](../../docs/m9-release-validation.md).
 
 ## The dispatch outbox
 

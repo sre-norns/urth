@@ -12,10 +12,10 @@ import (
 func TestM9RunCapabilityRejectsIncompleteAndWrongAuthority(t *testing.T) {
 	keys := testKeys(t)
 	now := time.Now()
-	entry := Result{ObjectMeta: manifest.ObjectMeta{UID: "run", Account: "account", Project: "project"}, Status: ResultStatus{Status: JobRunning, Deadline: now.Add(time.Minute), Executor: ExecutorRef{RunnerID: "runner", WorkerID: "worker"}}}
-	api := resultsAPIImpl{keys: keys, resultsSigningKey: keys.Run}
+	entry := Result{ObjectMeta: manifest.ObjectMeta{UID: "run", Account: "account", Project: "project"}, Status: ResultStatus{DispatchID: "dispatch", Status: JobRunning, Deadline: now.Add(time.Minute), Executor: ExecutorRef{RunnerID: "runner", WorkerID: "worker"}}}
+	api := resultsAPIImpl{keys: keys}
 	claims := func() jwt.MapClaims {
-		return jwt.MapClaims{"iss": TokenIssuer, "sub": "run", "aud": "urth-run", "iat": now.Unix(), "nbf": now.Unix(), "exp": now.Add(time.Minute).Unix(), "runnerId": "runner", "workerId": "worker", "account": "account", "project": "project", "scope": []string{"run.status", "run.artifacts"}}
+		return jwt.MapClaims{"iss": TokenIssuer, "sub": "run", "aud": "urth-run", "iat": now.Unix(), "nbf": now.Unix(), "exp": now.Add(time.Minute).Unix(), "dispatchId": "dispatch", "runnerId": "runner", "workerId": "worker", "account": "account", "project": "project", "scope": []string{"run.status", "run.artifacts"}}
 	}
 	sign := func(c jwt.MapClaims, method jwt.SigningMethod) APIToken {
 		token := jwt.NewWithClaims(method, c)
@@ -32,9 +32,16 @@ func TestM9RunCapabilityRejectsIncompleteAndWrongAuthority(t *testing.T) {
 	}{
 		{"wrong issuer", func(c jwt.MapClaims) { c["iss"] = "another-issuer" }, jwt.SigningMethodHS256},
 		{"wrong audience", func(c jwt.MapClaims) { c["aud"] = "urth-session" }, jwt.SigningMethodHS256},
+		{"expired token", func(c jwt.MapClaims) { c["exp"] = now.Add(-time.Minute).Unix() }, jwt.SigningMethodHS256},
+		{"future not before", func(c jwt.MapClaims) { c["nbf"] = now.Add(time.Minute).Unix() }, jwt.SigningMethodHS256},
+		{"future issued at", func(c jwt.MapClaims) { c["iat"] = now.Add(time.Minute).Unix() }, jwt.SigningMethodHS256},
+		{"wrong result", func(c jwt.MapClaims) { c["sub"] = "other-run" }, jwt.SigningMethodHS256},
+		{"wrong account", func(c jwt.MapClaims) { c["account"] = "other-account" }, jwt.SigningMethodHS256},
 		{"missing expiry", func(c jwt.MapClaims) { delete(c, "exp") }, jwt.SigningMethodHS256},
 		{"missing issued at", func(c jwt.MapClaims) { delete(c, "iat") }, jwt.SigningMethodHS256},
 		{"missing not before", func(c jwt.MapClaims) { delete(c, "nbf") }, jwt.SigningMethodHS256},
+		{"missing dispatch", func(c jwt.MapClaims) { delete(c, "dispatchId") }, jwt.SigningMethodHS256},
+		{"wrong dispatch", func(c jwt.MapClaims) { c["dispatchId"] = "other-dispatch" }, jwt.SigningMethodHS256},
 		{"wrong runner", func(c jwt.MapClaims) { c["runnerId"] = "other-runner" }, jwt.SigningMethodHS256},
 		{"wrong worker", func(c jwt.MapClaims) { c["workerId"] = "other-worker" }, jwt.SigningMethodHS256},
 		{"wrong project", func(c jwt.MapClaims) { c["project"] = "other-project" }, jwt.SigningMethodHS256},

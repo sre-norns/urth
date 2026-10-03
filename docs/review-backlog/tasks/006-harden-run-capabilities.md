@@ -4,16 +4,17 @@ Shared context: [`CONTEXT.md`](../CONTEXT.md).
 
 | Field | Value |
 |---|---|
-| Status | `ready` |
+| Status | `implemented; pending merge validation` |
 | Priority | `P0` |
 | Workstream | Authentication / Claim lifecycle |
 | Depends on | — |
 | Likely conflicts | 005, 007, 008, 011 |
-| Owner | Unclaimed |
+| Owner | M9 run-capability workstream |
 
 ## Current evidence and remaining criteria (2026-10-03)
 
-Status remains open. The generic-token diagnosis below is the pre-M9 review
+Implementation is ready for review. Exact merged-head validation remains open.
+The generic-token diagnosis below is the pre-M9 review
 baseline. [Authorization PR 105](https://github.com/sre-norns/urth/pull/105)
 is merged as `f97750a` and changes that contract. The candidate passes the full
 PostgreSQL/race audit at `200bf30`.
@@ -21,12 +22,13 @@ Its evidence document receives wording clarifications at `806c35c`.
 
 | Classification | Evidence / remaining requirement |
 | --- | --- |
-| Merged mechanism; candidate tests pass | Central HS256 issuer/validator requires key ID `run`, issuer `urth`, audience `urth-run`, time claims, Result/Runner/Worker, account/project and `run.status`/`run.artifacts` scopes. Validation compares the stored Result executor and tenant bindings. |
+| Merged mechanism; candidate tests pass | Central HS256 issuer/validator requires an exact configured key ID (default `run`), issuer `urth`, audience `urth-run`, time claims, Result/Runner/Worker, account/project and `run.status`/`run.artifacts` scopes. Validation compares the stored Result executor and tenant bindings. |
 | Merged mechanism; candidate tests pass | Running-state/current-version checks prevent terminal rewrites. Artifact admission locks the Result row and allows bounded final uploads for completed runs. Expiry cannot exceed the stored deadline plus five minutes. |
 | Superseded detail | The proposed literal audience `urth-api` below. The selected run-capability audience is `urth-run`. |
-| Outstanding | Explicit dispatch-ID binding and its denial tests. The current typed capability does not include the dispatch ID. |
-| Outstanding | Multi-key verification and in-flight signing-key rotation. The configured run key has no key ring or old-key overlap. |
-| Outstanding validation | Reconcile every remaining acceptance criterion, including authoritative labels and retry behavior. Run final combined and exact merged-head checks before closure. |
+| Implemented follow-up | Dispatch ID is required at issuance and validation. Mounted status and artifact routes reject an old token after a stored dispatch change. |
+| Implemented follow-up | Active key ID plus additional verification keys support pre-staging, overlap and retirement. Three API replicas share PostgreSQL and verify old/new reporting during rotation. |
+| Implemented follow-up | Artifact linkage and reserved labels come from the stored Result. Mounted retry tests prove 409 duplicate rejection with the first report preserved. See [the contract](../../m9-authorization.md). |
+| Release validation | Run the combined and exact merged-head checks before release closure. |
 
 Grant or Worker revocation does not cancel a previously issued bounded run
 capability. Status and artifact authority still depend on Result state and
@@ -34,7 +36,8 @@ expiry. Fresh installations only; old credentials without required claims are
 rejected. No compatibility reader or migration window is required.
 
 See the [release checklist](../../m9-release-validation.md). Regression
-evidence does not close dispatch binding, key rotation or the full task.
+evidence covers the implementation criteria below. It does not close M9 or the
+product release.
 
 ## Historical review baseline and retained requirements
 
@@ -113,13 +116,13 @@ won a concurrent race; they remain linked server-side to the token's Result.
 
 ## Acceptance Criteria / Definition of Done
 
-- [ ] Capabilities validate algorithm, key ID, issuer, audience, time, identity,
+- [x] Capabilities validate algorithm, key ID, issuer, audience, time, identity,
   dispatch, and scopes.
-- [ ] Status and Artifact APIs share one validator/authorizer.
-- [ ] A token cannot affect another Result or a different recorded executor.
-- [ ] Terminal Results cannot be rewritten; bounded final Artifact upload works.
-- [ ] Old verification keys support in-flight work during documented rotation.
-- [ ] Worker-controlled labels cannot override authoritative linkage/identity.
+- [x] Status and Artifact APIs share one validator/authorizer.
+- [x] A token cannot affect another Result or a different recorded executor.
+- [x] Terminal Results cannot be rewritten; bounded final Artifact upload works.
+- [x] Old verification keys support in-flight work during documented rotation.
+- [x] Worker-controlled labels cannot override authoritative linkage/identity.
 
 ## Required Tests
 
@@ -141,8 +144,18 @@ git diff --check
 
 ## Completion Record
 
-- **Implemented:**
-- **Tests added/updated:**
-- **Documentation updated:**
-- **Validation evidence:**
-- **Follow-ups:**
+- **Implemented:** Typed dispatch binding, exact-key verification overlap, immutable
+  key configuration, server-derived artifact identity and documented duplicate
+  reporting behavior. No shared package release or database migration is needed.
+- **Tests added/updated:** `run_key_rotation_test.go`,
+  `m9_run_capability_test.go`, `labels_test.go`, `signing_config_test.go`, and
+  mounted PostgreSQL tests in `m9_authorization_test.go`.
+- **Documentation updated:** API signing settings, authorization contract and
+  release checklist.
+- **Validation evidence:** Full `GOWORK=off make audit/postgres` passes on a
+  dedicated PostgreSQL database, including module verification, vet, pinned
+  staticcheck and race tests (integration 160.674s). The focused dispatch
+  regression first fails with an accepted upload on the preceding code; the
+  artifact label regression first retains the supplied false Runner ID.
+- **Follow-ups:** Maintainer review/merge, exact merged-head CI and final
+  combined release validation. This task does not close M9.

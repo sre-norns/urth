@@ -4,6 +4,9 @@ import (
 	"crypto/rand"
 	"fmt"
 	"log"
+	"maps"
+	"regexp"
+	"slices"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -38,14 +41,22 @@ type SigningKeys struct {
 	// Run signs the per-Result capability that authorises status updates and
 	// artifact uploads for one run.
 	Run []byte
+
+	// RunKeyID identifies the active run key. The default is "run".
+	RunKeyID string
+	// RunVerificationKeys holds additional keys accepted during rotation.
+	// A retained key can verify a capability but does not issue new ones.
+	RunVerificationKeys map[string][]byte
 }
 
 // SigningKeysConfig is the operator-facing form of SigningKeys, embeddable into
 // a command's kong configuration.
 type SigningKeysConfig struct {
-	EnrolmentKey string `help:"Secret used to sign runner enrolment tokens" env:"URTH_ENROLMENT_SIGNING_KEY"`
-	SessionKey   string `help:"Secret used to sign worker session tokens" env:"URTH_SESSION_SIGNING_KEY"`
-	RunKey       string `help:"Secret used to sign per-run capability tokens" env:"URTH_RUN_SIGNING_KEY"`
+	EnrolmentKey        string            `help:"Secret used to sign runner enrolment tokens" env:"URTH_ENROLMENT_SIGNING_KEY"`
+	SessionKey          string            `help:"Secret used to sign worker session tokens" env:"URTH_SESSION_SIGNING_KEY"`
+	RunKey              string            `help:"Secret used to sign per-run capability tokens" env:"URTH_RUN_SIGNING_KEY"`
+	RunKeyID            string            `help:"Key ID for newly issued run capabilities" env:"URTH_RUN_SIGNING_KEY_ID" default:"run"`
+	RunVerificationKeys map[string]string `help:"Additional run verification keys as ID=secret pairs; never repeat the active key ID" env:"URTH_RUN_VERIFICATION_KEYS"`
 }
 
 // Build turns configured secrets into signing keys, generating any that were
@@ -58,10 +69,28 @@ type SigningKeysConfig struct {
 // and workers must re-register, which is noisy enough to notice but does not
 // stop anyone developing locally.
 func (c SigningKeysConfig) Build() (SigningKeys, error) {
+	if c.RunKeyID == "" {
+		c.RunKeyID = "run"
+	}
+	if !runKeyIDPattern.MatchString(c.RunKeyID) {
+		return SigningKeys{}, fmt.Errorf("invalid active run key ID")
+	}
+	if c.RunKey == "" && (c.RunKeyID != "run" || len(c.RunVerificationKeys) > 0) {
+		return SigningKeys{}, fmt.Errorf("an explicit run signing key is required for key rotation")
+	}
+	verification := make(map[string][]byte, len(c.RunVerificationKeys))
+	for id, secret := range c.RunVerificationKeys {
+		if !runKeyIDPattern.MatchString(id) || id == c.RunKeyID || secret == "" {
+			return SigningKeys{}, fmt.Errorf("run verification keys require non-empty secrets and valid IDs distinct from the active ID")
+		}
+		verification[id] = []byte(secret)
+	}
 	keys := SigningKeys{
-		Enrolment: []byte(c.EnrolmentKey),
-		Session:   []byte(c.SessionKey),
-		Run:       []byte(c.RunKey),
+		Enrolment:           []byte(c.EnrolmentKey),
+		Session:             []byte(c.SessionKey),
+		Run:                 []byte(c.RunKey),
+		RunKeyID:            c.RunKeyID,
+		RunVerificationKeys: verification,
 	}
 
 	generated := make([]string, 0, 3)
@@ -92,6 +121,37 @@ func (c SigningKeysConfig) Build() (SigningKeys, error) {
 	}
 
 	return keys, nil
+}
+
+// Key IDs are opaque deployment labels, not file paths or key lookup URLs.
+var runKeyIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
+
+func (k SigningKeys) runKeyID() string {
+	if k.RunKeyID == "" {
+		return "run"
+	}
+	return k.RunKeyID
+}
+
+func (k SigningKeys) runVerificationKey(id string) ([]byte, bool) {
+	if id == k.runKeyID() {
+		return k.Run, len(k.Run) > 0
+	}
+	key := k.RunVerificationKeys[id]
+	return key, len(key) > 0
+}
+
+// clone prevents caller-owned buffers or maps from changing a live service's
+// signing configuration. Rotation requires a newly composed API replica.
+func (k SigningKeys) clone() SigningKeys {
+	k.Enrolment = slices.Clone(k.Enrolment)
+	k.Session = slices.Clone(k.Session)
+	k.Run = slices.Clone(k.Run)
+	k.RunVerificationKeys = maps.Clone(k.RunVerificationKeys)
+	for id, key := range k.RunVerificationKeys {
+		k.RunVerificationKeys[id] = slices.Clone(key)
+	}
+	return k
 }
 
 // WorkerSessionClaims is the body of a worker session credential.

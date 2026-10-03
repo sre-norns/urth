@@ -17,6 +17,7 @@ import (
 	im "github.com/sre-norns/wyrd/identity/model"
 	"github.com/sre-norns/wyrd/pkg/manifest"
 	"github.com/stretchr/testify/require"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
@@ -70,6 +71,106 @@ func TestM9ClaimCapabilityCannotRewriteTerminalRun(t *testing.T) {
 	require.NoError(t, err)
 	code, data = h.httpRequest(http.MethodPost, "/v1/artifacts", auth.Token, body)
 	require.Equal(t, http.StatusCreated, code, string(data))
+}
+
+// A stored dispatch change must invalidate the old capability even when the
+// Result, executor, deadline and tenant remain the same.
+func TestM9RunCapabilityRejectsChangedDispatch(t *testing.T) {
+	h := newHarness(t)
+	run, _, auth := h.m9Claim("dispatch-binding")
+	require.NoError(t, h.DB.Model(&urth.Result{}).Where("uid = ?", run.UID).UpdateColumn("status_dispatch_id", "replacement-dispatch").Error)
+	body, err := json.Marshal(urth.Artifact{ObjectMeta: manifest.ObjectMeta{Name: "old-dispatch"}, Spec: urth.ArtifactSpec{Artifact: prob.Artifact{Rel: "log", MimeType: "text/plain", Content: []byte("old")}}}.ToManifest())
+	require.NoError(t, err)
+	code, data := h.httpRequest(http.MethodPost, "/v1/artifacts", auth.Token, body)
+	require.Contains(t, []int{http.StatusUnauthorized, http.StatusForbidden}, code, string(data))
+	code, data = h.m9Status(run, auth.Token, prob.RunFinishedSuccess)
+	require.Contains(t, []int{http.StatusUnauthorized, http.StatusForbidden}, code, string(data))
+	require.Equal(t, urth.JobRunning, h.result(run.UID).Status.Status)
+}
+
+func TestM9RunKeyRotationAcrossAPIReplicas(t *testing.T) {
+	initial := urth.SigningKeysConfig{EnrolmentKey: "enrolment-test", SessionKey: "session-test", RunKey: "old-run-test", RunKeyID: "old", RunVerificationKeys: map[string]string{"next": "next-run-test"}}
+	h := newHarness(t, withConfig(func(cfg *apiserver.Config) { cfg.Signing = initial }))
+	run, worker, oldAuth := h.m9Claim("rotation")
+	replica := func(signing urth.SigningKeysConfig) *harness {
+		cfg := h.Config
+		cfg.Signing = signing
+		// Each process has its own GORM registry, over the same database schema.
+		pool, err := h.DB.DB()
+		require.NoError(t, err)
+		db, err := gorm.Open(postgres.New(postgres.Config{Conn: pool}), &gorm.Config{Logger: h.DB.Logger})
+		require.NoError(t, err)
+		server, err := apiserver.New(h.ctx, db, cfg)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = server.Close() })
+		httpServer := httptest.NewServer(server.Router)
+		t.Cleanup(httpServer.Close)
+		copy := *h
+		copy.Server, copy.HTTP, copy.Config = server, httpServer, cfg
+		return &copy
+	}
+	rotated := initial
+	rotated.RunKeyID, rotated.RunKey = "next", "next-run-test"
+	rotated.RunVerificationKeys = map[string]string{"old": "old-run-test"}
+	next := replica(rotated)
+	upload := func(target *harness, token urth.APIToken, name manifest.ResourceName, expected int) {
+		body, err := json.Marshal(urth.Artifact{ObjectMeta: manifest.ObjectMeta{Name: name}, Spec: urth.ArtifactSpec{Artifact: prob.Artifact{Rel: "log", MimeType: "text/plain", Content: []byte("rotation")}}}.ToManifest())
+		require.NoError(t, err)
+		code, data := target.httpRequest(http.MethodPost, "/v1/artifacts", token, body)
+		require.Equal(t, expected, code, string(data))
+	}
+	upload(next, oldAuth.Token, "old-in-flight", http.StatusCreated)
+	newer := next.createRun("rotation")
+	newAuth, err := next.client("").Results("rotation").ClaimRun(next.ctx, newer.UID, worker.Session, urth.ClaimJobRequest{DispatchID: urth.DispatchEventUID(newer.UID, newer.Version), ResultVersion: newer.Version})
+	require.NoError(t, err)
+	// The previous replica must accept the new key before issuance switches.
+	upload(h, newAuth.Token, "new-on-previous-replica", http.StatusCreated)
+	rotated.RunVerificationKeys = nil
+	retired := replica(rotated)
+	upload(retired, oldAuth.Token, "retired-old", http.StatusUnauthorized)
+	code, data := retired.m9Status(run, oldAuth.Token, prob.RunFinishedSuccess)
+	require.Equal(t, http.StatusUnauthorized, code, string(data))
+	code, data = next.m9Status(run, oldAuth.Token, prob.RunFinishedSuccess)
+	require.Equal(t, http.StatusOK, code, string(data))
+	upload(next, oldAuth.Token, "old-after-completion", http.StatusCreated)
+	code, data = retired.m9Status(h.result(newer.UID), newAuth.Token, prob.RunFinishedSuccess)
+	require.Equal(t, http.StatusOK, code, string(data))
+	upload(retired, newAuth.Token, "new-after-completion", http.StatusCreated)
+}
+
+func TestM9ArtifactLinkageAndLostResponseRetries(t *testing.T) {
+	h := newHarness(t)
+	run, _, auth := h.m9Claim("artifact-linkage")
+	other := h.createRun("artifact-linkage")
+	artifact := urth.Artifact{ObjectMeta: manifest.ObjectMeta{Name: "retry-artifact", Labels: manifest.Labels{urth.LabelResultUID: string(other.UID), urth.LabelRunnerUID: "forged-runner", urth.LabelWorkerUID: "forged-worker", urth.LabelScenarioUID: "forged-scenario", urth.LabelArtifactMayContainSecrets: "false", "team": "checkout"}}, Spec: urth.ArtifactSpec{Artifact: prob.Artifact{Rel: "log", MimeType: "text/plain", Content: []byte("first-upload")}}}
+	body, err := json.Marshal(artifact.ToManifest())
+	require.NoError(t, err)
+	code, data := h.httpRequest(http.MethodPost, "/v1/artifacts", auth.Token, body)
+	require.Equal(t, http.StatusCreated, code, string(data))
+	var created manifest.ResourceManifest
+	require.NoError(t, json.Unmarshal(data, &created))
+	require.Equal(t, string(run.UID), created.Metadata.Labels[urth.LabelResultUID])
+	require.Equal(t, string(run.Status.Executor.RunnerID), created.Metadata.Labels[urth.LabelRunnerUID])
+	require.Equal(t, string(run.Status.Executor.WorkerID), created.Metadata.Labels[urth.LabelWorkerUID])
+	require.Equal(t, string(run.Spec.Execution.ScenarioUID), created.Metadata.Labels[urth.LabelScenarioUID])
+	require.Equal(t, "true", created.Metadata.Labels[urth.LabelArtifactMayContainSecrets])
+	require.Equal(t, "checkout", created.Metadata.Labels["team"])
+	require.Equal(t, run.Account, created.Metadata.Account)
+	require.Equal(t, run.Project, created.Metadata.Project)
+	code, data = h.httpRequest(http.MethodPost, "/v1/artifacts", auth.Token, body)
+	require.Equal(t, http.StatusConflict, code, string(data))
+	var stored urth.Artifact
+	require.NoError(t, h.DB.Where("uid = ?", created.Metadata.UID).First(&stored).Error)
+	require.Equal(t, run.UID, stored.Spec.ResultID)
+	require.Equal(t, []byte("first-upload"), stored.Spec.Artifact.Content)
+	var count int64
+	require.NoError(t, h.DB.Model(&urth.Artifact{}).Where("result_id = ?", run.UID).Count(&count).Error)
+	require.EqualValues(t, 1, count, "a lost upload response must not create a duplicate")
+	code, data = h.m9Status(run, auth.Token, prob.RunFinishedSuccess)
+	require.Equal(t, http.StatusOK, code, string(data))
+	code, data = h.m9Status(run, auth.Token, prob.RunFinishedSuccess)
+	require.Equal(t, http.StatusConflict, code, string(data))
+	require.Equal(t, prob.RunFinishedSuccess, h.result(run.UID).Status.Result)
 }
 
 func TestM9CredentialPurposesAndWrongResult(t *testing.T) {
