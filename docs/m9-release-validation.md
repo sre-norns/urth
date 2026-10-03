@@ -7,6 +7,15 @@ through Urth `1e37393` and Exp-Bench `929f574`. Product packaging, version
 selection and deployment validation remain separate. No shared package release
 is needed for the validated changes.
 
+Urth packaging PR [117](https://github.com/sre-norns/urth/pull/117) merges at
+`d8f200bf0f252bde73459c8de5f30cd7adc90f49`. Its tree matches the tested PR head,
+but the [merged-main audit](https://github.com/sre-norns/urth/actions/runs/37121669063)
+detects an intermittent race in the embedded NATS route-reload test. The
+[fixture correction](m9-broker-operations.md#route-reload-race-in-the-test-dependency)
+retains the race detector and all rotation assertions. Verify the correction's
+merged-head checks before selecting the first product tag. No shared package
+or production dependency update is required for this test-only correction.
+
 ## Installation and dependency contract
 
 Use a fresh PostgreSQL database and fresh NATS storage. Deploy API, Worker, CLI
