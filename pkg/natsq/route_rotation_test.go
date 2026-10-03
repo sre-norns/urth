@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -82,6 +83,10 @@ func TestBrokerClusterRouteCertificateRotation(t *testing.T) {
 				peers = append(peers, fmt.Sprintf("%q", nodes[j].address.String()))
 			}
 		}
+		// Exercise noncanonical input deterministically. Without normalization
+		// before startup, the first reload changes the server-owned route order.
+		slices.Sort(peers)
+		slices.Reverse(peers)
 		config := fmt.Sprintf(`server_name: m9-route-%d
 host: 127.0.0.1
 port: -1
@@ -100,6 +105,12 @@ cluster {
 		require.NoError(t, os.WriteFile(n.config, []byte(config), 0600))
 		opts, err := ns.ProcessConfigFile(n.config)
 		require.NoError(t, err)
+		// NATS 2.15.0 sorts live Routes during reload while route goroutines
+		// read them. Keep this fixture's two immutable URLs in canonical order
+		// before startup and every reload, so its small-slice sort has no moves.
+		slices.SortFunc(opts.Routes, func(a, b *url.URL) int {
+			return strings.Compare(a.String(), b.String())
+		})
 		opts.TrustedOperators = []*jwt.OperatorClaims{jwt.NewOperatorClaims(a.operatorPublic)}
 		opts.AccountResolver = n.resolver
 		opts.SystemAccount = a.systemPublic
@@ -257,8 +268,15 @@ cluster {
 	}
 	delivery("before-route-rotation")
 	for i := range nodes {
+		before, err := nodes[i].server.Varz(nil)
+		require.NoError(t, err)
+		require.Len(t, before.Cluster.URLs, 2)
 		replaceOperationFile(t, nodes[i].trust, overlap)
 		require.NoError(t, nodes[i].server.ReloadOptions(options(i)))
+		after, err := nodes[i].server.Varz(nil)
+		require.NoError(t, err)
+		require.Equal(t, before.Cluster.URLs, after.Cluster.URLs,
+			"TLS-only reload must not reorder the live fixture routes")
 	}
 	checkLeaves(oldProbe, nextProbe)
 	delivery("route-ca-overlap")

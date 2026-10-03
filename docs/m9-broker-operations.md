@@ -242,3 +242,40 @@ The follow-up does not prove production route reconnection, multi-site recovery,
 certificate expiry behavior, API resource authorization or deployment CA
 operations. It does not claim that an established route authenticates again
 when TLS files reload.
+
+## Route reload race in the test dependency
+
+The [audit at merged packaging commit d8f200b](https://github.com/sre-norns/urth/actions/runs/37121669063)
+detects a race in `TestBrokerClusterRouteCertificateRotation`. NATS 2.15.0
+`diffOptions` sorts the live route URL slice while `routeStillValid` reads it.
+The rotation and delivery assertions pass, but the race detector fails the
+test. This failure is separate from the packaging changes.
+
+The fixture now sorts each fresh configuration's two route URLs before it
+passes ownership to NATS. Go 1.27.1 uses insertion sort for this small slice;
+an already ordered slice needs no writes. The fixture writes peer URLs in
+descending order to exercise normalization. Independent `Varz` snapshots
+before and after the first TLS-only reload must show unchanged route order.
+Without normalization, that assertion fails deterministically. The test retains
+all certificate, trust, fresh-route, quorum, replica, delivery and denial checks.
+
+This is a narrow fixture workaround. It does not fix the upstream reload
+implementation or prove that arbitrary production route lists are safe to
+reload. The embedded server is a test dependency. Revalidate the workaround
+when the NATS or Go version changes; remove it only after the dependency no
+longer mutates live option slices during comparison. Production broker version
+selection and rotation validation remain deployment gates.
+
+Five original full local runs pass in 168.681 seconds despite the CI failure.
+A temporary reproducer stops after the first CA-overlap reload: 30 repetitions
+reproduce the same race in 21.701 seconds. With normalization, 100 repetitions
+pass in 75.215 seconds. The new live-order assertion fails without normalization
+in 0.859 seconds. The temporary early return is removed before final validation.
+Evidence is retained under `~/workspace/m9-review/route-reload-race/`.
+
+Final validation runs the complete rotation scenario five times with the race
+detector and passes in 168.786 seconds. The full PostgreSQL audit passes module
+verification, vet, Staticcheck and race tests, including the NATS package in
+53.753 seconds and API/Worker integration in 150.481 seconds. The audit uses
+a disposable PostgreSQL database on port 18835. No user broker or database
+participates in these checks.
