@@ -29,6 +29,21 @@ Fresh installations only. Do not add a legacy enrollment fallback or migration
 window. Current completion needs evidence for every acceptance criterion below.
 See the [release checklist](../../m9-release-validation.md).
 
+## M9 candidate evidence under validation
+
+The implementation candidate adds persistent Ed25519 keys, two-minute single-use
+challenge proof, server-derived fingerprints and a versioned Runner blocklist.
+The implementation owner reports focused proof/blocklist tests pass, including
+`TestWorkerProofIdentityReplayAndBlocklist`,
+`TestConcurrentWorkerChallengeReplayHasOneWinner`,
+`TestWorkerChallengeCapacityIsBounded` and the private installation-key test.
+CLI block/unblock and the Runner edit form expose the same `blockedWorkers`
+resource fields. Worker detail exposes `status.fingerprint`.
+
+The candidate is not merged. Full UI/CLI and composed PostgreSQL/HTTP/broker
+verification remains open. Do not mark this task done from focused tests alone.
+The historical name-based diagnosis applies to the pre-M9 baseline.
+
 ## Historical review baseline and retained requirements
 
 ## Why This Matters

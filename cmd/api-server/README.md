@@ -72,6 +72,42 @@ not sign in: it is mailed a pointer to registration. Start from **Create
 account → Continue with OpenID Connect** instead, which confirms the account by
 email; later sign-ins through the provider go straight in.
 
+## Trusted proxies and OAuth limits
+
+The M9 authorization candidate ignores forwarded client addresses by default.
+The shared database-backed OAuth limiter then uses the direct peer address.
+Clients behind one unconfigured reverse proxy share that address's limit.
+
+Set `URTH_TRUSTED_PROXIES` to a comma-separated list of controlled proxy IP
+addresses or CIDRs. The equivalent flag is repeatable `--http.trusted-proxy`.
+Trust only the proxies that you operate. Each proxy must replace inbound
+forwarding headers before it forwards a request. Do not trust the entire network
+to obtain per-client rate limits. Invalid entries prevent startup.
+
+The limiter also checks browser Origin and fails closed when its backing store
+fails. Mounted Origin/proxy/failure regressions belong to the M9 authorization
+candidate. Final test evidence, merge and release remain required.
+
+## Worker and run signing keys
+
+Configure separate `URTH_SESSION_SIGNING_KEY` and `URTH_RUN_SIGNING_KEY` secrets
+for a persistent or replicated service. The corresponding flags are
+`--signing.session-key` and `--signing.run-key`. Load them from the deployment's
+secret configuration; keep them out of command arguments, manifests and logs.
+Use independent cryptographically random values with at least 32 bytes of
+entropy. Every API replica needs the same values for its credential tier.
+
+Unset keys are generated in memory. This supports local development, but issued
+Worker sessions and run capabilities then fail after restart or on another API
+replica. Changing a key invalidates credentials signed by the previous key;
+there is no multi-key rotation window in this configuration. Shared machine
+identity tokens have their own identity storage and lifecycle. The historical
+`Enrolment` signing tier does not replace shared machine-token issuance.
+
+Key entropy enforcement, rotation and the complete run-capability contract are
+security review criteria. See [task 006](../../docs/review-backlog/tasks/006-harden-run-capabilities.md)
+and the [release checklist](../../docs/m9-release-validation.md).
+
 ## The dispatch outbox
 
 Creating a run is two durable writes: the `Result` row in Postgres, and the job
@@ -811,10 +847,24 @@ service user and keep them outside resource manifests and logs.
 
 Configure the broker's operator/account resolver to accept the signing account.
 Configure service permissions for provisioning, relay publication, log subscription
-and presence ingestion. These roles currently share the composed API process;
-independent per-loop service identities remain a task 004 validation requirement.
+and presence ingestion. The M9 candidate accepts three distinct service
+identities: `--nats.creds-file` for provisioning,
+`--nats.publisher-creds-file` for the relay publisher and
+`--nats.observer-creds-file` for logs, presence and advisories. The control loops
+remain in the composed API process. Validate each role's permissions separately.
 Require broker client and cluster-route TLS in the production deployment.
-The local Makefile explicitly enables unauthenticated Workers for its local broker.
+The M9 candidate requires authenticated `tls://` broker URLs in production. Use
+`--nats.tlsca-file` for a private CA and both `--nats.tls-cert-file` and
+`--nats.tls-key-file` for mutual TLS. `--nats.worker-credential-ttl` defaults to
+five minutes and bounds broker revocation delay; it cannot exceed five minutes.
+Issued Worker broker authority is also capped by its session expiry. Enrollment
+or refresh denial stops new authority; existing broker access ends by credential
+expiry. Full live expiry and renewal evidence remains a release gate.
+
+The local Makefile explicitly enables `--nats.allow-insecure-workers` and
+`--nats.allow-insecure` for its loopback broker. This permits no remote insecure
+broker. These M9 configuration changes require the implementation PR before this
+documentation candidate is released.
 
 The [M9 evidence matrix](../../docs/m9-release-validation.md) records which
 permission, expiry, renewal and revocation checks remain open. A production

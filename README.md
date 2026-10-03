@@ -235,13 +235,14 @@ are recorded in [the architecture decision records](./docs/README.md).
 
 ### Worker authentication model
 
-The current credential stages are:
+The credential stages for the M9 candidate are:
 
 1. An account administrator creates a **Runner** with its shared machine identity.
 2. The administrator issues a shared machine token through the identity service.
    Runner creation does not return an enrollment token. Ordinary resource reads
    never return token secrets.
-3. A Worker uses the machine token to register a **WorkerInstance** and receive a
+3. A Worker uses the machine token and proves possession of its persistent
+   installation key with a server challenge. It receives a **WorkerInstance**,
    short-lived Worker session and restricted NATS credentials.
 4. The Worker presents its session on each claim. The API checks current Runner,
    Worker and project grant state before it assigns the pending Result.
@@ -255,8 +256,9 @@ claimed run retains its bounded reporting authority.
 
 The [M9 evidence matrix](docs/m9-release-validation.md) distinguishes implemented
 controls from outstanding security and release checks. The original enrollment
-store proposal is superseded by shared identity. Stable Worker proof and the
-remaining broker lifecycle checks are tracked in the
+store proposal is superseded by shared identity. The M9 candidate adds stable
+Worker proof and blocklists; full production validation and merge remain open
+in the
 [review backlog](./docs/review-backlog/README.md).
 
 The channel and executor relationship is defined by
@@ -322,8 +324,15 @@ urthctl get scenarios
 RUNNER_TOKEN_FILE=$(mktemp)
 chmod 600 "$RUNNER_TOKEN_FILE"
 urthctl runners token example-runner-yaml > "$RUNNER_TOKEN_FILE"
-go run ./cmd/nats-worker --token-file "$RUNNER_TOKEN_FILE"
+go run ./cmd/nats-worker --token-file "$RUNNER_TOKEN_FILE" \
+  --allow-insecure-api --nats.allow-insecure
 ```
+
+The two insecure flags apply only to loopback development endpoints. Production
+uses HTTPS and authenticated NATS over TLS. The Worker stores its installation
+key at `$XDG_CONFIG_HOME/urth/worker.key` (or the platform configuration directory
+when XDG is unset). Use `--identity-key-file` to give each installation its own
+private persistent key.
 
 `apply` is quiet on success. Start a run now rather than waiting for the schedule, then
 inspect its result:

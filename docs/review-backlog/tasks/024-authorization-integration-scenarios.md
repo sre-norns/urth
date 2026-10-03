@@ -32,6 +32,14 @@ the selected behavior before closing this criterion. Each negative test must
 attempt the protected operation and assert denial with a positive control.
 The [release checklist](../../m9-release-validation.md) keeps the release gate open.
 
+## M9 candidate evidence under validation
+
+Focused Worker proof/blocklist tests pass in the implementation candidate.
+Production-path composed revocation, expiry and reporting tests remain required.
+Worker deletion reporting must follow the selected bounded run-capability
+contract; do not infer it from the original blanket immediate-denial criterion.
+No acceptance criterion is closed by this candidate note.
+
 ## Historical review baseline and requirements under reconciliation
 
 ## Why This Matters

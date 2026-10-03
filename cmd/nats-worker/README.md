@@ -137,7 +137,8 @@ private file and start the Worker:
 RUNNER_TOKEN_FILE=$(mktemp)
 chmod 600 "$RUNNER_TOKEN_FILE"
 go run ./cmd/urthctl runners token example-runner-yaml > "$RUNNER_TOKEN_FILE"
-go run ./cmd/nats-worker --token-file "$RUNNER_TOKEN_FILE"
+go run ./cmd/nats-worker --token-file "$RUNNER_TOKEN_FILE" \
+  --allow-insecure-api --nats.allow-insecure
 ```
 
 The token is a shared machine token. It authorizes enrollment for the paired
@@ -150,11 +151,66 @@ Keep the file private and remove it when it is no longer needed. `--client.token
 accepts the same secret, but process arguments can expose it to other local users.
 The local Makefile uses that argument and is for isolated development.
 
+## Installation key and transport
+
+The M9 Worker candidate uses a persistent Ed25519 key. The default path is the
+platform user configuration directory plus `urth/worker.key`. On Linux it uses
+`$XDG_CONFIG_HOME/urth/worker.key`, or `$HOME/.config/urth/worker.key` when XDG is
+unset. `--identity-key-file` and `URTH_WORKER_IDENTITY_KEY_FILE` select another
+path. The Worker creates the seed once as a private regular file and keeps it
+across restarts. Do not copy the same seed to separate installations. Give each
+installation a separate key file or persistent container volume.
+
+Machine tokens authorize the Runner enrollment. A two-minute single-use server
+challenge verifies the installation's key and binds the submitted manifest.
+The public fingerprint appears in Worker `status.fingerprint` as `sha256:<hex>`.
+A display name does not prove identity. A different key cannot reuse an existing
+Worker name to assume its registration. Re-enrollment with the same proven key
+can refresh its registration after a display-name change.
+
+Production requires an HTTPS API endpoint and authenticated `tls://` NATS URLs.
+Use `--client.api-server-address` for the API. The API-provided broker URLs take
+precedence over `--nats.url`. Set `--nats.tlsca-file` for a private broker CA.
+If the broker requires mutual TLS, set both `--nats.tls-cert-file` and
+`--nats.tls-key-file`. The broker JWT proves Worker authority; the TLS certificate
+protects its transport. Do not put credentials in endpoint URLs.
+
+The local command above explicitly permits loopback HTTP and unauthenticated
+NATS. These options do not permit a remote insecure endpoint. M9 proof and
+transport implementation must merge and pass the release evidence gates before
+this candidate configuration is released.
+
+## Block and unblock an installation
+
+An account administrator reads the verified fingerprint from Worker detail in
+the website or from `urthctl get worker NAME -o json`. Then use:
+
+```sh
+urthctl runners block RUNNER 'sha256:FINGERPRINT' --reason 'Retired installation'
+urthctl runners unblock RUNNER 'sha256:FINGERPRINT'
+```
+
+Replace the placeholder with the exact lowercase fingerprint. The CLI reads the
+Runner version and sends a conditional edit. In the website, open the Runner,
+select **Edit scheduling**, and edit **Blocked workers (JSON)**. Entries have
+`identity` and an optional `reason`. A stale edit is refused; read the current
+Runner before retry. The key stays private on the Worker host.
+
+Blocking denies enrollment, refresh and the next new claim. Broker access has a
+bounded credential lifetime. An already issued run capability keeps its separate
+bounded reporting authority. Record exact live broker and reporting evidence
+before closing [tasks 004/009/024](../../docs/review-backlog/README.md).
+
 ## Flags worth knowing
 
 | Flag | Effect |
 |---|---|
-| `--token-file` | Read the enrolment secret from disk instead of a flag |
+| `--token-file` | Read the enrollment machine token from a private file |
+| `--identity-key-file` | Persistent installation key; one private file per installation |
+| `--allow-insecure-api` | Permit HTTP only for loopback development |
+| `--nats.allow-insecure` | Permit an unauthenticated/plaintext broker only on loopback |
+| `--nats.tlsca-file` | Private CA for broker TLS |
+| `--nats.tls-cert-file`, `--nats.tls-key-file` | Client certificate and private key for mutual TLS |
 | `--concurrency` | Scenarios to execute at once. Defaults to CPU count; this is also the pull batch limit, so the worker never reserves work it cannot start |
 | `--timeout` | Per-run ceiling. The server's deadline still wins if it is shorter |
 | `--[no-]stream-logs` | Publish run output live. On by default |

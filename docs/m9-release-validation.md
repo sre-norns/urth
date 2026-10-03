@@ -37,6 +37,18 @@ and validate any new published pin in both consumers before closing the gate.
 The named tests are source evidence. Rerun them on the candidate and record the
 result. Do not mark task 004/005/009/024 done from this table alone.
 
+## M9 candidate additions
+
+The Worker implementation candidate adds installation-key proof, a persistent
+verified fingerprint, versioned Runner block/unblock and separate provisioner,
+publisher and observer NATS identities. Focused proof/blocklist tests pass per
+the implementation owner. The key and flag instructions in the Worker guide
+apply to that candidate. Its full broker lifecycle, CLI/UI, composed tests,
+merge and fresh-stack gates remain open.
+
+The evidence matrix above records the merged M8 baseline and remaining release
+requirements. Candidate source changes alone do not close those requirements.
+
 ## Provision and operate a fresh stack
 
 1. Install the published package versions. GitHub Packages needs `read:packages`
@@ -51,7 +63,11 @@ result. Do not mark task 004/005/009/024 done from this table alone.
    project grant, issue a machine token, and put it in a private Worker token file.
    See the [quick start](../README.md#quick-start) and
    [Worker setup](../cmd/nats-worker/README.md#running-it).
-5. Keep API service NATS credentials and its account signing seed separate from
+5. Configure independent persistent Worker-session and run-capability signing
+   secrets consistently across API replicas. Unset keys are ephemeral; no
+   multi-key rotation window is configured. See the
+   [signing settings](../cmd/api-server/README.md#worker-and-run-signing-keys).
+   Keep API service NATS credentials and its account signing seed separate from
    Worker files. Configure the resolver and service permissions. Require TLS for
    client and cluster routes. Explicit insecure mode is local development only.
 6. Trigger a Scenario. Verify dispatch, claim, execution, authenticated live logs,
@@ -100,7 +116,7 @@ Leave an incomplete field explicit. Do not fill a result from a different head.
 
 | Risk / remaining work | Owner | Release impact |
 | --- | --- | --- |
-| Tasks 004/005/009/024 and composed authorization gaps | Security implementation owners; maintainer validates evidence | M9 security gate stays open until current criteria are proven |
+| Tasks 004/005/009/024, run-capability hardening (006), Runner policy (008) and composed authorization gaps | Security implementation owners; maintainer validates evidence | M9 security gate stays open until current criteria are proven |
 | Exact merged-head CI and full fresh-stack validation | Maintainer/release validator | Product version and release remain pending |
 | Scheduled execution | Scheduler design owner, assigned by maintainer | Required for v1.0; M9 does not implement it |
 | Prober defaults (017), retention and unrelated operator features | Relevant backlog owner, assigned by maintainer | Record separately; no automatic closure from M9 |

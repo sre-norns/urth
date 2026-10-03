@@ -30,6 +30,17 @@ Task 009 supplies stable Worker proof. Broker revocation must have an explicit
 maximum delay; an API claim denial alone does not prove broker disconnection.
 Use the [release checklist](../../m9-release-validation.md).
 
+## M9 candidate evidence under validation
+
+The implementation candidate binds Worker broker credentials and inboxes to the
+Worker UID. It caps authority at the Worker session and a default five-minute
+broker lifetime. Production uses TLS and separate provisioner, publisher and
+observer credentials. Explicit insecure transport is restricted to loopback.
+
+The implementation owner is validating secured live expiry, renewal and role
+permissions. These mechanisms are candidate source evidence, not completed
+release results. Full acceptance criteria and merge remain open.
+
 ## Historical review baseline and requirements
 
 ## Why This Matters
