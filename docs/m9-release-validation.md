@@ -39,12 +39,36 @@ result. Do not mark task 004/005/009/024 done from this table alone.
 
 ## M9 candidate additions
 
-The Worker implementation candidate adds installation-key proof, a persistent
+[Authorization PR 105](https://github.com/sre-norns/urth/pull/105) adds stored
+Result bindings, strict run-capability claims and state checks, artifact row
+locking, live-log access checks, and trusted-proxy configuration. It is merged
+as `f97750a83cd813bae4232e100d2aacd728ac79ea`. Its full
+`GOWORK=off make audit/postgres` run passes at `200bf30`; `806c35c` adds
+clarifications to its evidence document. The suite includes mounted credential,
+OAuth, item/catalogue, run-state and open-stream regressions with PostgreSQL.
+Exact merged-head CI and fresh-stack release checks remain open.
+
+[Worker PR 106](https://github.com/sre-norns/urth/pull/106), reviewed at
+`609e1294d35d04abd8c3fa2090a91ab9604b206b`, adds installation-key proof, a persistent
 verified fingerprint, versioned Runner block/unblock and separate provisioner,
-publisher and observer NATS identities. Focused proof/blocklist tests pass per
-the implementation owner. The key and flag instructions in the Worker guide
-apply to that candidate. Its full broker lifecycle, CLI/UI, composed tests,
-merge and fresh-stack gates remain open.
+publisher and observer NATS identities. Focused proof/blocklist tests pass. The
+secured PostgreSQL/HTTPS/mutual-TLS broker tests pass in 13.524 seconds. They
+cover block/delete claim denial, bounded completion after deletion,
+claim/block commit order, same-UID renewal and new-UID transport replacement.
+Final focused tests also prove status and artifact reporting after deletion,
+revoked-token proof/enrollment denial, old-session claims and replacement-token
+renewal with the same UID.
+
+The running Worker proves new-UID presence, a second claim/report and completion
+of its original run. Focused CLI/session-expiry checks also pass. The Worker
+guide applies to this candidate. The typed Block/Unblock UI passes all 33 unit
+tests and its build. All eight desktop/mobile Playwright and axe cases pass;
+wide/narrow screenshots are reviewed. The dialogs use versioned writes and
+preserve other blocks after a stale-draft recovery. The implementation owner
+reports the complete PostgreSQL/race suite and verify/vet/static checks pass at
+`7cfdbbf`; rebasing to `609e129` changes upstream documentation only. Its Go/UI
+source is identical to that validated source. Operational rotation/failover,
+Worker merge, exact merged-head CI and fresh-stack gates remain open.
 
 The evidence matrix above records the merged M8 baseline and remaining release
 requirements. Candidate source changes alone do not close those requirements.
@@ -116,7 +140,8 @@ Leave an incomplete field explicit. Do not fill a result from a different head.
 
 | Risk / remaining work | Owner | Release impact |
 | --- | --- | --- |
-| Tasks 004/005/009/024, run-capability hardening (006), Runner policy (008) and composed authorization gaps | Security implementation owners; maintainer validates evidence | M9 security gate stays open until current criteria are proven |
+| Tasks 004/005/009/024, remaining run-capability criteria (006) and composed authorization gaps | Security implementation owners; maintainer validates evidence | Record dispatch binding and key rotation separately; do not close the full tasks from candidate tests |
+| Runner channel policy (008) | Runner-policy owner, assigned by maintainer | Separate P0 product backlog; outside M9 Worker-proof/broker implementation |
 | Exact merged-head CI and full fresh-stack validation | Maintainer/release validator | Product version and release remain pending |
 | Scheduled execution | Scheduler design owner, assigned by maintainer | Required for v1.0; M9 does not implement it |
 | Prober defaults (017), retention and unrelated operator features | Relevant backlog owner, assigned by maintainer | Record separately; no automatic closure from M9 |

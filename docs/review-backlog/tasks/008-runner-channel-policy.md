@@ -11,6 +11,22 @@ Shared context: [`CONTEXT.md`](../CONTEXT.md).
 | Likely conflicts | 006, 007, 009, 014 |
 | Owner | Unclaimed |
 
+## Current scope and retained backlog (2026-10-03)
+
+This is separate Runner-policy work. M9 Worker proof, blocklists and broker
+credentials do not implement the proposed `jobRequirements`,
+`workerRequirements` or `propagatedLabels` policy sections. Keep its policy and
+snapshot acceptance criteria open; do not expand Worker-security work to close
+them.
+
+Fresh installations only. The original compatibility/deprecation constraint,
+manifest migration sequence and legacy-manifest acceptance item below are
+historical proposals. They are superseded by the fresh-install contract.
+Future policy work must define clear validation/errors for its selected schema;
+it need not add an existing-resource reader or migration.
+
+## Historical review baseline and policy requirements
+
 ## Why This Matters
 
 The current Runner has one ambiguous label-selector `requirements` field. It is
