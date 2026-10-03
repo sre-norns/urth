@@ -3,3 +3,8 @@ dist
 test-results
 playwright-report
 .git
+.npmrc
+.env
+.env.*
+*.key
+*.pem

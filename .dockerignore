@@ -1,0 +1,13 @@
+# Include only Go build inputs. Keep Git metadata, local state and web packages out.
+**
+!go.mod
+!go.sum
+!cmd/
+!cmd/**
+!pkg/
+!pkg/**
+**/.env
+**/.env.*
+**/.npmrc
+**/*.key
+**/*.pem
