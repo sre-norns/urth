@@ -22,8 +22,8 @@ a legacy enrollment fallback or an operator-authorizer bypass.
 | Authenticated issuance | The fresh-stack test attempts anonymous machine-token issue and receives 401. An authenticated owner issues the token successfully. |
 | One-time secret and normal-read secrecy | `m8_contract_test.go` and the real-stack test prove operation-only issuance, idempotent replay redaction and ordinary token-read redaction. Runner resources contain no enrollment secret. |
 | Individual issue/revoke lifecycle | `TestMachineTokenRevocationDeniesFreshProofButPreservesSession` uses an unused valid proof after revocation: challenge and enrollment both return 401. A replacement token renews the same Worker UID. Existing session claims remain authorized independently. The real Worker also fails enrollment with the revoked token. |
-| Disable/delete and identity suspension | Open: attempt both fresh enrollment and refresh after Runner disable, Runner deletion and paired identity suspension, with positive controls. `TestRunnerIdentityStaysPairedWithItsRunner` proves suspension is allowed, but does not attempt enrollment after suspension. |
-| Stored token protection and secret outputs | Open: record the shared `v0.7.2` token storage representation and prove stored state is unusable as bearer authority. Add explicit secret-exclusion assertions for logs, ordinary CLI reads/errors and serialized manifests; ordinary reads/replays alone do not cover every output. |
+| Disable/delete and identity suspension | `TestEnrollmentLifecycleRejectsFreshAndRefresh` covers all six state/operation pairs through mounted routes. Each case first enrolls and refreshes successfully, obtains an unused valid proof, changes current state through the API, and receives 401 from challenge and enrollment. Rejected requests leave Worker records unchanged. |
+| Stored token protection and secret outputs | `TestEnrollmentStoredStateAndManifestsExcludeBearerSecret` verifies the published `v0.7.2` SHA-256 verifier for a random shared token. Credential and token rows exclude its plaintext. Replaying the verifier, row IDs or serialized rows returns 401 on challenge and enrollment. The original secret with the same proof succeeds. Runner/Worker manifests and normal Runner/identity/token reads exclude it. Client reads/errors and live logs remain part of the separate client validation. |
 | CLI/UI lifecycle equivalence | Open: prove authenticated issue/revoke and one-time secret handling through both clients. Current real-stack issuance/revocation evidence uses the identity endpoint; CLI device login is separate evidence. |
 
 Shared tokens are individually issued and revoked. More than one token can be
@@ -40,7 +40,7 @@ record those operations separately.
 The implementation and tests are merged in `d60d902`. The exact merged backend
 and website gates pass. See [the release record](../../m9-release-validation.md)
 and [the real-stack evidence](../../m9-fresh-stack-validation.md). Passing CI
-does not cover the missing lifecycle/storage/client cases above.
+does not by itself cover the separate client cases above.
 
 ## Historical review baseline and superseded design
 
@@ -116,8 +116,8 @@ rotated and revoked as ADR 0002 requires.
 - [x] Issuance returns an operation-only secret; normal reads and replay redact it.
 - [x] Revocation immediately rejects the old token for proof/enrollment;
   replacement issuance preserves the Runner and Worker UID contracts.
-- [ ] Runner disable/delete and identity suspension deny enrollment and refresh.
-- [ ] Stored database token state cannot serve as an enrollment bearer secret.
+- [x] Runner disable/delete and identity suspension deny enrollment and refresh.
+- [x] Stored database token state cannot serve as an enrollment bearer secret.
 - [ ] CLI and UI provide equivalent authenticated issue/revoke and secret handling.
 - [ ] Logs, ordinary CLI reads/errors and serialized manifests exclude secret
   values. Explicit authenticated one-time token issuance may return the secret
@@ -141,10 +141,15 @@ git diff --check
 - **Implemented:** Shared paired machine identity and individually revocable
   tokens; no standalone store or compatibility mechanism.
 - **Tests added/updated:** Canonical replay/read redaction, mounted valid-proof
-  revocation/replacement and real-stack anonymous issue/revoked Worker checks.
+  revocation/replacement, all six current-state enrollment/refresh pairs, stored
+  verifier replay and manifest secrecy, and real-stack anonymous issue/revoked
+  Worker checks.
 - **Validation evidence:** Merged `d60d902` backend audit and website checks pass;
-  detailed source attribution is in the release record.
-- **Follow-ups:** The three lifecycle-state pairs, at-rest protection,
-  ordinary-read/error/log/manifest secret assertions and CLI/UI equivalence
-  listed above.
-  The task remains open.
+  the enrollment backend follow-up passes focused race checks in 14.032 seconds
+  and the complete PostgreSQL audit (integration 152.776 seconds, broker 66.334
+  seconds), with module verification, vet and Staticcheck 2026.2.1. Detailed
+  source attribution is in the release record.
+- **Follow-ups:** CLI/UI issue/revoke equivalence and ordinary CLI read/error
+  and live-log secret assertions remain in the separate client change. The
+  backend state, storage and manifest cases now have mounted regressions.
+  The task remains open until the client change and merged checks are recorded.
