@@ -50,6 +50,22 @@ test('scenario → placement → run → authenticated log, with accessible layo
   expect(errors).toEqual([])
   await page.screenshot({path: test.info().outputPath('run.png'), fullPage: true})
 })
+test('scenario list shows the next run and runs a scenario directly', async ({page}) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  const next = new Date(Date.now() + 27 * 60_000 + 30_000).toISOString()
+  const scheduled = {...scenario, spec: {...scenario.spec, schedule: '*/30 * * * *'}, status: {nextScheduledRunTime: next}}
+  const disabled = {...scenario, metadata: {...metadata, name: 'nightly-export', uid: 'scenario-2'}, spec: {...scenario.spec, active: false, schedule: '@daily'}}
+  await page.route((url) => url.pathname === `/v1/projects/${project}/scenarios`, (route) => route.fulfill({json: pageOf([scheduled, disabled])}))
+  await page.goto(`${base}/scenarios`)
+  await expect(page.getByText('in 27 minutes', {exact: true})).toBeVisible()
+  await expect(page.getByRole('button', {name: 'Run nightly-export now'})).toBeDisabled()
+  expect((await new AxeBuilder({page}).analyze()).violations).toEqual([])
+  await page.screenshot({path: test.info().outputPath('scenarios.png'), fullPage: true})
+  await page.getByRole('button', {name: 'Run checkout-health now'}).click()
+  await expect(page.getByLabel('Run log', {exact: true})).toContainText('authenticated browser log')
+  expect(errors).toEqual([])
+})
 test('artifact reveal and download are authenticated and accessible', async ({page}) => {
   await page.goto(`${base}/artifacts`)
   await page.getByRole('link', {name: 'trace-1', exact: true}).click()

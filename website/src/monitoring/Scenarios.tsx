@@ -1,26 +1,31 @@
 import {useState} from 'react'
-import {Badge, Button, Card, ErrorState, LoadingState, Metric, Status} from '@sre-norns/components'
+import {Badge, Button, Card, ErrorState, IconButton, LoadingState, Metric, Status} from '@sre-norns/components'
 import {ResourceForm, type FormField} from '@sre-norns/components/forms'
 import {useIdentity, type ApiValue} from '@sre-norns/components/identity'
+import {Play} from 'lucide-react'
 import {Link, useNavigate, useParams} from 'react-router-dom'
 import {parse, stringify} from 'yaml'
 import {z} from 'zod'
 import {request} from '../api/http'
-import {placement, prob, run, scenario, selector, type Scenario} from '../api/models'
+import {placement, prob, scenario, selector, type Scenario} from '../api/models'
 import {resourcePath, useResource} from '../api/queries'
 import {projectPath} from '../identity/links'
 import {Collection, EditResource, Heading, Labels} from './common'
+import {NextRun, runnable, useRunNow} from './schedule'
 
 export function Scenarios() {
   const {accountId = '', projectId = ''} = useParams()
   const base = projectPath(accountId, projectId)
+  const {runNow, pending, error} = useRunNow()
   return <>
     <Heading title="Scenarios" description="Synthetic checks scheduled onto this project’s authorized runners."><Link className="button primary" to={`${base}/scenarios/new`}>Create scenario</Link></Heading>
+    {Boolean(error) && <ErrorState error={error} />}
     <Collection path={resourcePath('projects', projectId, 'scenarios')} scope={projectId} schema={scenario} title="Scenarios" columns={[
+      {header: 'Run', cell: (s) => <IconButton label={`Run ${s.metadata.name} now`} disabled={!runnable(s) || pending !== undefined} onClick={() => void runNow(s.metadata.name)}><Play size={16} aria-hidden /></IconButton>},
       {header: 'Scenario', cell: (s) => <><Link to={`${base}/scenarios/${encodeURIComponent(s.metadata.name)}`}>{s.metadata.name}</Link><small className="block muted">{s.spec.description}</small></>},
       {header: 'State', cell: (s) => <Status value={s.spec.active ? 'active' : 'disabled'} />},
       {header: 'Probe', cell: (s) => s.spec.prob?.kind || 'Not configured'},
-      {header: 'Schedule', cell: (s) => s.spec.schedule || 'Manual'},
+      {header: 'Next run', cell: (s) => <NextRun scenario={s} />},
       {header: 'Recent runs', cell: (s) => <div className="tags">{s.status?.results?.slice(0, 8).map((r) => <Link key={r.metadata.uid} to={`${base}/runs/${encodeURIComponent(r.metadata.name)}`} title={r.metadata.name}><Badge tone={r.status?.result === 'success' ? 'success' : r.status?.result ? 'error' : 'neutral'}>{r.status?.result || r.status?.status || 'unknown'}</Badge></Link>)}</div>},
       {header: 'Labels', cell: (s) => <Labels value={s.metadata.labels} />},
     ]} />
@@ -28,32 +33,19 @@ export function Scenarios() {
 }
 export function ScenarioDetail() {
   const {accountId = '', projectId = '', scenarioName = ''} = useParams()
-  const {session, queryClient} = useIdentity()
-  const navigate = useNavigate()
   const path = resourcePath('projects', projectId, 'scenarios', scenarioName)
   const query = useResource(path, scenario, projectId, {poll: true})
   const preflight = useResource(`${path}/placement`, placement, projectId, {poll: true})
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<unknown>()
+  // The polled preflight explains placement; the run itself checks it afresh.
+  const {runNow, pending, error} = useRunNow()
   const base = projectPath(accountId, projectId)
-  async function runNow() {
-    setBusy(true); setError(undefined)
-    try {
-      // Placement may have changed since the last poll. Refresh before enqueueing.
-      const check = await request(session, `${path}/placement`, placement)
-      if (!check.data.schedulable) throw new Error(check.data.detail || check.data.reason || 'No eligible runner is available.')
-      const created = await request(session, `${path}/results`, run, {method: 'POST', body: {apiVersion: 'urth.sre-norns.com/v1', kind: 'results', metadata: {labels: {trigger: 'manual', triggerAgent: 'website'}}, spec: {}}})
-      void queryClient.invalidateQueries({queryKey: [accountId, projectId]})
-      void navigate(`${base}/runs/${encodeURIComponent(created.data.metadata.name)}`)
-    } catch (error) {setError(error)} finally {setBusy(false)}
-  }
   if (query.isError) return <ErrorState error={query.error} retry={() => void query.refetch()} />
   if (!query.data) return <LoadingState />
   const s = query.data.data
   return <>
     <Heading title={s.metadata.name} description={s.spec.description}><div className="actions">
       <Link className="button secondary" to={`${base}/scenarios/${encodeURIComponent(scenarioName)}/edit`}>Edit scenario</Link>
-      <Button disabled={busy || !preflight.data?.data.schedulable || preflight.isError} onClick={() => void runNow()}>Run now</Button>
+      <Button disabled={pending !== undefined || !runnable(s) || !preflight.data?.data.schedulable || preflight.isError} onClick={() => void runNow(scenarioName)}>Run now</Button>
     </div></Heading>
     {Boolean(error) && <ErrorState error={error} />}
     {preflight.isError && <ErrorState error={preflight.error} retry={() => void preflight.refetch()} />}
