@@ -9,7 +9,7 @@ const base = `/a/${account}/p/${project}`
 const metadata = {name: 'checkout-health', uid: 'scenario-1', version: 1, account, project}
 const scenario = {apiVersion: 'urth.sre-norns.com/v1', kind: 'scenarios', metadata, spec: {active: true, description: 'Checkout service health', prob: {kind: 'http'}}, status: {}}
 const run = {apiVersion: 'urth.sre-norns.com/v1', kind: 'results', metadata: {...metadata, name: 'run-1', uid: 'run-1', labels: {'urth/scenario.name': 'checkout-health'}}, spec: {probKind: 'http'}, status: {status: 'completed', result: 'success'}}
-const pageOf = (items: unknown[]) => ({items, limit: 20})
+const pageOf = (items: unknown[]) => ({items, limit: 20, total: items.length})
 
 test.skip(Boolean(process.env.URTH_LIVE_E2E), 'Mock route suite; live mode runs live.spec.ts')
 test.beforeEach(async ({page}) => {
@@ -49,6 +49,15 @@ test('scenario → placement → run → authenticated log, with accessible layo
   expect((await new AxeBuilder({page}).analyze()).violations).toEqual([])
   expect(errors).toEqual([])
   await page.screenshot({path: test.info().outputPath('run.png'), fullPage: true})
+})
+test('a project card counts its scenarios and opens on them', async ({page}) => {
+  await page.goto(`/a/${account}/projects`)
+  await expect(page.getByText('1 scenario', {exact: true})).toBeVisible()
+  expect((await new AxeBuilder({page}).analyze()).violations).toEqual([])
+  await page.screenshot({path: test.info().outputPath('projects.png'), fullPage: true})
+  await page.getByRole('link', {name: 'Plant 2', exact: true}).click()
+  await expect(page).toHaveURL(`${base}/scenarios`)
+  await expect(page.getByRole('link', {name: 'checkout-health', exact: true})).toBeVisible()
 })
 test('artifact reveal and download are authenticated and accessible', async ({page}) => {
   await page.goto(`${base}/artifacts`)
