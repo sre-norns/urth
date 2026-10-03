@@ -21,9 +21,11 @@ it is not a description of the current API.
 | Completed mechanism | `pkg/natsq/credentials.go` issues decorated NATS user JWT/NKey credentials. Permissions identify an account-qualified Runner consumer, Runner log/presence prefixes and inbox. |
 | Completed regression | `TestWorkerCredentialsEnforceAccountQueueIsolation` in `pkg/natsq/credentials_test.go` uses a secured broker. It consumes its own queue and asserts denials for the other account's queue, pull API, publication and inbox. |
 | Superseded diagnosis | The API does not return its service credentials-file path to Workers. Worker credentials are separate from configured service credentials. |
-| Outstanding | Prove log/presence prefix, event, job and JetStream administration denials comprehensively. Prove existing-connection expiry, rotation and reconnect during execution. |
-| Outstanding | Close the fixed one-hour NATS expiry versus shorter Worker session gap. Prove production TLS rejection and signing-key/redaction/no-store behavior. |
-| Outstanding | Review least privilege for the service roles in the composed API process. Separate per-loop configured identities are not established by the existing worker permission test. |
+| Candidate regression | Secured Worker tests prove existing-connection expiry, renewal/reconnect during execution and replacement of transport when the Worker UID changes. Broker authority is capped by Worker session expiry and a default five-minute lifetime. |
+| Candidate regression | [Broker PR 109](https://github.com/sre-norns/urth/pull/109) proves delegated signer overlap and retirement, client/server CA rollover, and secured three-node JetStream failover. Hosted checks pass on the PR head. |
+| Outstanding | Validate the complete log/presence, event, job and JetStream administration denial matrix on the selected release set. |
+| Outstanding | Validate deployment-specific production TLS, key/redaction/no-store handling and composed service-role least privilege. Separate provisioner, publisher and observer identities are implemented; one Worker permission test does not close this review. |
+| Outstanding | Cluster-route certificate reload and CA rollover remain untested. Exact merged-head CI and candidate deployment validation remain required. |
 
 Current completion requires evidence for all six original acceptance criteria.
 Task 009 supplies stable Worker proof. Broker revocation must have an explicit
@@ -46,8 +48,24 @@ CLI/session-expiry checks also pass.
 [Worker PR 106](https://github.com/sre-norns/urth/pull/106) at `609e129` has the
 same Go/UI source as locally validated `7cfdbbf`. The implementation owner
 reports the full PostgreSQL/race suite and verify/vet/static checks pass.
-Operational account/certificate rotation, broker failover, complete acceptance
-criteria, merge, exact merged-head CI and fresh-stack validation remain open. The candidate does not close this task.
+The operational broker evidence now includes
+[PR 109](https://github.com/sre-norns/urth/pull/109), source `09547ce` plus its
+evidence update `b01c130`. Ten consecutive race runs pass for delegated signer
+overlap/retirement, client/server CA rollover and secured three-node failover.
+The complete broker race suite, vet, staticcheck and module verification pass.
+The three-node test uses authenticated accounts and mutual TLS on client and
+cluster routes. It stops the connected stream leader and proves delivery and
+confirmed acknowledgments before and after the failure. It does not rotate
+certificates on cluster routes.
+
+The integrated backend candidate is `37cb719`. It combines
+[run-capability PR 108](https://github.com/sre-norns/urth/pull/108) and PR 109.
+The release validator reports the combined PostgreSQL/API/NATS/Worker/integration
+checks pass. The local loopback fresh-stack evidence is recorded separately in
+[M9 fresh-stack validation](../../m9-fresh-stack-validation.md). Loopback
+execution does not replace the secured broker tests. Full acceptance criteria,
+cluster-route certificate rollover, deployment operations, merge and exact
+merged-head CI remain open. This evidence does not close the task.
 
 ## Historical review baseline and requirements
 
