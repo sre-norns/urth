@@ -11,6 +11,33 @@ Shared context: [`CONTEXT.md`](../CONTEXT.md).
 | Likely conflicts | 005, 007, 008, 011 |
 | Owner | Unclaimed |
 
+## Current evidence and remaining criteria (2026-10-03)
+
+Status remains open. The generic-token diagnosis below is the pre-M9 review
+baseline. [Authorization PR 105](https://github.com/sre-norns/urth/pull/105)
+is merged as `f97750a` and changes that contract. The candidate passes the full
+PostgreSQL/race audit at `200bf30`.
+Its evidence document receives wording clarifications at `806c35c`.
+
+| Classification | Evidence / remaining requirement |
+| --- | --- |
+| Merged mechanism; candidate tests pass | Central HS256 issuer/validator requires key ID `run`, issuer `urth`, audience `urth-run`, time claims, Result/Runner/Worker, account/project and `run.status`/`run.artifacts` scopes. Validation compares the stored Result executor and tenant bindings. |
+| Merged mechanism; candidate tests pass | Running-state/current-version checks prevent terminal rewrites. Artifact admission locks the Result row and allows bounded final uploads for completed runs. Expiry cannot exceed the stored deadline plus five minutes. |
+| Superseded detail | The proposed literal audience `urth-api` below. The selected run-capability audience is `urth-run`. |
+| Outstanding | Explicit dispatch-ID binding and its denial tests. The current typed capability does not include the dispatch ID. |
+| Outstanding | Multi-key verification and in-flight signing-key rotation. The configured run key has no key ring or old-key overlap. |
+| Outstanding validation | Reconcile every remaining acceptance criterion, including authoritative labels and retry behavior. Run final combined and exact merged-head checks before closure. |
+
+Grant or Worker revocation does not cancel a previously issued bounded run
+capability. Status and artifact authority still depend on Result state and
+expiry. Fresh installations only; old credentials without required claims are
+rejected. No compatibility reader or migration window is required.
+
+See the [release checklist](../../m9-release-validation.md). Regression
+evidence does not close dispatch binding, key rotation or the full task.
+
+## Historical review baseline and retained requirements
+
 ## Why This Matters
 
 The new claim path issues a separate run signing key, but the resulting token is

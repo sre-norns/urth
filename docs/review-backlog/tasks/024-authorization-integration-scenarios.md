@@ -25,20 +25,40 @@ composed revocation, expiry and capability matrix has evidence.
 | Superseded assumption | Revocation always stops every action in flight immediately. New claims, broker access and claimed-run reporting have distinct credential lifetimes. Grant revocation or blocking does not cancel an already claimed execution. |
 | Outstanding | Token revocation during enrollment, session expiry during execution, Worker deletion/blocking, existing broker connection expiry/revocation, wrong-Result/wrong-Runner capabilities and lease expiry. |
 
-Worker deletion must have explicit reporting evidence. The historical proposed
-criterion below says it refuses status uploads, but it is not established by the
-grant-revocation test. Apply ADR 0002's bounded run-capability contract and record
-the selected behavior before closing this criterion. Each negative test must
-attempt the protected operation and assert denial with a positive control.
+Worker deletion must have explicit reporting evidence. The selected M9 contract
+keeps a previously issued run capability valid within its Result state and
+expiry bounds. It supersedes the historical requirement to refuse every status
+upload after deletion. Test new-claim denial and bounded reporting separately.
+Each negative test must attempt the protected operation and assert denial with a positive control.
 The [release checklist](../../m9-release-validation.md) keeps the release gate open.
 
-## M9 candidate evidence under validation
+## M9 changes and validation evidence
 
-Focused Worker proof/blocklist tests pass in the implementation candidate.
-Production-path composed revocation, expiry and reporting tests remain required.
-Worker deletion reporting must follow the selected bounded run-capability
-contract; do not infer it from the original blanket immediate-denial criterion.
-No acceptance criterion is closed by this candidate note.
+[Authorization PR 105](https://github.com/sre-norns/urth/pull/105) is merged at
+`f97750a`. Its candidate passes the full PostgreSQL/race audit at `200bf30`. Its mounted tests cover credential purposes,
+wrong-Result and expired capabilities, terminal status rewrite denial,
+concurrent completion, artifact row locking, item/catalogue isolation and
+OAuth boundaries. Open-stream tests cover membership removal, session removal
+and session expiry. The evidence document receives wording fixes at `806c35c`.
+
+Focused Worker proof/blocklist tests pass. Secured composition checks pass with
+PostgreSQL, HTTPS and mutual-TLS NATS in 13.524 seconds. They cover blocked and
+deleted session claim denial, bounded status/artifact completion after Worker deletion,
+Runner lock/block commit order, same-UID renewal and new-UID transport replacement.
+The runtime test proves the new UID publishes presence, claims and reports a
+second run, while the old in-flight run completes. Focused CLI/session-expiry
+checks pass. This proves the selected deletion contract instead of the
+historical blanket reporting refusal.
+
+[Worker PR 106](https://github.com/sre-norns/urth/pull/106) at `609e129` has the
+same Go/UI source as locally validated `7cfdbbf`. The complete PostgreSQL/race
+suite and verify/vet/static checks pass per the implementation owner. Final
+focused tests also deny revoked-token proof/enrollment with an unused valid
+challenge, preserve old-session claims and renew under a replacement token.
+
+Operational rotation/failover, complete acceptance criteria, Worker merge,
+exact merged-head CI and fresh-stack validation remain open. Candidate
+evidence does not close this task or the release gate.
 
 ## Historical review baseline and requirements under reconciliation
 

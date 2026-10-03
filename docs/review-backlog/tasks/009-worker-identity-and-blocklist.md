@@ -37,12 +37,21 @@ The implementation owner reports focused proof/blocklist tests pass, including
 `TestWorkerProofIdentityReplayAndBlocklist`,
 `TestConcurrentWorkerChallengeReplayHasOneWinner`,
 `TestWorkerChallengeCapacityIsBounded` and the private installation-key test.
-CLI block/unblock and the Runner edit form expose the same `blockedWorkers`
-resource fields. Worker detail exposes `status.fingerprint`.
+CLI block/unblock and the website Block/Unblock dialogs edit the same
+`blockedWorkers` resource fields. Worker detail exposes `status.fingerprint`.
 
-The candidate is not merged. Full UI/CLI and composed PostgreSQL/HTTP/broker
-verification remains open. Do not mark this task done from focused tests alone.
-The historical name-based diagnosis applies to the pre-M9 baseline.
+Secured PostgreSQL/HTTPS/mutual-TLS broker checks pass for blocked/deleted
+session denial, bounded completion after deletion, claim/block commit order and
+same/new-UID credential renewal. Focused CLI block/unblock and session-expiry
+checks pass. The typed Block/Unblock UI passes 33 unit tests/build and eight
+desktop/mobile Playwright/axe cases, with reviewed narrow/wide screenshots.
+Versioned writes and stale-draft recovery preserve concurrent blocks.
+[Worker PR 106](https://github.com/sre-norns/urth/pull/106) at `609e129` has the
+same Go/UI source as locally validated `7cfdbbf`. The complete PostgreSQL/race
+suite and verify/vet/static checks pass per the implementation owner.
+Operational rotation/failover, merge, exact merged-head CI and fresh-stack
+validation remain open. Do not mark this task done from focused tests alone. The historical name-based diagnosis
+applies to the pre-M9 baseline.
 
 ## Historical review baseline and retained requirements
 

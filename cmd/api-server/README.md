@@ -74,7 +74,7 @@ email; later sign-ins through the provider go straight in.
 
 ## Trusted proxies and OAuth limits
 
-The M9 authorization candidate ignores forwarded client addresses by default.
+The merged M9 authorization change ignores forwarded client addresses by default.
 The shared database-backed OAuth limiter then uses the direct peer address.
 Clients behind one unconfigured reverse proxy share that address's limit.
 
@@ -85,8 +85,9 @@ forwarding headers before it forwards a request. Do not trust the entire network
 to obtain per-client rate limits. Invalid entries prevent startup.
 
 The limiter also checks browser Origin and fails closed when its backing store
-fails. Mounted Origin/proxy/failure regressions belong to the M9 authorization
-candidate. Final test evidence, merge and release remain required.
+fails. Mounted Origin/proxy/failure regressions pass in
+[authorization PR 105](https://github.com/sre-norns/urth/pull/105), merged at
+`f97750a`. Exact merged-head and fresh-stack release validation remain required.
 
 ## Worker and run signing keys
 
@@ -854,7 +855,7 @@ identities: `--nats.creds-file` for provisioning,
 remain in the composed API process. Validate each role's permissions separately.
 Require broker client and cluster-route TLS in the production deployment.
 The M9 candidate requires authenticated `tls://` broker URLs in production. Use
-`--nats.tlsca-file` for a private CA and both `--nats.tls-cert-file` and
+`--nats.tls-ca-file` for a private CA and both `--nats.tls-cert-file` and
 `--nats.tls-key-file` for mutual TLS. `--nats.worker-credential-ttl` defaults to
 five minutes and bounds broker revocation delay; it cannot exceed five minutes.
 Issued Worker broker authority is also capped by its session expiry. Enrollment

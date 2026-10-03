@@ -170,7 +170,7 @@ can refresh its registration after a display-name change.
 
 Production requires an HTTPS API endpoint and authenticated `tls://` NATS URLs.
 Use `--client.api-server-address` for the API. The API-provided broker URLs take
-precedence over `--nats.url`. Set `--nats.tlsca-file` for a private broker CA.
+precedence over `--nats.url`. Set `--nats.tls-ca-file` for a private broker CA.
 If the broker requires mutual TLS, set both `--nats.tls-cert-file` and
 `--nats.tls-key-file`. The broker JWT proves Worker authority; the TLS certificate
 protects its transport. Do not put credentials in endpoint URLs.
@@ -191,15 +191,20 @@ urthctl runners unblock RUNNER 'sha256:FINGERPRINT'
 ```
 
 Replace the placeholder with the exact lowercase fingerprint. The CLI reads the
-Runner version and sends a conditional edit. In the website, open the Runner,
-select **Edit scheduling**, and edit **Blocked workers (JSON)**. Entries have
-`identity` and an optional `reason`. A stale edit is refused; read the current
-Runner before retry. The key stays private on the Worker host.
+Runner version and sends a conditional edit. In the website, open the Runner's
+**Blocked workers** card and select **Block worker**. Enter the verified key
+fingerprint and an optional reason. Select **Unblock** beside an existing entry
+to remove its block. Both dialogs use the Runner version. A stale edit is
+refused; read the current Runner before retry. The key stays private on the
+Worker host.
 
 Blocking denies enrollment, refresh and the next new claim. Broker access has a
 bounded credential lifetime. An already issued run capability keeps its separate
-bounded reporting authority. Record exact live broker and reporting evidence
-before closing [tasks 004/009/024](../../docs/review-backlog/README.md).
+bounded reporting authority. Deleting a Worker revokes that registration and
+its old session. A still-authorized installation can enroll again with a new
+Worker UID. Keep its fingerprint blocked to prevent that enrollment. Record
+exact live broker and reporting evidence before closing
+[tasks 004/009/024](../../docs/review-backlog/README.md).
 
 ## Flags worth knowing
 
@@ -209,7 +214,7 @@ before closing [tasks 004/009/024](../../docs/review-backlog/README.md).
 | `--identity-key-file` | Persistent installation key; one private file per installation |
 | `--allow-insecure-api` | Permit HTTP only for loopback development |
 | `--nats.allow-insecure` | Permit an unauthenticated/plaintext broker only on loopback |
-| `--nats.tlsca-file` | Private CA for broker TLS |
+| `--nats.tls-ca-file` | Private CA for broker TLS |
 | `--nats.tls-cert-file`, `--nats.tls-key-file` | Client certificate and private key for mutual TLS |
 | `--concurrency` | Scenarios to execute at once. Defaults to CPU count; this is also the pull batch limit, so the worker never reserves work it cannot start |
 | `--timeout` | Per-run ceiling. The server's deadline still wins if it is shorter |

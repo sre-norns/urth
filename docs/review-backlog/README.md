@@ -14,10 +14,18 @@ sits outside the NATS workstreams; such a task says so in its Workstream field.
 
 ## Current M9 review (2026-10-03)
 
-Tasks 004/005/009/024 include a current evidence matrix above their historical
+Tasks 004/005/006/009/024 include a current evidence matrix above their historical
 review baseline. Scoped Worker NATS JWTs, shared machine-token enrollment and
 tenant/grant regressions exist. They do not close the remaining credential
 lifecycle, stable Worker proof and composed authorization criteria.
+
+[Authorization PR 105](https://github.com/sre-norns/urth/pull/105) is merged at
+`f97750a` and has a passing candidate PostgreSQL/race audit for its mounted
+authorization regressions. Task 024 and
+the release checklist record that candidate evidence. It does not close the
+Worker/broker or merged release gates. Task 006 retains dispatch binding and
+key rotation criteria. Task 008 remains separate Runner-policy backlog; its
+old migration proposals are historical under the fresh-install contract.
 
 Shared identity supersedes task 005's separate enrollment store and generation
 rotation proposal. Read its current contract before implementing its original

@@ -37,9 +37,17 @@ Worker UID. It caps authority at the Worker session and a default five-minute
 broker lifetime. Production uses TLS and separate provisioner, publisher and
 observer credentials. Explicit insecure transport is restricted to loopback.
 
-The implementation owner is validating secured live expiry, renewal and role
-permissions. These mechanisms are candidate source evidence, not completed
-release results. Full acceptance criteria and merge remain open.
+Secured composed tests pass with PostgreSQL, HTTPS and mutual-TLS NATS. They
+prove live connection expiry, renewal/reconnect during a running probe and
+transport replacement when deletion creates a new Worker UID. The original
+run still completes under its bounded capability. Proof/blocklist and focused
+CLI/session-expiry checks also pass.
+
+[Worker PR 106](https://github.com/sre-norns/urth/pull/106) at `609e129` has the
+same Go/UI source as locally validated `7cfdbbf`. The implementation owner
+reports the full PostgreSQL/race suite and verify/vet/static checks pass.
+Operational account/certificate rotation, broker failover, complete acceptance
+criteria, merge, exact merged-head CI and fresh-stack validation remain open. The candidate does not close this task.
 
 ## Historical review baseline and requirements
 
