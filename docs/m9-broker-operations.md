@@ -1,9 +1,10 @@
 # M9 broker rotation and failover
 
 This runbook covers NATS account signing keys, TLS certificates and JetStream
-failover. It records broker-level evidence. The maintainer must validate the
-complete release candidate with the API, Worker and PostgreSQL before release.
-Task 004 remains open until its other acceptance criteria pass.
+failover. It records broker-level evidence. Task 004 source acceptance and the
+composed API, Worker and PostgreSQL checks are complete in the
+[release evidence matrix](m9-release-validation.md). Operators must still
+validate their deployed broker version and configuration before production use.
 
 ## Deployment requirements
 

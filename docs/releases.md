@@ -115,7 +115,10 @@ change its digest; use the final recorded digest for deployment. If a GitHub
 release already exists, automatic replacement is refused. Correct the issue and
 select a new product version instead of moving its tag.
 
-First hosted publication and production deployment remain maintainer gates.
-Local snapshots do not prove registry permissions, hosted multi-platform
-execution, a production certificate authority, storage durability or deployment
-configuration. Follow the production and broker runbooks for those operations.
+The [M9 publication record](m9-publication-validation.md) records the first
+hosted prereleases and independent asset verification. It establishes the
+publication path and registry permissions for that source and configuration.
+Production deployment remains a maintainer gate: certificate authorities,
+storage durability, external providers and deployment configuration require
+operator validation. Follow the production and broker runbooks for those
+operations.

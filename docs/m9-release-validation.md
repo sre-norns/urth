@@ -1,20 +1,20 @@
 # M9 release validation
 
-This record identifies the merged source and validation evidence on 2026-10-03.
-It does not authorize a release. The maintainer selects product versions and
-records the disposition of remaining risks. M9 source acceptance is complete
-through Urth `1e37393` and Exp-Bench `929f574`. Product packaging, version
-selection and deployment validation remain separate. No shared package release
-is needed for the validated changes.
+This record identifies the M9 source acceptance and release evidence on
+2026-10-03. Source acceptance is complete through Urth `1e37393` and Exp-Bench
+`929f574`. Urth packaging and prerelease publication are recorded in the
+[publication checkpoint](m9-publication-validation.md). Production deployment
+and stable-version promotion remain separate maintainer decisions. No shared
+package release is needed for these changes.
 
-Urth packaging PR [117](https://github.com/sre-norns/urth/pull/117) merges at
-`d8f200bf0f252bde73459c8de5f30cd7adc90f49`. Its tree matches the tested PR head,
-but the [merged-main audit](https://github.com/sre-norns/urth/actions/runs/37121669063)
-detects an intermittent race in the embedded NATS route-reload test. The
+Packaging PR [117](https://github.com/sre-norns/urth/pull/117) merges at
+`d8f200b`. Its first merged-main audit detects an intermittent embedded NATS
+route-reload race. PR [118](https://github.com/sre-norns/urth/pull/118) adds the
 [fixture correction](m9-broker-operations.md#route-reload-race-in-the-test-dependency)
-retains the race detector and all rotation assertions. Verify the correction's
-merged-head checks before selecting the first product tag. No shared package
-or production dependency update is required for this test-only correction.
+and merges at `7059e8a` with passing merged-main and tag checks. The original
+failure remains historical evidence; the workaround does not establish
+production broker reload safety. PR [119](https://github.com/sre-norns/urth/pull/119)
+then preserves metadata casing in the publication workflow at `1843f9a`.
 
 ## Installation and dependency contract
 
@@ -70,8 +70,9 @@ Its change from the validated `dc0069a` is the release record only. The earlier
 race and live evidence below keeps its original source attribution.
 
 Tasks 004, 005, 006, 009 and 024 are complete against their current acceptance
-criteria. This closes the source-validation work; it does not claim that a
-production deployment or a tagged product release exists.
+criteria. This checkpoint closes source validation. Subsequent tagged product
+releases are recorded in the publication checkpoint; production deployment
+remains separate.
 
 ## Validated source and checks
 
@@ -220,8 +221,11 @@ close the product release or unrelated backlog.
   checks; retain the initial timeout and the separate package rerun.
 - [x] Verify all required CI jobs on both exact merged product commits, including
   the Exp-Bench image job; components source-head CI passes as linked above.
-- [ ] Record maintainer disposition of unresolved criteria and deployment risks
-  before selecting versions.
+- [x] Record the maintainer-authorized prerelease trial and publication evidence
+  in the [publication checkpoint](m9-publication-validation.md). Production risks
+  remain explicit; prerelease selection does not approve a production deployment.
+- [ ] Record deployment-specific risk decisions before stable promotion or
+  production deployment.
 - [x] The previous fresh-stack and components runs remove their task-owned stacks
   and private token/session/key/mail files and preserve non-secret evidence.
   User databases and brokers stay running.
@@ -237,10 +241,10 @@ close the product release or unrelated backlog.
 
 | Risk / remaining work | Owner | Release impact |
 | --- | --- | --- |
-| M9 source acceptance | Complete | Tasks 004/005/006/009/024 have mapped acceptance evidence and passing combined merged CI. Product release and deployment remain separate |
+| M9 source acceptance | Complete | Tasks 004/005/006/009/024 have mapped acceptance evidence and passing combined merged CI. Prerelease publication has a separate evidence record |
 | Cluster-route certificate rollover | Broker validation owner | PR 111 passes rolling three-node route leaf/trust reload and current delivery/acks; merged CI passes; deployment-specific operations remain |
 | Production deployment profile | Maintainer / operator | HTTPS/authenticated client and route TLS, private signing keys, replica configuration, external mail/provider, images, metrics and failure alerts require deployment review |
-| Product version selection | Maintainer | No versions or releases are authorized by this record |
+| Stable product version selection | Maintainer | Prerelease versions and verification are recorded in the publication checkpoint. Stable promotion remains a separate decision |
 | Shared identity provider confirmation copy | Identity owner | Urth intermediate provider page uses Exp-Bench wording; workflow passes; separate cosmetic correction |
 | Runner channel policy (008) | Runner-policy owner | Separate P0 product backlog; outside this Worker-proof/broker change |
 | Scheduled execution | Scheduler design owner | Required for v1.0; M9 does not implement it |
