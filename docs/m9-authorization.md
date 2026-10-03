@@ -7,8 +7,8 @@ close the worker identity, broker lifecycle, or final release gates.
 
 | Credential | Authorized operation | Boundary |
 |---|---|---|
-| Account user session | Account and project resource routes, catalogues, stored and live logs | Active session and current account/project membership |
-| System user session | Shared system administration routes | Does not grant product account/project authority |
+| Account user session | Account and project resource routes, catalogues, stored and live logs | Active session; current account/project membership where scoped |
+| System user session | Shared system authority; Urth does not mount system administration routes | Does not grant product account/project authority |
 | Machine enrollment token | Worker registration for its authorized Runner | Does not authorize user resource reads, run claims, or result writes |
 | Worker session | Its Runner/Worker claim and worker operations | Does not authorize user resource reads or result writes |
 | Run capability | Status and artifact reporting for the claimed Result | Stored executor, account, project, purpose, expiry and Result state |
