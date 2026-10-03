@@ -66,7 +66,7 @@ func (h *harness) httpRequest(method, path string, token urth.APIToken, body []b
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+string(token))
 	}
-	res, err := http.DefaultClient.Do(req)
+	res, err := h.HTTP.Client().Do(req)
 	require.NoError(h.t, err)
 	defer res.Body.Close()
 	data, err := io.ReadAll(res.Body)
@@ -149,6 +149,7 @@ func TestTenancyRevocationDoesNotInterruptClaimedRun(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, found)
 	worker := manifest.ResourceManifest{TypeMeta: manifest.TypeMeta{APIVersion: urth.APIVersion, Kind: urth.KindWorkerInstance}, Metadata: manifest.ObjectMeta{Name: "claiming-worker"}, Spec: &urth.WorkerInstanceSpec{}}
+	worker = h.signedWorker(token, worker, nil)
 	registration, err := client.Runners().AuthWorker(h.ctx, token, worker)
 	require.NoError(t, err)
 	request := urth.ClaimJobRequest{DispatchID: urth.DispatchEventUID(run.UID, run.Version), ResultVersion: run.Version}

@@ -28,6 +28,7 @@ func newTestService(t *testing.T, scheduler urth.Scheduler, options ...urth.Serv
 
 	models := []any{
 		&urth.WorkerInstance{},
+		&urth.WorkerChallengeRecord{},
 		&urth.Runner{},
 		&urth.Scenario{},
 		&urth.Result{},
@@ -52,6 +53,7 @@ func newTestService(t *testing.T, scheduler urth.Scheduler, options ...urth.Serv
 	store, err := dbstore.NewDBStore(db, dbstore.ManifestModel)
 	require.NoError(t, err)
 
+	options = append(options, urth.WithWorkerIdentityDB(db), urth.WithStorageTestEnrollment())
 	return urth.NewService(store, scheduler, options...), db, store
 }
 

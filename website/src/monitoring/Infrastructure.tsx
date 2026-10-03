@@ -5,7 +5,7 @@ import {MachineIdentityDetail, useIdentity, useIdentityQuery, wire, type ApiValu
 import {Link, useNavigate, useParams} from 'react-router-dom'
 import {z} from 'zod'
 import {pauseWorker, request} from '../api/http'
-import {page, runner, selector, worker, type Runner} from '../api/models'
+import {page, runner, selector, worker, blockedWorker, type Runner} from '../api/models'
 import {listPath, resourcePath, useResource} from '../api/queries'
 import {accountPath} from '../identity/links'
 import {runnerRegistration} from '../identity/config'
@@ -40,6 +40,7 @@ export function RunnerDetail() {
   const query = useResource(path, runner, 'account', {poll: true, enabled: Boolean(identity.data)})
   const workers = useResource(listPath(resourcePath('accounts', accountId, 'workers'), {labels: `urth/runner.uid=${runnerId}`, limit: 1}), page(worker), 'account', {poll: true})
   const [editing, setEditing] = useState<ApiValue<Runner>>()
+  const [blocking, setBlocking] = useState<{snapshot: ApiValue<Runner>; remove?: string}>()
   if (identity.isError) return <ErrorState error={identity.error} retry={() => void identity.refetch()} />
   if (query.isError) return <ErrorState error={query.error} retry={() => void query.refetch()} />
   if (!query.data) return <LoadingState />
@@ -52,6 +53,30 @@ export function RunnerDetail() {
       <p>Worker requirements</p><pre tabIndex={0}>{JSON.stringify(r.spec.requirements ?? {}, null, 2)}</pre>
       <div className="actions"><Button onClick={() => setEditing(query.data)}>Edit scheduling</Button><Link to={`${accountPath(accountId)}/workers?${new URLSearchParams({labels: `urth/runner.uid=${r.metadata.uid}`})}`}>View workers</Link></div>
     </Card>
+    <Card><h2>Blocked workers</h2>
+      <p>Blocking prevents new claims and re-enrollment. Runs already claimed can finish.</p>
+      {r.spec.blockedWorkers?.length ? <ul>{r.spec.blockedWorkers.map((entry) => <li key={entry.identity}>
+        <code className="worker-fingerprint">{entry.identity}</code>{entry.reason && <p>{entry.reason}</p>}
+        <Button variant="secondary" onClick={() => setBlocking({snapshot: query.data!, remove: entry.identity})}>Unblock</Button>
+      </li>)}</ul> : <p>No blocked workers.</p>}
+      <Button onClick={() => setBlocking({snapshot: query.data!})}>Block worker</Button>
+    </Card>
+    {blocking && <EditResource title={blocking.remove ? 'Unblock worker' : 'Block worker'}
+      submitLabel={blocking.remove ? 'Unblock worker' : 'Block worker'} path={path} schema={runner} snapshot={blocking.snapshot}
+      description={blocking.remove ? <p>Allow enrollment and new claims for <code className="worker-fingerprint">{blocking.remove}</code>.</p> :
+        <p>Copy the verified key fingerprint from the worker's details.</p>}
+      fields={blocking.remove ? [] : [
+        {name: 'fingerprint', label: 'Verified key fingerprint', required: true, hint: 'Starts with sha256: and identifies one installation key.'},
+        {name: 'reason', label: 'Reason', type: 'textarea'},
+      ]}
+      defaults={{fingerprint: '', reason: ''}}
+      build={(values, source) => {
+        const entry = blocking.remove ? undefined : blockedWorker.parse({identity: values.fingerprint.trim(), reason: values.reason.trim()})
+        const fingerprint = blocking.remove ?? entry!.identity
+        const entries = (source.spec.blockedWorkers ?? []).filter((item) => item.identity !== fingerprint)
+        return {...source, spec: {...source.spec, blockedWorkers: entry ? [...entries, entry] : entries}}
+      }}
+      close={() => setBlocking(undefined)} saved={() => void queryClient.invalidateQueries({queryKey: [accountId, 'account']})} />}
     {editing && <EditResource title="Edit runner" path={path} schema={runner} snapshot={editing}
       fields={[
         {name: 'description', label: 'Description', type: 'textarea'},
@@ -102,6 +127,6 @@ export function WorkerDetail() {
       <h3>NATS queue</h3><Presence value={w.status?.presence?.nats ?? 'unknown'} /><LastSeen value={w.status?.natsLastSeenTime} />
       {w.status?.leftAt && <p>Departed: {new Date(w.status.leftAt).toLocaleString()}</p>}
     </Card>
-    <Card><h2>Process identity</h2><p>UID: <code>{w.metadata.uid}</code></p><Labels value={w.metadata.labels} /></Card>
+    <Card><h2>Process identity</h2><p>UID: <code>{w.metadata.uid}</code></p><p>Verified key fingerprint: <code className="worker-fingerprint">{w.status?.fingerprint || 'Unavailable'}</code></p><Labels value={w.metadata.labels} /></Card>
   </>
 }

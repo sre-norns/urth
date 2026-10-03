@@ -42,10 +42,10 @@ export function Collection<T extends {metadata: {uid: string}}>({path, schema, t
 }
 
 /** The snapshot is captured on opening; polling must not replace its If-Match. */
-export function EditResource<T>({title, path, schema, snapshot, fields, defaults, build, close, saved}: {
+export function EditResource<T>({title, path, schema, snapshot, fields, defaults, build, close, saved, description, submitLabel}: {
   title: string; path: string; schema: z.ZodType<T>; snapshot: ApiValue<T>; fields: FormField[];
   defaults: Record<string, string>; build: (values: Record<string, string>, original: T) => unknown;
-  close: () => void; saved: () => void;
+  close: () => void; saved: () => void; description?: ReactNode; submitLabel?: string;
 }) {
   const {session} = useIdentity()
   const [current, setCurrent] = useState(snapshot)
@@ -60,7 +60,8 @@ export function EditResource<T>({title, path, schema, snapshot, fields, defaults
     finally { setLoading(false) }
   }
   return <Dialog title={title} onClose={close}>
-    <ResourceForm fields={fields} defaults={defaults} build={(values) => build(values, current.data)}
+    {description}
+    <ResourceForm submitLabel={submitLabel} fields={fields} defaults={defaults} build={(values) => build(values, current.data)}
       submit={(body) => {
         if (conflict) return Promise.reject(new Error('Review the latest resource before applying your draft.'))
         return request(session, path, schema, {method: 'PUT', body, etag: current.etag ?? ''})

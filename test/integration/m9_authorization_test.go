@@ -38,6 +38,7 @@ func (h *harness) m9Claim(name manifest.ResourceName) (urth.Result, urth.WorkerR
 	run := h.createRun(scenario.Name)
 	token := h.enrolmentToken(runner.Name)
 	entry := urth.WorkerInstance{ObjectMeta: manifest.ObjectMeta{Name: name}}.ToManifest()
+	entry = h.signedWorker(token, entry, nil)
 	registration, err := h.client("").Runners().AuthWorker(h.ctx, token, entry)
 	require.NoError(h.t, err)
 	auth, err := h.client("").Results(scenario.Name).ClaimRun(h.ctx, run.UID, registration.Session, urth.ClaimJobRequest{DispatchID: urth.DispatchEventUID(run.UID, run.Version), ResultVersion: run.Version})

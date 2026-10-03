@@ -6,7 +6,7 @@ import {server} from '../test/server'
 import {api, page, renderAt, resource, signIn} from '../identity/test-support'
 
 const metadata = {uid: 'worker-1', name: 'edge-worker', version: 3, account: 'acct-1'}
-const worker = {apiVersion: 'urth.sre-norns.com/v1', kind: 'workerInstances', metadata, spec: {}, status: {paused: false, presence: {condition: 'api-unreachable', api: 'offline', nats: 'online'}}}
+const worker = {apiVersion: 'urth.sre-norns.com/v1', kind: 'workerInstances', metadata, spec: {}, status: {fingerprint: `sha256:${'b'.repeat(64)}`, paused: false, presence: {condition: 'api-unreachable', api: 'offline', nats: 'online'}}}
 afterEach(() => sessionStorage.clear())
 
 describe('infrastructure', () => {
@@ -77,6 +77,54 @@ describe('infrastructure', () => {
     await userEvent.click(dialog.getByRole('button', {name: 'Save'}))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     expect(writes).toEqual(['"1"', '"2"'])
+  })
+  it('blocks and unblocks a fingerprint with version checks and preserves concurrent blocks', async () => {
+    signIn()
+    let version = 1
+    const fingerprint = `sha256:${'a'.repeat(64)}`
+    const concurrent = {identity: `sha256:${'c'.repeat(64)}`, reason: 'Separate investigation'}
+    let blocks: {identity: string; reason?: string}[] = []
+    const writes: string[] = []
+    const runner = () => ({apiVersion: 'urth.sre-norns.com/v1', kind: 'runners', metadata: {uid: 'runner-1', name: 'edge', version, account: 'acct-1'}, spec: {active: true, blockedWorkers: blocks}})
+    server.use(
+      http.get(api('/accounts/acct-1/runners/edge'), () => HttpResponse.json(runner(), {headers: {ETag: `"${version}"`}})),
+      http.get(api('/accounts/acct-1/workers'), () => HttpResponse.json(page([]))),
+      http.get(api('/agent-identities/runner-1'), () => HttpResponse.json(resource('agent-identities', 'runner-1', {description: 'Identity'}, {}, {name: 'edge'}))),
+      http.get(api('/agent-identities/runner-1/tokens'), () => HttpResponse.json(page([]))),
+      http.get(api('/agent-identities/runner-1/project-grants'), () => HttpResponse.json(page([]))),
+      http.put(api('/accounts/acct-1/runners/edge'), async ({request}) => {
+        writes.push(request.headers.get('If-Match')!)
+        if (writes.length === 1) {
+          version = 2; blocks = [concurrent]
+          return HttpResponse.json({detail: 'Changed elsewhere'}, {status: 412})
+        }
+        blocks = (await request.json() as {spec: {blockedWorkers: typeof blocks}}).spec.blockedWorkers
+        version++
+        return HttpResponse.json(runner(), {headers: {ETag: `"${version}"`}})
+      }),
+    )
+    renderAt('/a/acct-1/runners/runner-1')
+    await userEvent.click(await screen.findByRole('button', {name: 'Block worker'}))
+    let dialog = within(screen.getByRole('dialog'))
+    await userEvent.type(dialog.getByRole('textbox', {name: /Verified key fingerprint/}), fingerprint)
+    await userEvent.type(dialog.getByLabelText('Reason'), 'Retired')
+    await userEvent.click(dialog.getByRole('button', {name: 'Block worker'}))
+    expect(await dialog.findByRole('heading', {name: 'Resource changed'})).toBeInTheDocument()
+    expect(dialog.getByRole('textbox', {name: /Verified key fingerprint/})).toHaveValue(fingerprint)
+    expect(dialog.getByLabelText('Reason')).toHaveValue('Retired')
+    await userEvent.click(dialog.getByRole('button', {name: 'Load latest resource'}))
+    await userEvent.click(await dialog.findByRole('button', {name: 'Apply draft to this version'}))
+    await userEvent.click(dialog.getByRole('button', {name: 'Block worker'}))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(blocks).toEqual([concurrent, {identity: fingerprint, reason: 'Retired'}])
+    const blockedItem = (await screen.findByText(fingerprint)).closest('li')!
+    await userEvent.click(within(blockedItem).getByRole('button', {name: 'Unblock'}))
+    dialog = within(screen.getByRole('dialog'))
+    expect(dialog.getByText(fingerprint)).toBeInTheDocument()
+    await userEvent.click(dialog.getByRole('button', {name: 'Unblock worker'}))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(blocks).toEqual([concurrent])
+    expect(writes).toEqual(['"1"', '"2"', '"3"'])
   })
   it('resolves account diagnostic failures without offering a project retry', async () => {
     signIn()

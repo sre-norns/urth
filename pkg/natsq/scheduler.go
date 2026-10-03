@@ -44,9 +44,11 @@ type RunnerLookup func(context.Context, manifest.ResourceID) (urth.Runner, error
 type scheduler struct {
 	lookup RunnerLookup
 
-	conn *nats.Conn
-	js   jetstream.JetStream
-	cfg  Config
+	publisherConn *nats.Conn
+	publisherJS   jetstream.JetStream
+	conn          *nats.Conn
+	js            jetstream.JetStream
+	cfg           Config
 
 	totalErrors    atomic.Uint64
 	totalScheduled atomic.Uint64
@@ -58,6 +60,12 @@ type scheduler struct {
 // dispatch: a misconfigured JetStream should stop an API server from coming up,
 // not surface later as the first scenario run of the day failing.
 func NewScheduler(ctx context.Context, cfg Config, lookup RunnerLookup) (Transport, error) {
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+	if err := cfg.ValidateServiceRoles(); err != nil {
+		return nil, err
+	}
 	if cfg.WorkerAccountSeedFile == "" && !cfg.AllowInsecureWorkers {
 		return nil, fmt.Errorf("worker NATS signing seed is required (or explicitly enable insecure workers on an isolated development broker)")
 	}
@@ -80,7 +88,18 @@ func NewScheduler(ctx context.Context, cfg Config, lookup RunnerLookup) (Transpo
 		return nil, err
 	}
 
-	return &scheduler{conn: conn, js: js, cfg: cfg, lookup: lookup}, nil
+	publisherConn, err := cfg.PublisherConfig().Connect("urth-outbox-publisher")
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+	publisherJS, err := jetstream.New(publisherConn)
+	if err != nil {
+		conn.Close()
+		publisherConn.Close()
+		return nil, err
+	}
+	return &scheduler{conn: conn, js: js, publisherConn: publisherConn, publisherJS: publisherJS, cfg: cfg, lookup: lookup}, nil
 }
 
 // PublishStats implements PublishCounters.
@@ -101,6 +120,9 @@ func (s *scheduler) Close() error {
 	// Drain rather than Close: an in-flight publish has a Result already
 	// committed behind it, and dropping it here would strand that Result until
 	// the reconciler notices.
+	if s.publisherConn != nil {
+		_ = s.publisherConn.Drain()
+	}
 	return s.conn.Drain()
 }
 
@@ -140,7 +162,7 @@ func DispatchIDFor(uid manifest.ResourceID, version manifest.Version) string {
 // a runner that predates this transport, or whose consumer an operator removed,
 // would otherwise have jobs published to a subject nothing is bound to. Calling
 // it on every registration is cheap and idempotent.
-func (s *scheduler) ConnectionInfoFor(ctx context.Context, runnerUID manifest.ResourceID) (urth.NATSConnectionInfo, error) {
+func (s *scheduler) ConnectionInfoFor(ctx context.Context, runnerUID, workerUID manifest.ResourceID, expiresAt time.Time) (urth.NATSConnectionInfo, error) {
 	runner, err := s.lookup(ctx, runnerUID)
 	if err != nil {
 		return urth.NATSConnectionInfo{}, err
@@ -148,7 +170,7 @@ func (s *scheduler) ConnectionInfoFor(ctx context.Context, runnerUID manifest.Re
 	if _, err := EnsureRunnerConsumer(ctx, s.js, s.cfg, runner.Account, runner.Name); err != nil {
 		return urth.NATSConnectionInfo{}, err
 	}
-	credential, err := s.workerCredential(runner)
+	credential, err := s.workerCredential(runner, workerUID, expiresAt)
 	if err != nil {
 		return urth.NATSConnectionInfo{}, err
 	}
@@ -157,7 +179,7 @@ func (s *scheduler) ConnectionInfoFor(ctx context.Context, runnerUID manifest.Re
 		SchemaVersion:    urth.NATSConnectionInfoVersion,
 		URLs:             strings.Split(s.cfg.URL, ","),
 		Stream:           JobsStreamName,
-		InboxPrefix:      "_INBOX." + string(runner.UID),
+		InboxPrefix:      "_INBOX." + string(workerUID),
 		Consumer:         RunnerConsumerName(runner.Account, runner.Name),
 		Subject:          JobSubject(runner.Account, runner.Name),
 		LogSubjectPrefix: RunnerLogSubjectPrefix(runnerUID),

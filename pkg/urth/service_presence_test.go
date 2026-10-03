@@ -30,6 +30,7 @@ func presenceService(t *testing.T) (urth.Service, *gorm.DB, *dbstore.DBStore) {
 
 	srv := urth.NewService(store, &stubScheduler{},
 		urth.WithSigningKeys(testKeys(t)),
+		urth.WithWorkerIdentityDB(db), urth.WithStorageTestEnrollment(),
 		urth.WithWorkerPresence(urth.NewWorkerPresenceStore(db)),
 		urth.WithWorkerHeartbeatInterval(30*time.Second),
 	)
@@ -48,7 +49,7 @@ func registerWorker(t *testing.T, srv urth.Service, runnerName, workerName manif
 	require.NoError(t, err)
 	require.True(t, found)
 
-	registration, err := srv.Runners().AuthWorker(ctx, enrolment, manifest.ResourceManifest{
+	registration, err := enrollTestWorker(t, srv, ctx, enrolment, manifest.ResourceManifest{
 		TypeMeta: manifest.TypeMeta{Kind: urth.KindWorkerInstance},
 		Metadata: manifest.ObjectMeta{Name: workerName},
 		Spec:     &urth.WorkerInstanceSpec{},

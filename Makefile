@@ -22,7 +22,7 @@ run-api-server: export URTH_AUTH_MAIL_DIR ?= $(CURDIR)/.dev/mail
 run-api-server: export URTH_BOOTSTRAP_EMAIL ?= admin@urth.example
 run-api-server: export URTH_BOOTSTRAP_PASSWORD ?= urth-dev-password
 run-api-server: # Start API server (needs Postgres and NATS)
-	@go run ./cmd/api-server --store.url="$(store-url)" --nats.allow-insecure-workers
+	@go run ./cmd/api-server --store.url="$(store-url)" --nats.allow-insecure-workers --nats.allow-insecure
 
 # The same, with sign-in through the fake identity provider as a generic OIDC
 # provider. Start it first with `make run-fake-idp`.
@@ -47,7 +47,7 @@ run-api-server-nats: run-api-server
 #   export RUNNER_TOKEN=$$(go run ./cmd/urthctl runners token -f ./examples/runner.yaml)
 .PHONY: run-nats-worker
 run-nats-worker: # Start NATS based worker
-	@go run ./cmd/nats-worker --client.token="$(RUNNER_TOKEN)"
+	@go run ./cmd/nats-worker --allow-insecure-api --nats.allow-insecure --client.token="$(RUNNER_TOKEN)"
 
 .PHONY: run-scheduler
 run-scheduler: # Start scheduler server

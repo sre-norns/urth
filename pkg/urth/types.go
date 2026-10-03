@@ -20,6 +20,7 @@ var (
 // A worker is not a trusted party here: everything in this struct arrives from
 // the worker, so nothing that governs whether it may take jobs belongs in it.
 type WorkerInstanceSpec struct {
+	Proof    *WorkerProof        `json:"proof,omitempty" yaml:"proof,omitempty" gorm:"-"`
 	RunnerID manifest.ResourceID `json:"-" yaml:"-"`
 	// Runner is the 'class' that this worker is an instance of
 	Runner Runner `json:"-" yaml:"-" gorm:"foreignKey:RunnerID;references:UID"`
@@ -33,7 +34,8 @@ type WorkerInstanceSpec struct {
 // survive -- a paused worker that could un-pause itself by reconnecting would
 // not be paused at all.
 type WorkerInstanceStatus struct {
-	TTL time.Duration `form:"ttl,omitempty" json:"ttl,omitempty" yaml:"ttl,omitempty" xml:"ttl,omitempty"`
+	Fingerprint string        `json:"fingerprint" yaml:"fingerprint" gorm:"index"`
+	TTL         time.Duration `form:"ttl,omitempty" json:"ttl,omitempty" yaml:"ttl,omitempty" xml:"ttl,omitempty"`
 
 	// IsPaused stops this worker from taking new jobs while leaving it
 	// registered and leaving its runner active. Used to take one misbehaving
@@ -85,6 +87,7 @@ type WorkerInstanceStatus struct {
 
 // RunnerSpec holds information about a runner as supplied by the administrator to register one
 type RunnerSpec struct {
+	BlockedWorkers []BlockedWorker `json:"blockedWorkers,omitempty" yaml:"blockedWorkers,omitempty" gorm:"serializer:json"`
 	// Description is a human readable text to describe intent behind this runner
 	Description string `form:"description" json:"description,omitempty" yaml:"description,omitempty" xml:"description,omitempty"`
 
@@ -315,6 +318,7 @@ func (r Result) ToManifest() manifest.ResourceManifest {
 }
 
 func (r WorkerInstance) ToManifest() manifest.ResourceManifest {
+	r.Spec.Proof = nil
 	return versioned(manifest.ToManifestWithStatus(manifest.StatefulResource[WorkerInstanceSpec, WorkerInstanceStatus](r)))
 }
 
@@ -401,6 +405,9 @@ func NewRunner(m manifest.ResourceManifest) (Runner, error) {
 		return entry, err
 	}
 
+	if err == nil {
+		err = validateBlocklist(entry.Spec.BlockedWorkers)
+	}
 	return entry, err
 }
 

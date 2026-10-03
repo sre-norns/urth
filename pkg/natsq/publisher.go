@@ -51,7 +51,7 @@ func (s *scheduler) PublishDispatch(ctx context.Context, entry urth.DispatchOutb
 	// before JetStream has persisted the message would let the relay mark the
 	// entry published when it may never be delivered -- reintroducing, one layer
 	// further down, exactly the lost-dispatch window the outbox closes.
-	ack, err := s.js.Publish(ctx, JobSubject(entry.AccountID, entry.RunnerName), data, jetstream.WithMsgID(entry.EventUID))
+	ack, err := s.publisherJS.Publish(ctx, JobSubject(entry.AccountID, entry.RunnerName), data, jetstream.WithMsgID(entry.EventUID))
 	if err != nil {
 		s.totalErrors.Add(1)
 		return urth.DispatchReceipt{}, fmt.Errorf("failed to publish dispatch %v: %w", entry.EventUID, err)

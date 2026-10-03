@@ -4,6 +4,9 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -85,7 +88,11 @@ type ClientConfig struct {
 	CredentialSource func() string `kong:"-"`
 	URL              string        `help:"NATS server URL(s) to connect to" default:"nats://localhost:4222"`
 
-	CredsFile string `help:"Path to a NATS credentials file, when the server requires one" type:"existingfile"`
+	AllowInsecure bool   `help:"Allow plaintext unauthenticated NATS on loopback for local development" default:"false"`
+	TLSCAFile     string `name:"tls-ca-file" help:"CA certificate file for NATS TLS" type:"existingfile"`
+	TLSCertFile   string `help:"Client certificate file for NATS mutual TLS" type:"existingfile"`
+	TLSKeyFile    string `help:"Client private key file for NATS mutual TLS" type:"existingfile"`
+	CredsFile     string `help:"Path to a NATS credentials file, when the server requires one" type:"existingfile"`
 }
 
 // Config adds the stream and consumer settings only the control plane applies.
@@ -96,8 +103,11 @@ type ClientConfig struct {
 // values rather than passing them through, so the decision has to be made here.
 type Config struct {
 	// Workers receive short-lived user credentials signed by this NATS account.
-	WorkerAccountSeedFile string `help:"File containing the NATS account seed used to sign restricted worker credentials"`
-	AllowInsecureWorkers  bool   `help:"Allow unauthenticated workers for an isolated local development broker" default:"false"`
+	WorkerCredentialTTL   time.Duration `help:"Maximum worker broker authority and revocation delay (1s to 5m; zero uses 5m)" default:"5m"`
+	WorkerAccountSeedFile string        `help:"File containing the NATS account seed used to sign restricted worker credentials"`
+	PublisherCredsFile    string        `help:"Private credentials file for the outbox publisher service" type:"existingfile"`
+	ObserverCredsFile     string        `help:"Private credentials file for log, presence and advisory observation" type:"existingfile"`
+	AllowInsecureWorkers  bool          `help:"Allow unauthenticated workers for an isolated local development broker" default:"false"`
 
 	ClientConfig `embed:""`
 
@@ -277,20 +287,42 @@ func (c Config) Validate() error {
 			flagAckWait, c.AckWait, flagMaxJobAge, c.MaxJobAge))
 	}
 
+	if c.WorkerCredentialTTL < 0 || c.WorkerCredentialTTL > 5*time.Minute || (c.WorkerCredentialTTL > 0 && c.WorkerCredentialTTL < time.Second) {
+		problems = append(problems, fmt.Errorf("--nats.worker-credential-ttl must be between 1s and 5m"))
+	}
+	if c.WorkerAccountSeedFile != "" {
+		if err := privateFile(c.WorkerAccountSeedFile); err != nil {
+			problems = append(problems, err)
+		}
+	}
+	if c.AllowInsecureWorkers && !c.AllowInsecure {
+		problems = append(problems, fmt.Errorf("insecure workers require --nats.allow-insecure"))
+	}
 	return errors.Join(problems...)
 }
 
 // Connect dials NATS using the configured credentials.
 func (c ClientConfig) Connect(name string) (*nats.Conn, error) {
+	if err := c.ValidateSecurity(); err != nil {
+		return nil, err
+	}
+
 	opts := []nats.Option{
 		nats.Name(name),
 		// Reconnect indefinitely. A worker sits in someone else's network and
 		// may well outlast a NATS restart or a network partition; exiting on
 		// disconnect would turn a blip into an operator callout.
 		nats.MaxReconnects(-1),
+		nats.IgnoreAuthErrorAbort(),
 		nats.ReconnectWait(2 * time.Second),
 	}
 
+	if c.TLSCAFile != "" {
+		opts = append(opts, nats.RootCAs(c.TLSCAFile))
+	}
+	if c.TLSCertFile != "" {
+		opts = append(opts, nats.ClientCert(c.TLSCertFile, c.TLSKeyFile))
+	}
 	if c.InboxPrefix != "" {
 		opts = append(opts, nats.CustomInboxPrefix(c.InboxPrefix))
 	}
@@ -329,4 +361,110 @@ func (c ClientConfig) Connect(name string) (*nats.Conn, error) {
 	}
 
 	return nats.Connect(c.URL, opts...)
+}
+
+// ValidateSecurity refuses implicit production downgrades. Development is local only.
+func (c ClientConfig) ValidateSecurity() error {
+	if (c.TLSCertFile == "") != (c.TLSKeyFile == "") {
+		return fmt.Errorf("NATS client TLS certificate and key must be configured together")
+	}
+	for _, address := range strings.Split(c.URL, ",") {
+		parsed, err := url.Parse(strings.TrimSpace(address))
+		if err != nil || parsed.Hostname() == "" {
+			return fmt.Errorf("invalid NATS server URL")
+		}
+		if parsed.User != nil {
+			return fmt.Errorf("NATS credentials must use private credential configuration, not URLs")
+		}
+		if c.AllowInsecure {
+			if parsed.Scheme != "nats" && parsed.Scheme != "tls" {
+				return fmt.Errorf("unsupported NATS URL scheme")
+			}
+			ip := net.ParseIP(parsed.Hostname())
+			if parsed.Hostname() != "localhost" && (ip == nil || !ip.IsLoopback()) {
+				return fmt.Errorf("insecure NATS is restricted to loopback development brokers")
+			}
+			if c.TLSCAFile != "" || c.TLSCertFile != "" {
+				return fmt.Errorf("insecure NATS cannot be combined with TLS configuration")
+			}
+		} else {
+			if parsed.Scheme != "tls" {
+				return fmt.Errorf("production NATS requires tls:// server URLs")
+			}
+			if c.CredsFile == "" && c.UserCredentials == "" && c.CredentialSource == nil {
+				return fmt.Errorf("production NATS requires an authenticated service or worker identity")
+			}
+		}
+	}
+	if c.CredsFile != "" {
+		if err := privateFile(c.CredsFile); err != nil {
+			return err
+		}
+	}
+	if c.TLSKeyFile != "" {
+		if err := privateFile(c.TLSKeyFile); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+func privateFile(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 {
+		return fmt.Errorf("NATS private files must be regular files with mode 0600")
+	}
+	return nil
+}
+
+func (c Config) PublisherConfig() ClientConfig {
+	cfg := c.ClientConfig
+	if c.PublisherCredsFile != "" {
+		cfg.CredsFile = c.PublisherCredsFile
+		cfg.UserCredentials = ""
+		cfg.CredentialSource = nil
+	}
+	return cfg
+}
+func (c Config) ObserverConfig() ClientConfig {
+	cfg := c.ClientConfig
+	if c.ObserverCredsFile != "" {
+		cfg.CredsFile = c.ObserverCredsFile
+		cfg.UserCredentials = ""
+		cfg.CredentialSource = nil
+	}
+	return cfg
+}
+func (c Config) ValidateServiceRoles() error {
+	if c.AllowInsecure {
+		return nil
+	}
+	if c.CredsFile == "" || c.PublisherCredsFile == "" || c.ObserverCredsFile == "" {
+		return fmt.Errorf("production NATS requires separate provisioning, publisher and observer credentials files")
+	}
+	identities := map[string]bool{}
+	for _, path := range []string{c.CredsFile, c.PublisherCredsFile, c.ObserverCredsFile} {
+		if err := privateFile(path); err != nil {
+			return err
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		token, err := natsjwt.ParseDecoratedJWT(data)
+		if err != nil {
+			return fmt.Errorf("invalid NATS service credentials")
+		}
+		claims, err := natsjwt.DecodeUserClaims(token)
+		if err != nil {
+			return fmt.Errorf("invalid NATS service credentials")
+		}
+		if identities[claims.Subject] {
+			return fmt.Errorf("NATS service roles require distinct user identities")
+		}
+		identities[claims.Subject] = true
+	}
+	return nil
 }

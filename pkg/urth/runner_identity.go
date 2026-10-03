@@ -2,6 +2,7 @@ package urth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 
@@ -82,7 +83,13 @@ func (m *runnersAPIImpl) machineToken(ctx context.Context, runner Runner) (APITo
 
 func (m *runnersAPIImpl) machineRunner(ctx context.Context, token APIToken) (manifest.ResourceID, error) {
 	principal, err := m.identity.Authenticate(ctx, string(token))
-	if err != nil || principal.Type != "agent" {
+	if err != nil {
+		if problem, ok := errors.AsType[*identity.Problem](err); ok && problem.Status < 500 {
+			return "", bark.ErrResourceUnauthorized
+		}
+		return "", claimUnavailable("authenticate worker machine token", err)
+	}
+	if principal.Type != "agent" {
 		return "", bark.ErrResourceUnauthorized
 	}
 	return manifest.ResourceID(principal.AgentID), nil

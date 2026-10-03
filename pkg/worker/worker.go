@@ -20,9 +20,14 @@ package worker
 
 import (
 	"context"
+	"crypto/ed25519"
+	"encoding/base64"
 	"fmt"
 	"log"
+	"net"
+	"net/url"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -55,6 +60,10 @@ type Config struct {
 	// table to every user on the host, and tends to end up in shell history.
 	// The file, or the environment variable on APIClientConfig.Token, keeps it
 	// out of both.
+	AllowInsecureAPI bool `help:"Allow HTTP enrollment only on loopback for local development" default:"false"`
+
+	IdentityKeyFile string `help:"Persistent Ed25519 worker identity key file" env:"URTH_WORKER_IDENTITY_KEY_FILE"`
+
 	TokenFile string `help:"Path to a file holding the runner enrolment token" type:"existingfile"`
 
 	Name manifest.ResourceName `help:"Custom name for this worker" env:"WORKER_NAME"`
@@ -97,6 +106,12 @@ func NewDefaultConfig() Config {
 // command-line one does -- a concurrency of zero would otherwise produce a
 // worker that fetches nothing and merely looks idle.
 func (c *Config) Normalize() {
+	if c.IdentityKeyFile == "" {
+		dir, err := os.UserConfigDir()
+		if err == nil {
+			c.IdentityKeyFile = filepath.Join(dir, "urth", "worker.key")
+		}
+	}
 	if c.Concurrency <= 0 {
 		c.Concurrency = runtime.NumCPU()
 	}
@@ -144,6 +159,7 @@ func WithProbeRunner(fn ProbeRunner) Option {
 
 // Worker holds the identity and connections established at startup.
 type Worker struct {
+	identityKey     ed25519.PrivateKey
 	natsCredentials string
 	config          *Config
 	apiClient       urth.Service
@@ -159,7 +175,9 @@ type Worker struct {
 	workerMeta manifest.ObjectMeta
 	runnerUID  manifest.ResourceID
 
-	conn *nats.Conn
+	conn               *nats.Conn
+	consumer           jetstream.Consumer
+	transportWorkerUID manifest.ResourceID
 
 	// presence announces this worker on its runner's subject. Built once the
 	// NATS connection and the worker's identity both exist.
@@ -233,17 +251,30 @@ func (w *Worker) register(ctx context.Context) (urth.WorkerRegistrationResponse,
 	regoCtx, cancel := context.WithTimeout(ctx, w.config.APIRegistrationTimeout)
 	defer cancel()
 
-	registration, err := w.apiClient.Runners().AuthWorker(regoCtx, w.token,
-		urth.WorkerInstance{
-			ObjectMeta: manifest.ObjectMeta{
-				Name: w.config.Name,
-				// The worker's capabilities: which probs it can run, what OS and
-				// architecture it is on. The server stores this snapshot and
-				// admits or refuses the worker against the runner's
-				// requirements -- it is not re-read from later requests.
-				Labels: w.config.GetEffectiveLabels(),
-			},
-		}.ToManifest())
+	if w.identityKey == nil {
+		key, err := LoadInstallationKey(w.config.IdentityKeyFile)
+		if err != nil {
+			return urth.WorkerRegistrationResponse{}, err
+		}
+		w.identityKey = key
+	}
+	public := w.identityKey.Public().(ed25519.PublicKey)
+	entry := urth.WorkerInstance{
+		ObjectMeta: manifest.ObjectMeta{Name: w.config.Name, Labels: w.config.GetEffectiveLabels()},
+		Spec:       urth.WorkerInstanceSpec{Proof: &urth.WorkerProof{PublicKey: base64.RawURLEncoding.EncodeToString(public)}},
+	}.ToManifest()
+	// ToManifest omits request proof from resource reads; enrollment adds it explicitly.
+	entry.Spec = &urth.WorkerInstanceSpec{Proof: &urth.WorkerProof{PublicKey: base64.RawURLEncoding.EncodeToString(public)}}
+	entry.Status = nil
+	challenge, err := w.apiClient.Runners().ChallengeWorker(regoCtx, w.token, entry)
+	if err != nil {
+		return urth.WorkerRegistrationResponse{}, err
+	}
+	entry, err = urth.SignWorkerChallenge(entry, challenge, w.identityKey)
+	if err != nil {
+		return urth.WorkerRegistrationResponse{}, err
+	}
+	registration, err := w.apiClient.Runners().AuthWorker(regoCtx, w.token, entry)
 	if err != nil {
 		return registration, err
 	}
@@ -261,7 +292,14 @@ func (w *Worker) register(ctx context.Context) (urth.WorkerRegistrationResponse,
 	w.mu.Lock()
 	w.session = registration.Session
 	w.sessionUntil = registration.SessionExpiresAt
-	w.natsCredentials = registration.NATS.Credential.Value
+	if registration.NATS.Credential.Type == urth.NATSCredentialJWT {
+		credentials, err := natsq.WorkerCredentialBytes(registration.NATS.Credential)
+		if err != nil {
+			w.mu.Unlock()
+			return registration, fmt.Errorf("invalid issued broker credential")
+		}
+		w.natsCredentials = string(credentials)
+	}
 	if expiry := registration.NATS.Credential.ExpiresAt; !expiry.IsZero() && expiry.Before(w.sessionUntil) {
 		w.sessionUntil = expiry
 	}
@@ -275,6 +313,9 @@ func (w *Worker) register(ctx context.Context) (urth.WorkerRegistrationResponse,
 
 // Run registers, binds this runner's queue, and consumes jobs until ctx ends.
 func (w *Worker) Run(ctx context.Context) error {
+	if err := w.config.ValidateAPITransport(); err != nil {
+		return err
+	}
 	if w.config.MetricsAddress != "" {
 		metrics, registry := newWorkerMetrics()
 		w.metrics = metrics
@@ -294,14 +335,19 @@ func (w *Worker) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer w.conn.Drain()
-
-	w.presence = natsq.NewPresencePublisher(w.conn, w.runnerUID, w.workerMeta.UID)
-
-	go w.renewSession(ctx)
-	go w.reportPresence(ctx)
-
-	return w.consume(ctx, consumer)
+	loopCtx, cancelLoops := context.WithCancel(ctx)
+	var loops sync.WaitGroup
+	loops.Add(2)
+	go func() { defer loops.Done(); w.renewSession(loopCtx) }()
+	go func() { defer loops.Done(); w.reportPresence(loopCtx) }()
+	defer func() {
+		cancelLoops()
+		loops.Wait()
+		if conn := w.currentConnection(); conn != nil {
+			_ = conn.Drain()
+		}
+	}()
+	return w.consume(loopCtx, consumer)
 }
 
 // connect dials NATS and binds the runner's durable consumer.
@@ -315,6 +361,9 @@ func (w *Worker) connect(ctx context.Context, info urth.NATSConnectionInfo) (jet
 	}
 
 	cfg := w.config.NATS
+	if info.Credential.Type == urth.NATSCredentialNone && !cfg.AllowInsecure {
+		return nil, fmt.Errorf("unauthenticated worker broker requires --nats.allow-insecure")
+	}
 	if len(info.URLs) > 0 {
 		// The server's answer wins over local configuration: it knows the
 		// topology, and a worker pointed at the wrong cluster by a stale flag
@@ -322,7 +371,11 @@ func (w *Worker) connect(ctx context.Context, info urth.NATSConnectionInfo) (jet
 		cfg.URL = strings.Join(info.URLs, ",")
 	}
 	if info.Credential.Type == urth.NATSCredentialJWT {
-		cfg.UserCredentials = info.Credential.Value
+		credentials, err := natsq.WorkerCredentialBytes(info.Credential)
+		if err != nil {
+			return nil, fmt.Errorf("invalid issued broker credential")
+		}
+		cfg.UserCredentials = string(credentials)
 		cfg.CredsFile = ""
 	}
 	if info.Credential.Type == urth.NATSCredentialFile && info.Credential.Value != "" {
@@ -333,14 +386,15 @@ func (w *Worker) connect(ctx context.Context, info urth.NATSConnectionInfo) (jet
 		cfg.CredentialSource = func() string { w.mu.RLock(); defer w.mu.RUnlock(); return w.natsCredentials }
 		cfg.InboxPrefix = info.InboxPrefix
 	}
-	conn, err := cfg.Connect(fmt.Sprintf("urth-worker-%s", w.workerMeta.Name))
+	meta := w.Meta()
+	conn, err := cfg.Connect(fmt.Sprintf("urth-worker-%s", meta.Name))
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to NATS: %w", err)
 	}
-	w.conn = conn
 
 	js, err := jetstream.New(conn)
 	if err != nil {
+		conn.Close()
 		return nil, fmt.Errorf("failed to initialize JetStream: %w", err)
 	}
 
@@ -349,8 +403,19 @@ func (w *Worker) connect(ctx context.Context, info urth.NATSConnectionInfo) (jet
 	// stream would likely collide with the real one.
 	consumer, err := js.Consumer(ctx, info.Stream, info.Consumer)
 	if err != nil {
+		conn.Close()
 		return nil, err
 	}
+	if ctx.Err() != nil {
+		conn.Close()
+		return nil, ctx.Err()
+	}
+	w.mu.Lock()
+	w.conn = conn
+	w.consumer = consumer
+	w.transportWorkerUID = meta.UID
+	w.presence = natsq.NewPresencePublisher(conn, w.runnerUID, meta.UID)
+	w.mu.Unlock()
 
 	log.Printf("bound consumer %q on stream %q for subject %q",
 		info.Consumer, info.Stream, info.Subject)
@@ -363,34 +428,71 @@ func (w *Worker) connect(ctx context.Context, info urth.NATSConnectionInfo) (jet
 // A session that lapses does not merely stop new work: it makes the worker
 // invisible as channel capacity, so its runner looks emptier than it is.
 func (w *Worker) renewSession(ctx context.Context) {
+	failures := 0
 	for {
 		w.mu.RLock()
 		expiry := w.sessionUntil
 		w.mu.RUnlock()
-
-		// Renew at two thirds of the remaining life, leaving room for a couple
-		// of failed attempts before the credential actually lapses.
-		wait := time.Until(expiry) * 2 / 3
-		if wait < time.Minute {
-			wait = time.Minute
-		}
-
+		wait := renewalDelay(time.Until(expiry), failures)
 		select {
 		case <-ctx.Done():
 			return
 		case <-time.After(wait):
 		}
-
-		if _, err := w.register(ctx); err != nil {
-			// Not fatal. The existing session may still be valid, and the API
-			// server may simply be restarting; the next attempt is a minute
-			// away and jobs already claimed carry their own capability.
-			log.Printf("failed to renew worker session: %v", err)
+		registration, err := w.register(ctx)
+		if err != nil {
+			failures++
+			// Bound retries after expiry. Claimed runs keep their own capability.
+			log.Print("failed to renew worker session; retrying with bounded backoff")
 			continue
 		}
-
+		failures = 0
+		w.mu.RLock()
+		boundUID := w.transportWorkerUID
+		old := w.conn
+		w.mu.RUnlock()
+		if boundUID != registration.Worker.Metadata.UID {
+			if _, err := w.connect(ctx, registration.NATS); err != nil {
+				failures++
+				log.Print("worker broker rebind failed after new registration")
+				continue
+			}
+			// Existing runs report over HTTPS with their original capabilities. Broker
+			// subscriptions and presence now use the replacement registration's inbox.
+			if old != nil {
+				old.Close()
+			}
+			w.announce()
+		} else if old != nil {
+			if err := old.ForceReconnect(); err != nil {
+				log.Print("worker broker reconnect failed after renewal")
+			}
+		}
 		log.Print("worker session renewed")
 	}
+}
+func renewalDelay(remaining time.Duration, failures int) time.Duration {
+	if failures == 0 && remaining > 0 {
+		delay := remaining * 2 / 3
+		if delay < 100*time.Millisecond {
+			return 100 * time.Millisecond
+		}
+		return delay
+	}
+	delay := time.Second
+	for i := 0; i < failures && delay < time.Minute; i++ {
+		delay *= 2
+	}
+	if delay > time.Minute {
+		delay = time.Minute
+	}
+	if remaining > 0 && delay > remaining/3 {
+		delay = remaining / 3
+	}
+	if delay < 100*time.Millisecond {
+		delay = 100 * time.Millisecond
+	}
+	return delay
 }
 
 // reportPresence tells the control plane this worker is still here, over both
@@ -433,7 +535,13 @@ func (w *Worker) reportPresence(ctx context.Context) {
 
 // announce publishes this worker's presence on its runner's subject.
 func (w *Worker) announce() {
-	if err := w.presence.Announce(); err != nil {
+	w.mu.RLock()
+	presence := w.presence
+	w.mu.RUnlock()
+	if presence == nil {
+		return
+	}
+	if err := presence.Announce(); err != nil {
 		log.Printf("failed to announce presence over NATS: %v", err)
 	}
 }
@@ -478,4 +586,27 @@ func (w *Worker) leave() {
 	defer cancel()
 
 	w.heartbeat(leaveCtx, 0, true)
+}
+
+// ValidateAPITransport protects machine credentials and proof/session exchanges.
+func (c Config) ValidateAPITransport() error {
+	parsed, err := url.Parse(c.APIServerAddress)
+	if err != nil || parsed.Hostname() == "" || parsed.User != nil {
+		return fmt.Errorf("configure a valid worker API URL without embedded credentials")
+	}
+	if parsed.Scheme == "https" {
+		return nil
+	}
+	ip := net.ParseIP(parsed.Hostname())
+	if c.AllowInsecureAPI && parsed.Scheme == "http" && (parsed.Hostname() == "localhost" || (ip != nil && ip.IsLoopback())) {
+		return nil
+	}
+	return fmt.Errorf("worker enrollment requires HTTPS; HTTP loopback development requires --allow-insecure-api")
+}
+
+func (w *Worker) currentConnection() *nats.Conn { w.mu.RLock(); defer w.mu.RUnlock(); return w.conn }
+func (w *Worker) executionMetadata() (manifest.ObjectMeta, manifest.ObjectMeta) {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.runnerMeta, w.workerMeta
 }

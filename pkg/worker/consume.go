@@ -75,7 +75,13 @@ func (w *Worker) consume(ctx context.Context, consumer jetstream.Consumer) error
 		case slots <- struct{}{}:
 		}
 
-		if !w.pump(ctx, consumer, slots, &inFlight) {
+		w.mu.RLock()
+		activeConsumer := w.consumer
+		w.mu.RUnlock()
+		if activeConsumer == nil {
+			activeConsumer = consumer
+		}
+		if !w.pump(ctx, activeConsumer, slots, &inFlight) {
 			inFlight.Wait()
 			return nil
 		}
@@ -219,9 +225,10 @@ func (w *Worker) handle(ctx context.Context, msg jetstream.Msg) {
 
 	// A message for another runner means this worker is bound to a consumer it
 	// should not be. Executing it anyway would defeat the placement rules.
-	if envelope.RunnerUID != w.runnerUID {
+	runnerUID := w.RunnerUID()
+	if envelope.RunnerUID != runnerUID {
 		detail := fmt.Sprintf("dispatched to runner %v, delivered to a worker of runner %v",
-			envelope.RunnerUID, w.runnerUID)
+			envelope.RunnerUID, runnerUID)
 		log.Printf("misrouted job: %s", detail)
 		terminate(msg, report(urth.ReasonMisroutedDispatch, detail), "misrouted message")
 
