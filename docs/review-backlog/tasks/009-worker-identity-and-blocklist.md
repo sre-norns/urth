@@ -4,54 +4,38 @@ Shared context: [`CONTEXT.md`](../CONTEXT.md).
 
 | Field | Value |
 |---|---|
-| Status | `blocked` |
+| Status | `done` |
 | Priority | `P0` |
 | Workstream | Authentication / Runner contract |
 | Depends on | 005 |
 | Likely conflicts | 004, 008 |
-| Owner | Unclaimed |
+| Owner | M9 Worker security workstream |
 
-## Current evidence and remaining criteria (2026-10-03)
+## Current evidence and completion criteria (2026-10-03)
 
-Shared machine-token enrollment exists. The dependency on task 005 means its
-current enrollment contract and tests; it does not require the historical
-standalone token store. Stable Worker identity is still a distinct requirement.
+All six acceptance criteria have evidence in merged Urth `d60d902`. Shared
+machine-token enrollment is the prerequisite; the historical name-only lookup
+below describes the pre-M9 source. Task 005's remaining lifecycle/storage review
+does not remove the proved Worker identity and blocklist controls.
 
-| Classification | Evidence / remaining requirement |
+| Criterion | Evidence |
 | --- | --- |
-| Completed prerequisite | Paired Runner machine identities and revocable shared machine tokens. |
-| Outstanding baseline | `admitWorker` in `pkg/urth/service.go` matches the display name. This does not prove possession of a persistent installation key. |
-| Outstanding | Persistent private key, verified fingerprint, expiring single-use challenge and explicit same-name/different-key denial. |
-| Outstanding | Versioned Runner blocklist with equivalent CLI/UI controls, enrollment/refresh/next-claim enforcement and secrecy tests. |
-| Outstanding | Bounded broker credential revocation and independent in-flight run reporting evidence. |
+| Stable key and verified proof | `TestInstallationKeyPersistsPrivatelyAndRejectsUnsafeFiles` and concurrent creation test; `TestWorkerProofIdentityReplayAndBlocklist` verifies fingerprint, forged/altered/expired/replayed proof denial and secret omission. The concurrent challenge test admits one winner. |
+| Display name is not identity | The proof test retains the UID after a same-key rename and rejects a different key with the same name. |
+| Block registration/refresh/claim | Secured `TestWorkerBlockAndDeleteComposeWithSecuredBroker` denies fresh proof and an attempted active-session claim with 403. The proof test and claim/block commit-order test enforce current Runner state. |
+| Active block takes effect | Next claim fails immediately. The secured broker connection closes by its issued expiry; the default maximum broker authority is five minutes, capped by Worker session expiry. Blocking does not require waiting for Worker session expiry. |
+| Preserve bounded reporting | Secured block/delete tests complete an already claimed run and its artifact within the independent run capability. Session-expiry and runtime renewal/rebind tests preserve the same boundary. |
+| CLI/UI equivalence | `TestWorkerBlocklistCLIUsesVersionedCanonicalRunner` edits `blockedWorkers`. Typed UI unit/browser checks and the real-stack block/stale-write/403/unblock/success flow use those same versioned fields. |
 
-Fresh installations only. Do not add a legacy enrollment fallback or migration
-window. Current completion needs evidence for every acceptance criterion below.
-See the [release checklist](../../m9-release-validation.md).
-
-## M9 candidate evidence under validation
-
-The implementation candidate adds persistent Ed25519 keys, two-minute single-use
-challenge proof, server-derived fingerprints and a versioned Runner blocklist.
-The implementation owner reports focused proof/blocklist tests pass, including
-`TestWorkerProofIdentityReplayAndBlocklist`,
-`TestConcurrentWorkerChallengeReplayHasOneWinner`,
-`TestWorkerChallengeCapacityIsBounded` and the private installation-key test.
-CLI block/unblock and the website Block/Unblock dialogs edit the same
-`blockedWorkers` resource fields. Worker detail exposes `status.fingerprint`.
-
-Secured PostgreSQL/HTTPS/mutual-TLS broker checks pass for blocked/deleted
-session denial, bounded completion after deletion, claim/block commit order and
-same/new-UID credential renewal. Focused CLI block/unblock and session-expiry
-checks pass. The typed Block/Unblock UI passes 33 unit tests/build and eight
-desktop/mobile Playwright/axe cases, with reviewed narrow/wide screenshots.
-Versioned writes and stale-draft recovery preserve concurrent blocks.
-[Worker PR 106](https://github.com/sre-norns/urth/pull/106) at `609e129` has the
-same Go/UI source as locally validated `7cfdbbf`. The complete PostgreSQL/race
-suite and verify/vet/static checks pass per the implementation owner.
-Operational rotation/failover, merge, exact merged-head CI and fresh-stack
-validation remain open. Do not mark this task done from focused tests alone. The historical name-based diagnosis
-applies to the pre-M9 baseline.
+The website passes 33 unit tests, its build and eight desktop/mobile fixture
+Playwright/axe cases. Two real-stack tests pass with the combined backend and
+reviewed wide/narrow screenshots. Fixture live skips are not counted as real
+workflow evidence. [The fresh-stack record](../../m9-fresh-stack-validation.md)
+identifies actual runtime `37cb719` and exact merged-tree equivalence.
+[The release record](../../m9-release-validation.md) links the complete merged
+PostgreSQL/race/static and website CI gates. Operator key provisioning and
+production broker revocation timing remain deployment responsibilities. Task
+closure does not authorize M9 or product release.
 
 ## Historical review baseline and retained requirements
 
@@ -122,12 +106,12 @@ are not proof that the same physical identity returned.
 
 ## Acceptance Criteria / Definition of Done
 
-- [ ] A Worker proves possession of a stable key during enrollment.
-- [ ] Reusing another Worker's display name cannot assume its UID/session.
-- [ ] Blocklisted identity cannot register, refresh, or claim.
-- [ ] Blocking an active identity takes effect without waiting for session expiry.
-- [ ] Existing bounded run capability semantics are preserved.
-- [ ] CLI and UI expose the same blocklist resource fields/actions.
+- [x] A Worker proves possession of a stable key during enrollment.
+- [x] Reusing another Worker's display name cannot assume its UID/session.
+- [x] Blocklisted identity cannot register, refresh, or claim.
+- [x] Blocking an active identity takes effect without waiting for session expiry.
+- [x] Existing bounded run capability semantics are preserved.
+- [x] CLI and UI expose the same blocklist resource fields/actions.
 
 ## Required Tests
 
@@ -149,8 +133,18 @@ git diff --check
 
 ## Completion Record
 
-- **Implemented:**
-- **Tests added/updated:**
-- **Documentation updated:**
-- **Validation evidence:**
-- **Follow-ups:**
+- **Implemented:** Private persistent installation key, single-use challenge
+  proof, server fingerprint, versioned Runner blocklist and current-state claim
+  enforcement. No name-based fallback or migration is supported.
+- **Tests added/updated:** Proof/replay/capacity/private-key tests; secured
+  block/delete/expiry/renewal/rebind and lock-order tests; CLI blocklist test;
+  typed UI and real-stack block/unblock regression.
+- **Documentation updated:** Worker security guide, CLI/Worker instructions and
+  fresh-stack/release evidence.
+- **Validation evidence:** Full merged `d60d902` PostgreSQL/race/static audit and
+  website CI pass. Local source and runtime attribution appear in the release
+  record. All acceptance criteria above are evidenced.
+- **Follow-ups:** Deployment-specific private key provisioning and broker
+  lifetime configuration; separate enrollment review in task 005. No remaining
+  implementation criterion in this task. Product release remains a maintainer
+  decision.

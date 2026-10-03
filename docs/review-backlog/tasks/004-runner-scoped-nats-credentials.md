@@ -4,7 +4,7 @@ Shared context: [`CONTEXT.md`](../CONTEXT.md).
 
 | Field | Value |
 |---|---|
-| Status | `ready` |
+| Status | `implemented; pending merged follow-up validation` |
 | Priority | `P0` |
 | Workstream | Authentication |
 | Depends on | — |
@@ -13,59 +13,66 @@ Shared context: [`CONTEXT.md`](../CONTEXT.md).
 
 ## Current evidence and remaining criteria (2026-10-03)
 
-Status remains open. The original source review below describes commit `1e13334`;
-it is not a description of the current API.
+The implementation is merged in Urth `d60d902`. Keep this task open for the
+follow-up merge/CI and deployment checks below. The historical source review
+describes `1e13334`; it does not describe the current credential API.
 
-| Classification | Evidence / remaining requirement |
+| Criterion | Merged evidence / exact remaining check |
 | --- | --- |
-| Completed mechanism | `pkg/natsq/credentials.go` issues decorated NATS user JWT/NKey credentials. Permissions identify an account-qualified Runner consumer, Runner log/presence prefixes and inbox. |
-| Completed regression | `TestWorkerCredentialsEnforceAccountQueueIsolation` in `pkg/natsq/credentials_test.go` uses a secured broker. It consumes its own queue and asserts denials for the other account's queue, pull API, publication and inbox. |
-| Superseded diagnosis | The API does not return its service credentials-file path to Workers. Worker credentials are separate from configured service credentials. |
-| Candidate regression | Secured Worker tests prove existing-connection expiry, renewal/reconnect during execution and replacement of transport when the Worker UID changes. Broker authority is capped by Worker session expiry and a default five-minute lifetime. |
-| Candidate regression | [Broker PR 109](https://github.com/sre-norns/urth/pull/109) proves delegated signer overlap and retirement, client/server CA rollover, and secured three-node JetStream failover. Hosted checks pass on the PR head. |
-| Outstanding | Validate the complete log/presence, event, job and JetStream administration denial matrix on the selected release set. |
-| Outstanding | Validate deployment-specific production TLS, key/redaction/no-store handling and composed service-role least privilege. Separate provisioner, publisher and observer identities are implemented; one Worker permission test does not close this review. |
-| Outstanding | Cluster-route certificate reload and CA rollover remain untested. Exact merged-head CI and candidate deployment validation remain required. |
+| Separate secured API/Worker identities | `credentials_test.go` creates independent provisioner, publisher, observer and Worker credentials against an authenticated mutual-TLS broker. The Worker receives its own JWT/seed, not an API credentials path. |
+| Exact Runner consumption/publication | Own consumer fetch/confirmed ack, own log and exact Worker presence publication succeed. Foreign consumer/pull/inbox and other-Worker presence fail. The old merged negative uses a wildcard prefix. PR 111 now attempts valid `LogSubject("b", "result-b")` and asserts denial. |
+| Jobs/events/JetStream administration denied | Own and foreign Runner job publication, event subscription and stream/consumer deletion fail. PR 111 now attempts stream create/update, consumer create and cross-role provisioner/publisher/observer denials with positive controls. Its merge and exact merged-head CI remain pending. |
+| Expiry and renewal | Already-connected authority expires/disconnects; expired authority cannot reconnect. Renewal reconnects the existing consumer and survives original expiry. Real Worker runtime tests preserve in-flight reporting and prove presence/claim/report after same/new-UID replacement. Authority ends by Worker session expiry and the default five-minute cap. |
+| No server credentials path | Secured registration asserts the legacy `Value` path is empty. The decorated JWT/seed DTO and redacted String method replace the overloaded path. |
+| Fail-closed production transport | `tls_test.go` and Worker API transport tests reject missing authentication, accidental plaintext, untrusted/missing client TLS and non-loopback insecure mode. Production deployment configuration still needs operator verification. |
 
-Current completion requires evidence for all six original acceptance criteria.
-Task 009 supplies stable Worker proof. Broker revocation must have an explicit
-maximum delay; an API claim denial alone does not prove broker disconnection.
-Use the [release checklist](../../m9-release-validation.md).
+The complete merged PostgreSQL/race/static gate passes. Exact source identities
+and CI links are in [the release record](../../m9-release-validation.md).
+Loopback [fresh-stack evidence](../../m9-fresh-stack-validation.md) proves actual
+execution and revocation controls; it does not replace these secured tests.
 
-## M9 candidate evidence under validation
+[Broker PR 109](https://github.com/sre-norns/urth/pull/109), source `09547ce` plus
+`b01c130`, is merged. Ten consecutive race runs prove delegated signer overlap
+and retirement, client/server CA rollover and secured three-node JetStream
+failover. The complete broker race suite, vet, staticcheck and module
+verification pass. The cluster uses authenticated accounts and mutual TLS on
+client and route connections, stops the connected stream leader, and confirms
+delivery/acks before and after failure. This test does not rotate route
+certificates.
 
-The implementation candidate binds Worker broker credentials and inboxes to the
-Worker UID. It caps authority at the Worker session and a default five-minute
-broker lifetime. Production uses TLS and separate provisioner, publisher and
-observer credentials. Explicit insecure transport is restricted to loopback.
+## Additional candidate evidence
 
-Secured composed tests pass with PostgreSQL, HTTPS and mutual-TLS NATS. They
-prove live connection expiry, renewal/reconnect during a running probe and
-transport replacement when deletion creates a new Worker UID. The original
-run still completes under its bounded capability. Proof/blocklist and focused
-CLI/session-expiry checks also pass.
+[PR 111](https://github.com/sre-norns/urth/pull/111) supplies the remaining
+permission attempts and route rollover test. Source is
+`e4c3483b5f33cc1de3bca52de315840a32c07070`; final head
+`82b23384bf689e4efc5bb494e583e0c2fe069830` adds reviewed runbook wording only.
+It changes tests/docs on `d60d902`, with no production or dependency change.
+Independent source review passes. Merge and exact merged-head validation remain pending.
 
-[Worker PR 106](https://github.com/sre-norns/urth/pull/106) at `609e129` has the
-same Go/UI source as locally validated `7cfdbbf`. The implementation owner
-reports the full PostgreSQL/race suite and verify/vet/static checks pass.
-The operational broker evidence now includes
-[PR 109](https://github.com/sre-norns/urth/pull/109), source `09547ce` plus its
-evidence update `b01c130`. Ten consecutive race runs pass for delegated signer
-overlap/retirement, client/server CA rollover and secured three-node failover.
-The complete broker race suite, vet, staticcheck and module verification pass.
-The three-node test uses authenticated accounts and mutual TLS on client and
-cluster routes. It stops the connected stream leader and proves delivery and
-confirmed acknowledgments before and after the failure. It does not rotate
-certificates on cluster routes.
+The full `GOWORK=off make audit/postgres` passes: broker race 64.745 seconds,
+integration 144.609 seconds, repository vet, Staticcheck 2026.2.1 and module
+verification. Route rollover passes ten race repetitions in 287.249 seconds.
+The three-node test rolls route leaves and trust without broker restart,
+forces fresh pooled/system routes, checks current replicas and cross-node
+message delivery/confirmed acks, and denies retired-root incoming/outgoing TLS.
+Established routes do not authenticate again merely because TLS files reload.
+Final-source omitted-leaf-reload and retained-old-root controls fail at the
+intended assertions. Earlier simultaneous disruption/readiness fixture failures
+remain preserved; the corrected fixture waits for rolling convergence.
 
-The integrated backend candidate is `37cb719`. It combines
-[run-capability PR 108](https://github.com/sre-norns/urth/pull/108) and PR 109.
-The release validator reports the combined PostgreSQL/API/NATS/Worker/integration
-checks pass. The local loopback fresh-stack evidence is recorded separately in
-[M9 fresh-stack validation](../../m9-fresh-stack-validation.md). Loopback
-execution does not replace the secured broker tests. Full acceptance criteria,
-cluster-route certificate rollover, deployment operations, merge and exact
-merged-head CI remain open. This evidence does not close the task.
+Concrete foreign-log, stream create/update, consumer create and cross-role
+service denials now have dedicated tests. Consumer update shares the
+`CONSUMER.CREATE` endpoint; there is no separate `CONSUMER.UPDATE` API. The
+negative sends `{}` and asserts broker permission rejection before parsing.
+Service positives update a stream and create/delete a consumer; no explicit
+consumer-update positive is claimed.
+
+Evidence is preserved under
+`/home/soultaker/workspace/m9-review/cluster-route-followup/`.
+Deployment verification still reviews private key files, response `no-store`,
+ordinary log/error secret handling, resolver/service identity configuration,
+client/route TLS and maximum revocation delay. These operator checks are
+separate from local secured tests. See [the candidate runbook](https://github.com/sre-norns/urth/blob/82b23384bf689e4efc5bb494e583e0c2fe069830/docs/m9-broker-operations.md).
 
 ## Historical review baseline and requirements
 
@@ -142,12 +149,15 @@ record a superseding ADR selecting Auth Callout before implementing another sche
 
 ## Acceptance Criteria / Definition of Done
 
-- [ ] A secured deployment works with API and Worker identities stored separately.
-- [ ] A Worker can consume only its exact Runner consumer and publish its log prefix.
-- [ ] Cross-Runner reads, job publication, event subscription, and JS admin fail.
-- [ ] Credentials expire and renew with the Worker session.
-- [ ] No server-local credentials path is sent to a Worker.
-- [ ] Production configuration rejects unauthenticated/plaintext NATS accidentally.
+- [x] A secured test deployment uses separate API and Worker identities.
+- [ ] A Worker consumes only its exact Runner consumer and publishes only its
+  log/presence authority; PR 111 proves valid concrete foreign-log denial,
+  pending merged follow-up validation.
+- [ ] Cross-Runner reads, job/event authority and all required administration
+  denials are evidenced in PR 111, pending merged follow-up validation.
+- [x] Credentials expire and renew within the Worker session bound.
+- [x] No server-local credentials path is sent to a Worker.
+- [x] Production configuration rejects accidental unauthenticated/plaintext NATS.
 
 ## Required Tests
 
@@ -168,8 +178,13 @@ git diff --check
 
 ## Completion Record
 
-- **Implemented:**
-- **Tests added/updated:**
-- **Documentation updated:**
-- **Validation evidence:**
-- **Follow-ups:**
+- **Implemented:** Worker JWT/NKey issuance, Runner/Worker permission boundaries,
+  separate service-role identities, bounded expiry and dynamic renewal/rebind.
+- **Tests added/updated:** Secured credential isolation; runtime expiry/renewal;
+  delegated signing rotation, client/server CA rollover and secured failover.
+- **Validation evidence:** Full merged `d60d902` backend gate passes. Additional
+  PR 111 permission and route-rotation audit passes as attributed above.
+- **Follow-ups:** PR 111 merge/exact merged-head CI and deployment
+  key/no-store/secrecy/TLS verification. The permission and route-rollover tests
+  now pass; do not retain the historical broad missing-matrix claim. Task stays
+  open until the follow-up release gates are recorded.
