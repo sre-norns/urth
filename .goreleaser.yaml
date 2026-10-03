@@ -1,0 +1,151 @@
+# GoReleaser builds every Urth binary deliverable: archives, Debian packages
+# and snaps. It never publishes. scripts/build-release.py runs it, adds the
+# website archive and source manifest, and the release workflow publishes the
+# result beside the container images. Images keep their own Dockerfile recipes.
+#
+# Run it through the script, which supplies RELEASE_VERSION and RELEASE_RECORDS:
+#   make release/snapshot
+version: 2
+
+project_name: urth
+dist: dist/goreleaser
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot.{{ .ShortCommit }}"
+
+# No version ldflags: the binaries report their source through Go build info.
+builds:
+  - &binary
+    id: api-server
+    main: ./cmd/api-server
+    binary: api-server
+    env: [CGO_ENABLED=0, GOWORK=off]
+    goos: [linux]
+    goarch: [amd64, arm64]
+    flags: [-mod=readonly, -trimpath, -buildvcs=true]
+    ldflags: [-s -w]
+    mod_timestamp: "{{ .CommitTimestamp }}"
+  - <<: *binary
+    id: nats-worker
+    main: ./cmd/nats-worker
+    binary: nats-worker
+  - <<: *binary
+    id: urthctl
+    main: ./cmd/urthctl
+    binary: urthctl
+    goos: [linux, darwin]
+
+# One archive per binary and platform, named and laid out as before GoReleaser:
+# the executable, its command guide, the license and a source record.
+archives:
+  - &archive
+    id: api-server
+    ids: [api-server]
+    formats: [tar.gz]
+    name_template: "api-server_{{ .Env.RELEASE_VERSION }}_{{ .Os }}_{{ .Arch }}"
+    # Fixed ownership, permissions and time keep snapshots repeatable.
+    builds_info:
+      {owner: root, group: root, mode: 0755, mtime: "{{ .CommitDate }}"}
+    files:
+      - &license {src: LICENSE, info: &info {owner: root, group: root, mode: 0644, mtime: "{{ .CommitDate }}"}}
+      - {src: cmd/api-server/README.md, strip_parent: true, info: *info}
+      - {src: "{{ .Env.RELEASE_RECORDS }}/api-server/{{ .Os }}_{{ .Arch }}/release.json", strip_parent: true, info: *info}
+  - <<: *archive
+    id: nats-worker
+    ids: [nats-worker]
+    name_template: "nats-worker_{{ .Env.RELEASE_VERSION }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - *license
+      - {src: cmd/nats-worker/README.md, strip_parent: true, info: *info}
+      - {src: "{{ .Env.RELEASE_RECORDS }}/nats-worker/{{ .Os }}_{{ .Arch }}/release.json", strip_parent: true, info: *info}
+  - <<: *archive
+    id: urthctl
+    ids: [urthctl]
+    name_template: "urthctl_{{ .Env.RELEASE_VERSION }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - *license
+      - {src: cmd/urthctl/README.md, strip_parent: true, info: *info}
+      - {src: "{{ .Env.RELEASE_RECORDS }}/urthctl/{{ .Os }}_{{ .Arch }}/release.json", strip_parent: true, info: *info}
+
+# Server binaries install under /usr/libexec/urth with an urth- prefixed command,
+# so they cannot collide with another product's api-server. Units are installed
+# but never enabled: the service cannot start before its operator configures it.
+nfpms:
+  - &deb
+    id: urth-api-server
+    ids: [api-server]
+    package_name: urth-api-server
+    file_name_template: "{{ .PackageName }}_{{ .Version }}_{{ .Arch }}"
+    vendor: sre-norns
+    homepage: https://github.com/sre-norns/urth
+    maintainer: Ivan Ryabov <abbyssoul@gmail.com>
+    description: Urth API server for synthetic monitoring on self-hosted runners.
+    license: PolyForm Noncommercial License 1.0.0
+    formats: [deb]
+    section: net
+    bindir: /usr/libexec/urth
+    mtime: "{{ .CommitDate }}"
+    contents:
+      - {src: /usr/libexec/urth/api-server, dst: /usr/bin/urth-api-server, type: symlink}
+      - {src: packaging/systemd/urth-api-server.service, dst: /usr/lib/systemd/system/urth-api-server.service, file_info: {mode: 0644}}
+      - {src: packaging/default/urth-api-server, dst: /etc/default/urth-api-server, type: config|noreplace, file_info: {mode: 0640}}
+      - {src: LICENSE, dst: /usr/share/doc/urth-api-server/LICENSE, file_info: {mode: 0644}}
+  - <<: *deb
+    id: urth-worker
+    ids: [nats-worker]
+    package_name: urth-worker
+    description: Urth worker that executes probes inside the network segment it serves.
+    contents:
+      - {src: /usr/libexec/urth/nats-worker, dst: /usr/bin/urth-worker, type: symlink}
+      - {src: packaging/systemd/urth-worker.service, dst: /usr/lib/systemd/system/urth-worker.service, file_info: {mode: 0644}}
+      - {src: packaging/default/urth-worker, dst: /etc/default/urth-worker, type: config|noreplace, file_info: {mode: 0640}}
+      - {src: LICENSE, dst: /usr/share/doc/urth-worker/LICENSE, file_info: {mode: 0644}}
+  - <<: *deb
+    id: urthctl
+    ids: [urthctl]
+    package_name: urthctl
+    description: Urth command-line client.
+    bindir: /usr/bin
+    contents:
+      - {src: LICENSE, dst: /usr/share/doc/urthctl/LICENSE, file_info: {mode: 0644}}
+
+# Strict confinement. A snap reads its own $HOME, so urthctl profiles inside the
+# snap are separate from a host installation's. The API server is an app rather
+# than a daemon: it cannot run before PostgreSQL, NATS and identity are configured.
+snapcrafts:
+  - &snap
+    id: urthctl
+    ids: [urthctl]
+    name: urthctl
+    name_template: "urthctl_{{ .Version }}_{{ .Arch }}"
+    summary: Urth command-line client
+    description: Manage Urth projects, runners and scenarios, and run probes locally.
+    license: PolyForm-Noncommercial-1.0.0
+    base: core24
+    grade: stable
+    confinement: strict
+    publish: false
+    apps:
+      urthctl:
+        command: urthctl
+        plugs: [network, home]
+  - <<: *snap
+    id: urth-api-server
+    ids: [api-server]
+    name: urth-api-server
+    name_template: "urth-api-server_{{ .Version }}_{{ .Arch }}"
+    summary: Urth API server
+    description: The Urth control plane. Requires PostgreSQL and NATS JetStream.
+    apps:
+      urth-api-server:
+        command: api-server
+        plugs: [network, network-bind]
+
+checksum:
+  disable: true
+
+release:
+  disable: true
+
+changelog:
+  disable: true

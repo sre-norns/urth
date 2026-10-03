@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build Urth release archives without publishing or changing Git refs."""
+"""Build Urth release archives and packages without publishing or changing Git refs."""
 
 import argparse
 import datetime
@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import shutil
 import subprocess
 import tarfile
@@ -21,6 +22,7 @@ COMPONENTS = {
     "nats-worker": ("linux",),
     "urthctl": ("linux", "darwin"),
 }
+ARCHES = ("amd64", "arm64")
 # Image tags cannot contain SemVer build metadata (+...). Numeric prerelease
 # identifiers must not have leading zeroes. Limit the total Docker tag length.
 VERSION = re.compile(
@@ -84,7 +86,34 @@ def checksums(output):
     (output / "checksums.txt").write_text("".join(entries))
 
 
-def build(output, website, info):
+def records(directory, info):
+    # GoReleaser places each platform's record in its archive as release.json.
+    for component, systems in COMPONENTS.items():
+        for system in systems:
+            for arch in ARCHES:
+                path = directory / component / f"{system}_{arch}" / "release.json"
+                path.parent.mkdir(parents=True)
+                path.write_bytes(encoded(dict(info, component=component, os=system, arch=arch)))
+
+
+def goreleaser(info, records_dir, snap):
+    # GoReleaser compiles every binary and builds the archives, Debian packages
+    # and snaps. It never publishes here; the release workflow does that.
+    command = shlex.split(os.environ.get("GORELEASER", "goreleaser")) + ["release", "--clean"]
+    skip = [] if info["snapshot"] else ["publish", "announce"]
+    if info["snapshot"]:
+        command.append("--snapshot")
+    if not snap:
+        skip.append("snapcraft")
+    if skip:
+        command.append("--skip=" + ",".join(skip))
+    env = dict(os.environ, RELEASE_VERSION=info["version"], RELEASE_RECORDS=str(records_dir), GOWORK="off")
+    subprocess.run(command, cwd=ROOT, env=env, check=True)
+    built = ROOT / "dist" / "goreleaser"
+    return sorted(path for path in built.iterdir() if path.is_file() and path.name.endswith((".tar.gz", ".deb", ".snap")))
+
+
+def build(output, website, info, snap=True):
     if output.exists() and any(output.iterdir()):
         raise ValueError("output directory must be empty; use a new snapshot directory")
     if not (website / "index.html").is_file():
@@ -97,29 +126,15 @@ def build(output, website, info):
             asset_entries["website/" + path.relative_to(website).as_posix()] = (path.read_bytes(), 0o644)
     output.mkdir(parents=True, exist_ok=True)
     info = dict(info, toolchain=subprocess.check_output(["go", "version"], text=True).strip())
-    released = []
     with tempfile.TemporaryDirectory(prefix="urth-release-") as staging:
+        records(Path(staging) / "records", info)
+        built = goreleaser(info, Path(staging) / "records", snap)
         staged = Path(staging) / "archives"
         staged.mkdir()
-        for component, systems in COMPONENTS.items():
-            for system in systems:
-                for arch in ("amd64", "arm64"):
-                    binary = Path(staging) / component
-                    env = dict(os.environ, CGO_ENABLED="0", GOOS=system, GOARCH=arch, GOWORK="off")
-                    subprocess.run(
-                        ["go", "build", "-mod=readonly", "-trimpath", "-buildvcs=true", "-ldflags=-s -w", "-o", str(binary), "./cmd/" + component],
-                        cwd=ROOT, env=env, check=True,
-                    )
-                    name = f"{component}_{info['version']}_{system}_{arch}.tar.gz"
-                    entries = {
-                        component: (binary.read_bytes(), 0o755),
-                        "LICENSE": ((ROOT / "LICENSE").read_bytes(), 0o644),
-                        "README.md": ((ROOT / "cmd" / component / "README.md").read_bytes(), 0o644),
-                        "release.json": (encoded(dict(info, component=component, os=system, arch=arch)), 0o644),
-                    }
-                    archive(staged / name, entries, info["epoch"])
-                    released.append(name)
-                    print(name, flush=True)
+        for path in built:
+            shutil.copy2(path, staged / path.name)
+        archives = sorted(path.name for path in built if path.name.endswith(".tar.gz"))
+        packages = sorted(path.name for path in built if not path.name.endswith(".tar.gz"))
         name = f"urth-website_{info['version']}.tar.gz"
         asset_entries.update({
             "LICENSE": ((ROOT / "LICENSE").read_bytes(), 0o644),
@@ -127,8 +142,10 @@ def build(output, website, info):
             "release.json": (encoded(dict(info, component="urth-website")), 0o644),
         })
         archive(staged / name, asset_entries, info["epoch"])
-        released.append(name)
-        (staged / "release-manifest.json").write_bytes(encoded(dict(info, archives=released)))
+        archives.append(name)
+        for released in archives + packages:
+            print(released, flush=True)
+        (staged / "release-manifest.json").write_bytes(encoded(dict(info, archives=archives, packages=packages, snap=snap)))
         checksums(staged)
         # Do not dirty Git while later binaries still capture VCS metadata,
         # even when a caller selects an unignored output directory in the repo.
@@ -144,13 +161,14 @@ def main():
     parser.add_argument("--metadata-only", action="store_true", help="validate the source/version and print JSON without building")
     parser.add_argument("--output", type=Path, default=ROOT / "dist" / "release")
     parser.add_argument("--website-dist", type=Path, default=ROOT / "website" / "dist")
+    parser.add_argument("--no-snap", action="store_true", help="skip snaps when snapcraft is unavailable; the manifest records it")
     args = parser.parse_args()
     try:
         info = metadata(args.version)
         if args.metadata_only:
             print(encoded(info).decode(), end="")
         else:
-            build(args.output.resolve(), args.website_dist.resolve(), info)
+            build(args.output.resolve(), args.website_dist.resolve(), info, snap=not args.no_snap)
     except (ValueError, subprocess.CalledProcessError) as error:
         parser.exit(1, f"release build refused: {error}\n")
 
