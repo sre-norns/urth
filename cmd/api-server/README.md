@@ -846,6 +846,13 @@ short-lived decorated JWT/NKey credentials and bind an existing Runner consumer.
 The signing seed stays on the API service host. Restrict both files to the
 service user and keep them outside resource manifests and logs.
 
+For a delegated account signing seed, also set
+`--nats.worker-account-public-key` to the owning NATS account public key. The
+broker account JWT must authorize the delegated key. This preserves the account
+while its signing keys rotate. The option is optional for a primary account
+seed. Follow the [broker rotation and failover runbook](../../docs/m9-broker-operations.md)
+for overlap, retirement and validation steps.
+
 Configure the broker's operator/account resolver to accept the signing account.
 Configure service permissions for provisioning, relay publication, log subscription
 and presence ingestion. The M9 candidate accepts three distinct service
