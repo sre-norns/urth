@@ -183,6 +183,7 @@ clean:
 	$(RM) -dr ./dist $(website-dist)
 
 
+.PHONY: build api-server nats-worker urthctl
 api-server:
 	go build ./cmd/api-server
 
@@ -194,4 +195,9 @@ urthctl:
 
 $(website-dist): build-site
 
-build: api-server build-site nats-worker
+build: api-server build-site nats-worker urthctl
+
+## release/snapshot: build release archives locally without publication
+.PHONY: release/snapshot
+release/snapshot: build-site
+	python3 scripts/build-release.py --snapshot

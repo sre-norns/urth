@@ -35,3 +35,4 @@ website/playwright-report/
 /worker.*
 # Local development state: captured mail (make run-api-server)
 /.dev/
+/dist/

@@ -1,0 +1,78 @@
+name: Build an Urth image
+description: Build both Linux platforms; publication is explicit and defaults off.
+inputs:
+  image:
+    description: Image basename in ghcr.io/sre-norns
+    required: true
+  context:
+    description: Build context
+    required: true
+  file:
+    description: Dockerfile path
+    required: true
+  target:
+    description: Dockerfile target; empty selects the final website stage
+    default: ''
+  version:
+    description: Validated source version
+    required: true
+  revision:
+    description: Full source commit
+    required: true
+  created:
+    description: Source commit timestamp in UTC
+    required: true
+  publish:
+    description: Push only the version tag; stable aliases are promoted later
+    default: 'false'
+  registry-token:
+    description: GitHub token for package install and optional registry login
+    required: true
+outputs:
+  digest:
+    description: Built multi-platform image digest
+    value: ${{ steps.build.outputs.digest }}
+runs:
+  using: composite
+  steps:
+    - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4
+    - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+    - name: Prepare private package configuration
+      shell: bash
+      env:
+        PACKAGE_TOKEN: ${{ inputs.registry-token }}
+      run: |
+        umask 077
+        printf '@sre-norns:registry=https://npm.pkg.github.com\n//npm.pkg.github.com/:_authToken=%s\n' "$PACKAGE_TOKEN" > "$RUNNER_TEMP/urth-release.npmrc"
+    - name: Log in to GHCR
+      if: inputs.publish == 'true'
+      uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ inputs.registry-token }}
+    - name: Build both platforms
+      id: build
+      uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+      with:
+        context: ${{ inputs.context }}
+        file: ${{ inputs.file }}
+        target: ${{ inputs.target }}
+        platforms: linux/amd64,linux/arm64
+        push: ${{ inputs.publish == 'true' }}
+        tags: ghcr.io/sre-norns/${{ inputs.image }}:${{ inputs.version }}
+        build-args: |
+          VERSION=${{ inputs.version }}
+          REVISION=${{ inputs.revision }}
+          CREATED=${{ inputs.created }}
+        labels: |
+          org.opencontainers.image.version=${{ inputs.version }}
+          org.opencontainers.image.revision=${{ inputs.revision }}
+          org.opencontainers.image.created=${{ inputs.created }}
+          org.opencontainers.image.source=https://github.com/sre-norns/urth
+        secret-files: npmrc=${{ runner.temp }}/urth-release.npmrc
+        outputs: ${{ inputs.publish == 'true' && '' || format('type=oci,dest={0}/image-{1}.tar', runner.temp, inputs.image) }}
+    - name: Remove package configuration
+      if: always()
+      shell: bash
+      run: rm -f "$RUNNER_TEMP/urth-release.npmrc"

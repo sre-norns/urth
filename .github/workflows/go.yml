@@ -11,12 +11,13 @@ on:
   pull_request:
     branches: [ "main" ]
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
 
 concurrency:
-  group: build-${{ github.ref }}
+  group: build-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -103,6 +104,9 @@ jobs:
       # same statement, and changing the service cannot silently diverge from it.
       - name: Run quality control checks
         run: make audit/postgres store-url=postgres://urth:urth@localhost:5432/urth
+
+      - name: Check the native Worker image profile
+        run: go test -race -tags=urth_native ./pkg/runner ./pkg/worker ./cmd/nats-worker
 
   build:
     name: Build binaries
