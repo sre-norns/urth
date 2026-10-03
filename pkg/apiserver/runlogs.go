@@ -1,10 +1,12 @@
 package apiserver
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -13,6 +15,8 @@ import (
 	"github.com/sre-norns/urth/pkg/natsq"
 	"github.com/sre-norns/urth/pkg/runner"
 	"github.com/sre-norns/urth/pkg/urth"
+	"github.com/sre-norns/wyrd/identity"
+	im "github.com/sre-norns/wyrd/identity/model"
 	"github.com/sre-norns/wyrd/pkg/bark"
 	"github.com/sre-norns/wyrd/pkg/manifest"
 )
@@ -28,7 +32,7 @@ import (
 // conn may be nil, for a caller that composes the routes without a broker, as
 // some tests do. Live tailing is then unavailable and only finished runs can
 // be read.
-func runLogHandler(srv urth.Service, conn *nats.Conn) gin.HandlerFunc {
+func runLogHandler(srv urth.Service, conn *nats.Conn, identities *identity.Service) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		var request urth.ScenarioRunResultsRequest
 		if err := ctx.ShouldBindUri(&request); err != nil {
@@ -67,7 +71,27 @@ func runLogHandler(srv urth.Service, conn *nats.Conn) gin.HandlerFunc {
 			return
 		}
 
-		streamRunLog(ctx, conn, resource)
+		// A stream can outlive its session or project membership. Rebuild the
+		// principal for each check instead of reusing the admission snapshot.
+		token, _ := strings.CutPrefix(ctx.GetHeader("Authorization"), "Bearer ")
+		scope := urth.RequestScope(ctx.Request.Context())
+		authorized := func() bool {
+			checkCtx, cancel := context.WithTimeout(ctx.Request.Context(), logAccessCheckTimeout)
+			defer cancel()
+			if identities == nil {
+				return false
+			}
+			principal, err := identities.Authenticate(checkCtx, token)
+			if err != nil || principal.Type != "user" || principal.Scope != im.ScopeAccount ||
+				manifest.ResourceID(principal.AccountID) != scope.Account {
+				return false
+			}
+			checkCtx = identity.WithPrincipal(checkCtx, principal)
+			current, found, err := srv.Results(manifest.ResourceName(request.ID)).
+				Get(checkCtx, manifest.ResourceName(request.RunID))
+			return err == nil && found && current.UID == resource.UID
+		}
+		streamRunLog(ctx, conn, resource, authorized)
 	}
 }
 
@@ -120,7 +144,7 @@ func serveStoredRunLog(ctx *gin.Context, srv urth.Service, result urth.Result) {
 }
 
 // streamRunLog relays a running job's output to the client as it arrives.
-func streamRunLog(ctx *gin.Context, conn *nats.Conn, result urth.Result) {
+func streamRunLog(ctx *gin.Context, conn *nats.Conn, result urth.Result, authorized func() bool) {
 	subscriber, err := natsq.SubscribeRunLog(conn, result.Status.Executor.RunnerID, result.UID, 0)
 	if err != nil {
 		bark.AbortWithProblem(ctx, http.StatusInternalServerError, err)
@@ -138,14 +162,24 @@ func streamRunLog(ctx *gin.Context, conn *nats.Conn, result urth.Result) {
 	deadline := time.After(maxLogStreamDuration)
 	keepalive := time.NewTicker(15 * time.Second)
 	defer keepalive.Stop()
+	accessCheck := time.NewTicker(logAccessCheckInterval)
+	defer accessCheck.Stop()
 
 	clientGone := ctx.Request.Context().Done()
 
 	for {
 		select {
-		case line := <-subscriber.Lines():
+		case line, open := <-subscriber.Lines():
+			if !open || !authorized() {
+				return
+			}
 			writeSSEData(ctx, line)
 			ctx.Writer.Flush()
+
+		case <-accessCheck.C:
+			if !authorized() {
+				return
+			}
 
 		case <-keepalive.C:
 			// A comment frame. Without it an idle proxy between here and the
@@ -169,6 +203,11 @@ func streamRunLog(ctx *gin.Context, conn *nats.Conn, result urth.Result) {
 
 // maxLogStreamDuration bounds one live tail.
 const maxLogStreamDuration = 30 * time.Minute
+
+// Idle streams check access each second. A failed or stalled lookup closes the
+// stream within the interval plus the database check timeout.
+const logAccessCheckInterval = time.Second
+const logAccessCheckTimeout = 2 * time.Second
 
 func writeSSEHeaders(ctx *gin.Context) {
 	ctx.Header(bark.HTTPHeaderContentType, "text/event-stream")
