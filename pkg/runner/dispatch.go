@@ -16,7 +16,6 @@ import (
 	_ "github.com/sre-norns/urth/pkg/probers/har"
 	_ "github.com/sre-norns/urth/pkg/probers/http"
 	_ "github.com/sre-norns/urth/pkg/probers/icmp"
-	_ "github.com/sre-norns/urth/pkg/probers/puppeteer"
 
 	// _ "github.com/sre-norns/urth/pkg/probers/pypuppeteer"
 	_ "github.com/sre-norns/urth/pkg/probers/rest"
