@@ -53,6 +53,14 @@ func (s *scheduler) workerCredential(runner urth.Runner, workerUID manifest.Reso
 		return urth.NATSCredential{}, err
 	}
 	claims := jwt.NewUserClaims(userPublic)
+	// A delegated signing key is not the owning account. Keep the account
+	// stable while operators overlap and retire its signing keys.
+	if s.cfg.WorkerAccountPublicKey != "" {
+		if !nkeys.IsValidPublicAccountKey(s.cfg.WorkerAccountPublicKey) {
+			return urth.NATSCredential{}, fmt.Errorf("worker account public key must be a NATS account key")
+		}
+		claims.IssuerAccount = s.cfg.WorkerAccountPublicKey
+	}
 	claims.Name = "urth-worker-" + string(workerUID)
 	ttl := s.cfg.WorkerCredentialTTL
 	if ttl <= 0 {

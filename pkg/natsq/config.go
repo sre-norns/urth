@@ -103,11 +103,12 @@ type ClientConfig struct {
 // values rather than passing them through, so the decision has to be made here.
 type Config struct {
 	// Workers receive short-lived user credentials signed by this NATS account.
-	WorkerCredentialTTL   time.Duration `help:"Maximum worker broker authority and revocation delay (1s to 5m; zero uses 5m)" default:"5m"`
-	WorkerAccountSeedFile string        `help:"File containing the NATS account seed used to sign restricted worker credentials"`
-	PublisherCredsFile    string        `help:"Private credentials file for the outbox publisher service" type:"existingfile"`
-	ObserverCredsFile     string        `help:"Private credentials file for log, presence and advisory observation" type:"existingfile"`
-	AllowInsecureWorkers  bool          `help:"Allow unauthenticated workers for an isolated local development broker" default:"false"`
+	WorkerCredentialTTL    time.Duration `help:"Maximum worker broker authority and revocation delay (1s to 5m; zero uses 5m)" default:"5m"`
+	WorkerAccountSeedFile  string        `help:"File containing the NATS account seed used to sign restricted worker credentials"`
+	WorkerAccountPublicKey string        `help:"Owning NATS account public key; required when the worker signing seed is a delegated account signing key"`
+	PublisherCredsFile     string        `help:"Private credentials file for the outbox publisher service" type:"existingfile"`
+	ObserverCredsFile      string        `help:"Private credentials file for log, presence and advisory observation" type:"existingfile"`
+	AllowInsecureWorkers   bool          `help:"Allow unauthenticated workers for an isolated local development broker" default:"false"`
 
 	ClientConfig `embed:""`
 
@@ -294,6 +295,12 @@ func (c Config) Validate() error {
 		if err := privateFile(c.WorkerAccountSeedFile); err != nil {
 			problems = append(problems, err)
 		}
+	}
+	if c.WorkerAccountPublicKey != "" && !nkeys.IsValidPublicAccountKey(c.WorkerAccountPublicKey) {
+		problems = append(problems, fmt.Errorf("--nats.worker-account-public-key must be a NATS account public key"))
+	}
+	if c.WorkerAccountPublicKey != "" && c.WorkerAccountSeedFile == "" {
+		problems = append(problems, fmt.Errorf("--nats.worker-account-public-key requires --nats.worker-account-seed-file"))
 	}
 	if c.AllowInsecureWorkers && !c.AllowInsecure {
 		problems = append(problems, fmt.Errorf("insecure workers require --nats.allow-insecure"))
