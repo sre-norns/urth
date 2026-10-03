@@ -74,11 +74,41 @@ npm run test:e2e -- e2e/live.spec.ts --project=desktop
 ```
 
 Optional `URTH_E2E_EMAIL` and `URTH_E2E_PASSWORD` replace the bootstrap credentials.
-The test starts its own worker, keeps its one-time credential in a private
-temporary file, and stops that exact process in cleanup. It verifies login,
+The test starts its own worker, keeps its one-time credential and installation
+key in a private temporary directory, and stops that exact process in cleanup.
+The test enables the two loopback development flags. Use this test only against
+an isolated local development stack. It verifies login,
 project creation, runner authorization, a successful probe, authenticated logs,
 artifacts and axe checks across the main identity/infrastructure/monitoring
-routes. Failure traces can contain credentials: keep them private and remove
+routes. It also verifies token read/replay redaction, unauthorized token issuance,
+blocked-Worker next-claim refusal, stale block writes, unblock, grant removal
+and revoked-token enrollment refusal. Set `URTH_E2E_SLOW_PROBE_PORT` to a checked
+free loopback port to hold the first HTTP probe until the page shows a running
+execution and connected live-log stream. The test owns and closes that listener.
+Without this option, completion logs alone do not prove a live connection.
+
+The separate identity test verifies fresh email registration, development mail,
+one-time verification links, password reset and session revocation, fake-provider
+registration/sign-in, and real CLI device approval and project operations.
+Start the fake identity provider and configure the API as described in the
+[API guide](../cmd/api-server/README.md#identity-issuer-sign-in-mail-and-the-first-user).
+Build `urthctl`, then run against the same disposable stack:
+
+```sh
+URTH_LIVE_E2E=1 URTH_IDENTITY_LIVE_E2E=1 \
+URTH_E2E_BASE_URL=http://localhost:13007 \
+URTH_E2E_API_URL=http://127.0.0.1:18087 \
+URTH_E2E_MAIL_DIR=/path/to/task-owned/mail \
+URTH_E2E_IDP_URL=http://127.0.0.1:18090 \
+URTH_E2E_CLI=/path/to/built/urthctl \
+npm run test:e2e -- e2e/identity-live.spec.ts --project=desktop
+```
+
+The identity test stores CLI profiles in a private temporary directory and removes
+them in cleanup. Run the two live files with `--workers=1` when they share a stack.
+Set `PLAYWRIGHT_CHROMIUM_PATH` only if a preinstalled browser requires an explicit
+path, and record this override with validation evidence.
+Failure traces can contain credentials: keep them private and remove
 them after diagnosis. Use a separate database for `make audit/postgres`, which
 runs destructive integration fixtures.
 
