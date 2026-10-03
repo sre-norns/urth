@@ -11,7 +11,7 @@ close the worker identity, broker lifecycle, or final release gates.
 | System user session | Shared system authority; Urth does not mount system administration routes | Does not grant product account/project authority |
 | Machine enrollment token | Worker registration for its authorized Runner | Does not authorize user resource reads, run claims, or result writes |
 | Worker session | Its Runner/Worker claim and worker operations | Does not authorize user resource reads or result writes |
-| Run capability | Status and artifact reporting for the claimed Result | Stored executor, account, project, purpose, expiry and Result state |
+| Run capability | Status and artifact reporting for the claimed Result | Stored executor, dispatch, account, project, purpose, expiry and Result state |
 | NATS credential | Broker operations in its issued subject permissions | Separate broker policy; M9 worker/broker work validates its lifecycle |
 | Internal control context | Reconciler and controller operations | Constructed by server code; no bearer credential selects this authority |
 
@@ -21,8 +21,9 @@ run reporting to their separate credentials.
 
 ## Run capability contract
 
-The server issues an HS256 credential with key ID `run`, issuer `urth`, audience
-`urth-run`, Result UID, Runner UID, Worker UID, account, project, issued-at,
+The server issues an HS256 credential with a configured key ID (default `run`),
+issuer `urth`, audience `urth-run`, Result UID, Runner UID, Worker UID, dispatch ID,
+account, project, issued-at,
 not-before, expiry, and operation scopes `run.status` and `run.artifacts`.
 Validation requires those claims and compares the binding with the stored Result.
 The expiry cannot exceed the stored execution deadline plus the existing
@@ -33,6 +34,27 @@ terminal write prevents another status write. Completed runs can still receive
 final artifacts until the capability expires. Pending, errored and expired runs
 cannot receive artifacts. Artifact admission holds the Result row lock through
 insertion, so expiry cannot interleave between validation and storage.
+
+The API selects exactly the verification key named by `kid`. It accepts retained
+keys during a documented overlap and rejects removed, unknown or missing IDs.
+The [operator rotation procedure](../cmd/api-server/README.md#worker-and-run-signing-keys)
+pre-stages the new verification key before new issuance and retains the old key
+through the maximum issued run duration plus upload grace. Each replica uses an
+immutable startup snapshot.
+
+Artifact account, project, Result, executor and Scenario linkage comes from the
+stored Result. Worker-supplied `urth/` labels are discarded and server-owned
+labels are derived again. Other custom labels remain available. Classification
+labels follow the parsed artifact specification; the server does not inspect
+content to verify a Worker's data-class declaration.
+
+Reporting retries preserve the first committed report. A status retry with the
+original version returns 409; a terminal Result cannot be rewritten with a newer
+version. A repeated artifact name for the same Result returns 409 and keeps the
+original content. Clients can read the scoped Result or Artifact to resolve a
+lost response. This is duplicate rejection, not a cached replay of the original
+success response. Claim retries retain their existing same-Worker/same-dispatch
+behavior.
 
 Grant or Worker revocation does not cancel a previously issued run capability.
 Its limited reporting authority lasts until its expiry unless the Result enters
@@ -73,7 +95,13 @@ limiter storage. A storage error denies the request without creating a grant.
 - `pkg/urth/m9_run_capability_test.go`: required claim, algorithm, purpose,
   expiry and binding checks. These use known test keys; they do not demonstrate
   that an external caller can forge a signature.
-- `test/integration/m9_authorization_test.go`: real PostgreSQL and mounted HTTP
+- `pkg/urth/run_key_rotation_test.go`: exact key selection, overlap, retirement,
+  configuration validation and immutable service keys.
+- `test/integration/m9_authorization_test.go`: three API replicas share a real
+  PostgreSQL schema and exercise pre-staging, new issuance, old in-flight status
+  and artifact reporting, then key retirement. It also covers dispatch-change
+  denial, authoritative artifact labels and lost-response duplicate rejection.
+  Existing real PostgreSQL and mounted HTTP
   credential separation, terminal rewrite denial, wrong-Result denial, expired
   run denial, concurrent completion, artifact row locking, project item/catalogue
   isolation and OAuth boundaries.
@@ -87,6 +115,10 @@ Before the fixes, the terminal rewrite test changed an already completed Result,
 the direct-peer OAuth test bypassed the limit with changed forwarding headers,
 and an open log stream delivered data after project membership removal. The
 regression tests now require denial with a valid-operation positive control.
+Before the follow-up, changing the stored dispatch still allowed an artifact
+upload, and an uploaded Runner identity label retained the Worker-supplied value.
+Both focused regressions fail on the preceding implementation and pass with the
+new checks.
 
 Run `make audit/postgres store-url='<disposable PostgreSQL URL>'` with
 `GOWORK=off`. It runs module verification, vet, pinned static analysis and the

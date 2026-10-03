@@ -18,24 +18,30 @@ const (
 // The bearer may report that execution during its bounded upload grace period.
 type RunCapabilityClaims struct {
 	jwt.RegisteredClaims
-	RunnerID manifest.ResourceID `json:"runnerId"`
-	WorkerID manifest.ResourceID `json:"workerId"`
-	Account  manifest.ResourceID `json:"account,omitempty"`
-	Project  manifest.ResourceID `json:"project,omitempty"`
-	Scope    []string            `json:"scope"`
+	RunnerID   manifest.ResourceID `json:"runnerId"`
+	WorkerID   manifest.ResourceID `json:"workerId"`
+	DispatchID string              `json:"dispatchId"`
+	Account    manifest.ResourceID `json:"account,omitempty"`
+	Project    manifest.ResourceID `json:"project,omitempty"`
+	Scope      []string            `json:"scope"`
 }
 
-func parseRunCapability(key []byte, token APIToken, scope string) (RunCapabilityClaims, error) {
+func parseRunCapability(keys SigningKeys, token APIToken, scope string) (RunCapabilityClaims, error) {
 	var claims RunCapabilityClaims
 	parsed, err := jwt.ParseWithClaims(string(token), &claims, func(token *jwt.Token) (any, error) {
-		if token.Header["kid"] != "run" {
+		id, ok := token.Header["kid"].(string)
+		if !ok || id == "" {
+			return nil, bark.ErrResourceUnauthorized
+		}
+		key, ok := keys.runVerificationKey(id)
+		if !ok {
 			return nil, bark.ErrResourceUnauthorized
 		}
 		return key, nil
 	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
 		jwt.WithIssuer(TokenIssuer), jwt.WithAudience(runAudience),
 		jwt.WithExpirationRequired(), jwt.WithIssuedAt())
-	if err != nil || !parsed.Valid || claims.Subject == "" || claims.RunnerID == "" || claims.WorkerID == "" ||
+	if err != nil || !parsed.Valid || claims.Subject == "" || claims.RunnerID == "" || claims.WorkerID == "" || claims.DispatchID == "" ||
 		claims.IssuedAt == nil || claims.NotBefore == nil || !slices.Contains(claims.Scope, scope) {
 		return RunCapabilityClaims{}, bark.ErrResourceUnauthorized
 	}
@@ -44,7 +50,7 @@ func parseRunCapability(key []byte, token APIToken, scope string) (RunCapability
 
 func validateRunBinding(entry Result, claims RunCapabilityClaims) error {
 	if claims.Subject != string(entry.UID) || claims.RunnerID != entry.Status.Executor.RunnerID ||
-		claims.WorkerID != entry.Status.Executor.WorkerID || claims.Account != entry.Account || claims.Project != entry.Project ||
+		claims.WorkerID != entry.Status.Executor.WorkerID || claims.DispatchID != entry.Status.DispatchID || claims.Account != entry.Account || claims.Project != entry.Project ||
 		entry.Status.Deadline.IsZero() || claims.ExpiresAt.Time.After(entry.Status.Deadline.Add(artifactUploadGrace)) {
 		return bark.ErrResourceUnauthorized
 	}

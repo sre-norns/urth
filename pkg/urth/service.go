@@ -209,7 +209,7 @@ type ServiceOption func(*serviceImpl)
 // A service built without this generates ephemeral keys, which is fine for
 // tests and fatal for a multi-replica deployment -- see SigningKeysConfig.
 func WithSigningKeys(keys SigningKeys) ServiceOption {
-	return func(s *serviceImpl) { s.keys = keys }
+	return func(s *serviceImpl) { s.keys = keys.clone() }
 }
 
 // WithWorkerTransport supplies the provider that tells a registered worker
@@ -419,10 +419,9 @@ func (s *serviceImpl) Results(scenarioName manifest.ResourceName) RunResultAPI {
 		scheduler:  s.scheduler,
 		placement:  s.newPlacement(),
 
-		resultsSigningKey: s.keys.Run,
-		keys:              s.keys,
-		maxRunDuration:    s.maxRunDuration,
-		presence:          s.presence,
+		keys:           s.keys,
+		maxRunDuration: s.maxRunDuration,
+		presence:       s.presence,
 	}
 }
 
@@ -436,8 +435,7 @@ func (s *serviceImpl) Artifacts() ArtifactAPI {
 	return &artifactAPIImp{
 		store:      s.store,
 		identityDB: s.identityDB,
-
-		resultsSigningKey: s.keys.Run,
+		keys:       s.keys,
 	}
 }
 
@@ -659,8 +657,6 @@ type resultsAPIImpl struct {
 	scenarioID manifest.ResourceName
 	scheduler  Scheduler
 	placement  placement
-
-	resultsSigningKey []byte
 
 	keys           SigningKeys
 	maxRunDuration time.Duration
@@ -1221,6 +1217,9 @@ func (m *resultsAPIImpl) authorizeRun(_ context.Context, entry Result, deadline 
 		return AuthJobResponse{}, claimObsolete("result has no execution snapshot")
 	}
 
+	if entry.Status.DispatchID == "" {
+		return AuthJobResponse{}, claimObsolete("result has no claimed dispatch")
+	}
 	now := time.Now()
 
 	claims := &RunCapabilityClaims{
@@ -1231,10 +1230,11 @@ func (m *resultsAPIImpl) authorizeRun(_ context.Context, entry Result, deadline 
 		},
 		RunnerID: entry.Status.Executor.RunnerID, WorkerID: entry.Status.Executor.WorkerID,
 		Account: entry.Account, Project: entry.Project,
-		Scope: []string{runStatusScope, runArtifactScope},
+		DispatchID: entry.Status.DispatchID,
+		Scope:      []string{runStatusScope, runArtifactScope},
 	}
 	credential := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	credential.Header["kid"] = "run"
+	credential.Header["kid"] = m.keys.runKeyID()
 	signed, err := credential.SignedString(m.keys.Run)
 	if err != nil {
 		return AuthJobResponse{}, claimUnavailable("sign run capability", err)
@@ -1277,7 +1277,7 @@ func clampRunDuration(requested, maximum time.Duration) time.Duration {
 }
 
 func (m *resultsAPIImpl) validateUpdateRequest(_ context.Context, entry Result, bearerToken APIToken) error {
-	claims, err := parseRunCapability(m.resultsSigningKey, bearerToken, runStatusScope)
+	claims, err := parseRunCapability(m.keys, bearerToken, runStatusScope)
 	if err != nil {
 		return err
 	}
@@ -1946,10 +1946,9 @@ func (m *runnersAPIImpl) admitWorker(ctx context.Context, apiToken APIToken, new
 // / ArtifactsApis implementation
 // ------------------------------
 type artifactAPIImp struct {
+	keys       SigningKeys
 	store      resourceStore
 	identityDB *gorm.DB
-
-	resultsSigningKey []byte
 }
 
 func (m *artifactAPIImp) List(ctx context.Context, query manifest.SearchQuery) (results []manifest.ResourceManifest, page manifest.Page, err error) {
@@ -2021,7 +2020,20 @@ func artifactLabels(workerLabels manifest.Labels, spec ArtifactSpec, result Resu
 	// LabelResultJobState: string(result.Status.Status),
 	// LabelResultStatus:   string(result.Status.Result),
 
-	return manifest.MergeLabels(workerLabels, systemLabels)
+	// Only the server assigns the reserved namespace. In particular, a Worker
+	// must not invent executor, Scenario or security labels omitted above.
+	customLabels := manifest.Labels{}
+	for key, value := range workerLabels {
+		if !strings.HasPrefix(key, LabelsPrefix) {
+			customLabels[key] = value
+		}
+	}
+	snapshot := result.Spec.Execution
+	putLabel(systemLabels, LabelScenarioUID, string(snapshot.ScenarioUID))
+	putLabel(systemLabels, LabelScenarioName, string(snapshot.ScenarioName))
+	putLabel(systemLabels, LabelScenarioVersion, snapshot.ScenarioVersion.String())
+	putLabel(systemLabels, LabelScenarioKind, string(snapshot.Prob.Kind))
+	return manifest.MergeLabels(customLabels, systemLabels, executorLabels(result.Status.Executor))
 }
 
 func (m *artifactAPIImp) Create(ctx context.Context, apiToken APIToken, newEntry manifest.ResourceManifest) (manifest.ResourceManifest, error) {
@@ -2031,7 +2043,7 @@ func (m *artifactAPIImp) Create(ctx context.Context, apiToken APIToken, newEntry
 	// Serialize upload admission with Result status changes. The token still
 	// bounds authority after a worker, runner, or grant is revoked.
 	ctx = controlContext(ctx)
-	claims, err := parseRunCapability(m.resultsSigningKey, apiToken, runArtifactScope)
+	claims, err := parseRunCapability(m.keys, apiToken, runArtifactScope)
 	if err != nil {
 		return manifest.ResourceManifest{}, err
 	}
@@ -2058,7 +2070,7 @@ func (m *artifactAPIImp) Create(ctx context.Context, apiToken APIToken, newEntry
 
 func (m *artifactAPIImp) create(ctx context.Context, apiToken APIToken, newEntry manifest.ResourceManifest) (manifest.ResourceManifest, error) {
 	ctx = controlContext(ctx)
-	claims, err := parseRunCapability(m.resultsSigningKey, apiToken, runArtifactScope)
+	claims, err := parseRunCapability(m.keys, apiToken, runArtifactScope)
 	if err != nil {
 		return manifest.ResourceManifest{}, err
 	}

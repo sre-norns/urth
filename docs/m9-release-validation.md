@@ -88,8 +88,8 @@ requirements. Candidate source changes alone do not close those requirements.
    See the [quick start](../README.md#quick-start) and
    [Worker setup](../cmd/nats-worker/README.md#running-it).
 5. Configure independent persistent Worker-session and run-capability signing
-   secrets consistently across API replicas. Unset keys are ephemeral; no
-   multi-key rotation window is configured. See the
+   secrets consistently across API replicas. Unset keys are ephemeral. Configure
+   the run key ID and verification overlap before rotation. See the
    [signing settings](../cmd/api-server/README.md#worker-and-run-signing-keys).
    Keep API service NATS credentials and its account signing seed separate from
    Worker files. Configure the resolver and service permissions. Require TLS for

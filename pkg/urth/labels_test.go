@@ -220,3 +220,21 @@ func TestWorkerLabels(t *testing.T) {
 	require.Equal(t, "31574348-0b13-4a35-9c6b-1f0a2d4e5f60", labels[LabelRunnerUID])
 	require.NoError(t, labels.Validate())
 }
+
+func TestArtifactIdentityLabelsComeFromStoredRun(t *testing.T) {
+	run := Result{
+		ObjectMeta: manifest.ObjectMeta{UID: "actual-result", Name: "actual-run", Version: 2},
+		Spec:       ResultSpec{Execution: ExecutionSnapshot{ScenarioUID: "actual-scenario", ScenarioName: "actual-scenario-name", ScenarioVersion: 3}},
+		Status:     ResultStatus{Executor: ExecutorRef{RunnerID: "actual-runner", RunnerName: "runner-name", WorkerID: "actual-worker", WorkerName: "worker-name"}},
+	}
+	supplied := manifest.Labels{LabelResultUID: "forged", LabelRunnerUID: "forged", LabelWorkerUID: "forged", LabelScenarioUID: "forged", LabelResultStatus: "forged", "urth/security.trusted": "true", "team": "checkout"}
+	labels := artifactLabels(supplied, ArtifactSpec{}, run)
+	require.Equal(t, "actual-result", labels[LabelResultUID])
+	require.Equal(t, "actual-runner", labels[LabelRunnerUID])
+	require.Equal(t, "actual-worker", labels[LabelWorkerUID])
+	require.Equal(t, "actual-scenario", labels[LabelScenarioUID])
+	require.NotContains(t, labels, LabelResultStatus)
+	require.NotContains(t, labels, "urth/security.trusted")
+	require.Equal(t, "checkout", labels["team"])
+	require.Equal(t, "forged", supplied[LabelRunnerUID], "label derivation must not mutate input")
+}
