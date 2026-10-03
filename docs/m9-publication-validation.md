@@ -1,6 +1,6 @@
 # M9 prerelease publication validation
 
-M9 source acceptance and the first Urth prerelease delivery are complete.
+M9 source acceptance and corrected Urth prerelease delivery are complete.
 This record identifies published artifacts and their verification. It does not
 approve stable promotion or a production deployment. The
 [source acceptance record](m9-release-validation.md) retains the security,
@@ -53,12 +53,40 @@ workflow output conversion, which can also alter mixed-case prerelease tags.
 Do not move or replace `v0.1.0-rc.1`; it remains the record of the first trial.
 Evidence is retained in `~/workspace/m9-review/prerelease-v0.1.0-rc.1/`.
 
-## Corrected candidate gate
+## Corrected candidate verified
 
-The corrected source at `1843f9a` is ready for a new prerelease. Publication
-requires maintainer authorization. After publication, verify exact timestamp
-strings as well as versions, revisions, checksums and both image platforms.
-Keep the first trial intact and record the new tag, run and digest evidence.
+The maintainer explicitly authorizes
+[`v0.1.0-rc.2`](https://github.com/sre-norns/urth/releases/tag/v0.1.0-rc.2)
+at `1843f9a8943bf091ddbe0970b90588713cd989bc`.
+[Release run 37126345015](https://github.com/sre-norns/urth/actions/runs/37126345015)
+passes every publication gate. The release contains nine archives, the release
+manifest, image digest records and checksums. It is a published prerelease.
+
+Independent verification repeats the archive and registry checks above on the
+newly downloaded assets: nine archives, twelve asset sizes and SHA-256 digests,
+three native help commands, four image indexes and eight platform configurations
+pass. Image versions and revisions match the archive records exactly. Every
+creation label is now exactly `2026-10-03T13:18:53Z`, matching the archive
+record without case normalization. The timestamp formatting defect is closed.
+
+The published image index digests are:
+
+| Image | Multi-platform digest |
+| --- | --- |
+| `ghcr.io/sre-norns/urth-api-server` | `sha256:511bd032d812c82069126d44c5d94545c3d0fd9b7bfe3958225be030350e94c5` |
+| `ghcr.io/sre-norns/urth-website` | `sha256:ff694cead41ab3dc76a79860059365892b9999d9006b198dfe0f33949a243021` |
+| `ghcr.io/sre-norns/urth-worker` | `sha256:af60b9223a30b6230ec122e48fc2b76c4565f8d1dd80b186a762917d97109f69` |
+| `ghcr.io/sre-norns/urthctl` | `sha256:8947ed5c95c723e4f18d3b3a95e784f3abad6111ff999cd50c89819d37fdcdec` |
+
+All four images retain non-root users, and the Worker retains the native
+profile. Registry inspection uses authenticated access. Stable image aliases
+remain absent; the first candidate tag and assets remain unchanged. Evidence
+is retained in `~/workspace/m9-review/prerelease-v0.1.0-rc.2/`.
+
+This closes the corrected prerelease publication gate. These checks validate
+published artifacts and metadata; they do not claim a new deployed full-stack
+run or execution of arm64 and macOS binaries. The earlier source and live-stack
+records keep their original commit attribution.
 
 ## Remaining decisions
 
