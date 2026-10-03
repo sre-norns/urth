@@ -11,6 +11,37 @@ Shared context: [`CONTEXT.md`](../CONTEXT.md).
 | Likely conflicts | 004, 005, 006, 009 |
 | Owner | Unclaimed |
 
+## Current evidence and remaining criteria (2026-10-03)
+
+Use the existing PostgreSQL/HTTP/JetStream harness. Status remains open until the
+composed revocation, expiry and capability matrix has evidence.
+
+| Classification | Evidence / remaining requirement |
+| --- | --- |
+| Completed regressions | `test/integration/tenancy_test.go` covers project-grant placement, revocation before claim, scope/cursor isolation, same-name Runners in separate accounts and grant mutation authority. |
+| Completed bounded-run contract | `TestTenancyRevocationDoesNotInterruptClaimedRun` proves grant revocation denies new work while an already claimed Result can complete with its separate capability. |
+| Completed log coverage | `test/integration/runlogs_test.go` covers project-session authorization, authenticated streaming and stored log artifacts. |
+| Superseded | A rotated enrollment generation. Shared token issue/revoke replaces that design (task 005). |
+| Superseded assumption | Revocation always stops every action in flight immediately. New claims, broker access and claimed-run reporting have distinct credential lifetimes. Grant revocation or blocking does not cancel an already claimed execution. |
+| Outstanding | Token revocation during enrollment, session expiry during execution, Worker deletion/blocking, existing broker connection expiry/revocation, wrong-Result/wrong-Runner capabilities and lease expiry. |
+
+Worker deletion must have explicit reporting evidence. The historical proposed
+criterion below says it refuses status uploads, but it is not established by the
+grant-revocation test. Apply ADR 0002's bounded run-capability contract and record
+the selected behavior before closing this criterion. Each negative test must
+attempt the protected operation and assert denial with a positive control.
+The [release checklist](../../m9-release-validation.md) keeps the release gate open.
+
+## M9 candidate evidence under validation
+
+Focused Worker proof/blocklist tests pass in the implementation candidate.
+Production-path composed revocation, expiry and reporting tests remain required.
+Worker deletion reporting must follow the selected bounded run-capability
+contract; do not infer it from the original blanket immediate-denial criterion.
+No acceptance criterion is closed by this candidate note.
+
+## Historical review baseline and requirements under reconciliation
+
 ## Why This Matters
 
 Split out of [task 011](011-nats-worker-failure-integration-tests.md) on

@@ -17,7 +17,7 @@ runners and project-owned scenarios/results/artifacts. Lists are cursor-only.
 See [M4 configuration and API notes](../../docs/m4-backend-tenancy.md) for routes,
 runner grants, token issuance and NATS signing credentials. The local Makefile
 explicitly enables an unauthenticated development broker. Production requires
-restricted NATS worker credentials. M6/M7 bring the CLI login and websites onto
+restricted NATS worker credentials. The CLI and website use
 these APIs.
 
 ### Identity: issuer, sign-in, mail and the first user
@@ -53,7 +53,7 @@ away from its Runner, because the Runner's name is its queue address. Suspending
 runner's identity through them stays allowed.
 
 **Local development.** `make run-api-server` sets the development values: the
-issuer and redirect URI are `website-experiment`'s origin (`http://localhost:3001`),
+issuer and redirect URI are `website/`'s origin (`http://localhost:3001`),
 because that dev server fronts the API; mail goes to `.dev/mail`; and it
 bootstraps `admin@urth.example` (password `urth-dev-password`) as an account
 owner. Sign-in forms are then accepted only through that origin, not directly on
@@ -71,6 +71,42 @@ curl -X POST http://127.0.0.1:18090/control/next -H 'Content-Type: application/j
 not sign in: it is mailed a pointer to registration. Start from **Create
 account → Continue with OpenID Connect** instead, which confirms the account by
 email; later sign-ins through the provider go straight in.
+
+## Trusted proxies and OAuth limits
+
+The M9 authorization candidate ignores forwarded client addresses by default.
+The shared database-backed OAuth limiter then uses the direct peer address.
+Clients behind one unconfigured reverse proxy share that address's limit.
+
+Set `URTH_TRUSTED_PROXIES` to a comma-separated list of controlled proxy IP
+addresses or CIDRs. The equivalent flag is repeatable `--http.trusted-proxy`.
+Trust only the proxies that you operate. Each proxy must replace inbound
+forwarding headers before it forwards a request. Do not trust the entire network
+to obtain per-client rate limits. Invalid entries prevent startup.
+
+The limiter also checks browser Origin and fails closed when its backing store
+fails. Mounted Origin/proxy/failure regressions belong to the M9 authorization
+candidate. Final test evidence, merge and release remain required.
+
+## Worker and run signing keys
+
+Configure separate `URTH_SESSION_SIGNING_KEY` and `URTH_RUN_SIGNING_KEY` secrets
+for a persistent or replicated service. The corresponding flags are
+`--signing.session-key` and `--signing.run-key`. Load them from the deployment's
+secret configuration; keep them out of command arguments, manifests and logs.
+Use independent cryptographically random values with at least 32 bytes of
+entropy. Every API replica needs the same values for its credential tier.
+
+Unset keys are generated in memory. This supports local development, but issued
+Worker sessions and run capabilities then fail after restart or on another API
+replica. Changing a key invalidates credentials signed by the previous key;
+there is no multi-key rotation window in this configuration. Shared machine
+identity tokens have their own identity storage and lifecycle. The historical
+`Enrolment` signing tier does not replace shared machine-token issuance.
+
+Key entropy enforcement, rotation and the complete run-capability contract are
+security review criteria. See [task 006](../../docs/review-backlog/tasks/006-harden-run-capabilities.md)
+and the [release checklist](../../docs/m9-release-validation.md).
 
 ## The dispatch outbox
 
@@ -524,13 +560,14 @@ Things worth knowing:
   an authenticated claim (`AuthJobResponse.Prob`). `GET /results` and
   `GET /results/{id}` expose `probKind` and the `urth/scenario.*` labels, not the
   script. There is deliberately no operator endpoint that returns it yet; adding
-  one needs the operator authentication of
+  one requires an explicit product access and redaction contract. Enrollment token
+  lifecycle is separate; see
   [task 005](../../docs/review-backlog/tasks/005-secure-runner-enrollment.md).
 - **The labels describe the snapshot.** `urth/scenario.version` on a `Result`
   names the revision that run actually executes, so "which runs used the bad
   script" stays a label query after the scenario has moved on.
-- **A run with no snapshot fails closed.** Rows written before this column
-  existed read back as NULL. Such a run is refused at claim, its dispatch is
+- **A run with no snapshot fails closed.** A missing execution snapshot is
+  invalid. Such a run is refused at claim, its dispatch is
   acknowledged rather than redelivered forever, and the `Result` becomes
   `errored` and labelled `urth/result.unschedulable=missing-execution-snapshot`.
   It is never repaired from the current `Scenario`: that would run something
@@ -792,7 +829,7 @@ queued" is always exact; only "for which of these two hundred runners" degrades.
 | NATS storage | container filesystem | persistent volumes, one per server |
 | Servers | one, `-js` | three, clustered across failure domains |
 | TLS | off | required, both client and route connections |
-| Auth | none | credentials file per participant (`--nats.creds-file`) |
+| Auth | explicit `--nats.allow-insecure-workers` | configured service credentials and restricted Worker JWTs |
 | Postgres | container | managed or replicated, with backups |
 
 A single non-replicated NATS server is fine for local development and tests, and
@@ -801,8 +838,34 @@ not be described as such: it holds every queued job on one disk, and losing that
 disk loses the jobs that had been accepted but not yet claimed. Three replicas on
 persistent volumes is the production shape ADR 0004 §11 requires.
 
-Urth does not yet issue NATS identities — ADR 0004 leaves the choice between Auth
-Callout and minted NKey/JWT open ([task
-004](../../docs/review-backlog/tasks/004-runner-scoped-nats-credentials.md)) — so
-until then `--nats.creds-file` points at credentials an operator provisioned, and
-the same file is handed to workers through the registration response.
+Urth issues Runner-scoped NATS user JWTs from the account signing seed at
+`--nats.worker-account-seed-file`. The API service connects with its own
+`--nats.creds-file`; that local path is not sent to Workers. Workers receive
+short-lived decorated JWT/NKey credentials and bind an existing Runner consumer.
+The signing seed stays on the API service host. Restrict both files to the
+service user and keep them outside resource manifests and logs.
+
+Configure the broker's operator/account resolver to accept the signing account.
+Configure service permissions for provisioning, relay publication, log subscription
+and presence ingestion. The M9 candidate accepts three distinct service
+identities: `--nats.creds-file` for provisioning,
+`--nats.publisher-creds-file` for the relay publisher and
+`--nats.observer-creds-file` for logs, presence and advisories. The control loops
+remain in the composed API process. Validate each role's permissions separately.
+Require broker client and cluster-route TLS in the production deployment.
+The M9 candidate requires authenticated `tls://` broker URLs in production. Use
+`--nats.tlsca-file` for a private CA and both `--nats.tls-cert-file` and
+`--nats.tls-key-file` for mutual TLS. `--nats.worker-credential-ttl` defaults to
+five minutes and bounds broker revocation delay; it cannot exceed five minutes.
+Issued Worker broker authority is also capped by its session expiry. Enrollment
+or refresh denial stops new authority; existing broker access ends by credential
+expiry. Full live expiry and renewal evidence remains a release gate.
+
+The local Makefile explicitly enables `--nats.allow-insecure-workers` and
+`--nats.allow-insecure` for its loopback broker. This permits no remote insecure
+broker. These M9 configuration changes require the implementation PR before this
+documentation candidate is released.
+
+The [M9 evidence matrix](../../docs/m9-release-validation.md) records which
+permission, expiry, renewal and revocation checks remain open. A production
+configuration recommendation is not evidence that all checks pass.

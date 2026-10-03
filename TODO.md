@@ -3,23 +3,22 @@
 
 ---
 
-## Where things stand (end of UI/admin session)
+## Current status and ownership
 
-See `CLAUDE.md` first -- it holds the traps that cost the most time.
+M8 canonical API and client adoption is merged. Both products use published
+wyrd `v0.7.0`, identity `v0.7.2` and components `0.5.0`. The
+[M9 evidence matrix](docs/m9-release-validation.md) records security controls,
+remaining criteria and release checks. Tasks 004/005/009/024 stay open until
+their current criteria have evidence. Earlier PR and session notes do not define
+current release status.
 
-**Open PR:** #12 `feat/results-pages` -> main (Results list + standalone run
-detail). Was stacked on #11; #11 is merged and #12 has been retargeted to main,
-so it should now get real CI. Confirm the checks are green before merging --
-while it was stacked GitHub reported "mergeable" with **zero checks run**, which
-looks deceptively like passing.
+The maintainer assigns the outstanding feature work below. The scheduler remains
+required for v1.0 and is outside M9. Prober defaults (task 017), retention,
+dashboards and other feature items remain separate work. M9 does not close them.
 
-**Also open:** dependabot #2 (Go module bumps, 12 updates). Untouched.
+### Outstanding feature work
 
-### Next, in the order I would take them
-
-1. **Verify #12's CI and merge.** Nothing depends on it, but it is finished work
-   sitting unmerged.
-2. **A scheduler that actually schedules.** Still the largest gap between the
+1. **A scheduler that actually schedules.** Still the largest gap between the
    README and reality: scenario `schedule` fields are stored and validated, and
    `nextScheduledRunTime` is computed and displayed, but nothing triggers a run.
    Every run to date is manual. Required for v1.0.
@@ -62,16 +61,16 @@ looks deceptively like passing.
    pending run whose dispatch outlived job expiry is expired rather than
    republished. §7 draws the boundary -- the reconciler terminates attempts, the
    scheduler decides whether another one happens.
-3. **Stop offering SQLite as the default.** wyrd v0.3.0 fixed the `idx_name`
+2. **Stop offering SQLite as the default.** wyrd v0.3.0 fixed the `idx_name`
    collision, so the schema now migrates on SQLite and a run is dispatched -- but
    `type:TIMESTAMPTZ` columns come back as strings the driver cannot scan, so the
    claim, heartbeats and listing runs fail. Change the default so the supported
    path is the obvious one.
-4. **Retention acting on data classification.** The labels exist and are queried;
+3. **Retention acting on data classification.** The labels exist and are queried;
    nothing expires. `secret-bearing` artifacts should have a shorter default
    expiry and restricted download. This is the other half of the artifact
    classification work.
-5. **Dashboards.** The nav item is disabled and has never led anywhere -- the
+4. **Dashboards.** The nav item is disabled and has never led anywhere -- the
    same state Results was in before this session.
 
 ### Carrying known debt
@@ -99,11 +98,9 @@ looks deceptively like passing.
 - M6: `urthctl auth login`, profiles and `context` replaced the flag-only
   `--token/--account/--project` and the hand-run device grant. Found while
   running it against a live stack, not fixed there:
-  - Fixed in M6.4: responses say `apiVersion: urth.sre-norns.com/v1` and
-    `get -o yaml|json | apply -` round-trips (tested end to end). `v1` is still
-    accepted, with a warning from urthctl; drop it a release after M6 -- the Web UI
-    still sends it (`website/src/monitoring/Scenarios.tsx`,
-    `website/src/identity/config.ts`), and its tests' fixtures say it.
+  - M8 uses `apiVersion: urth.sre-norns.com/v1` across HTTP, CLI and UI.
+    Legacy `v1` and absent groups are rejected. Read/apply round trips have
+    integration coverage.
   - `DELETE /projects/:id/runner-authorizations/:resource` takes the grant's
     UID where GET and PUT on the same route take its name. urthctl sends the
     UID; the route should take one or the other.
@@ -199,8 +196,7 @@ looks deceptively like passing.
    `online`/`offline`/`api-unreachable`/`nats-unreachable`/`unknown`, so a half-connected
    worker is diagnosed rather than merely marked absent. Closes ADR 0003 §7's liveness
    clause. See `cmd/api-server/README.md`.
-[] Worker detail page — the per-worker breakdown of both signals wants more room than a
-   list row. Filed as review-backlog task 023.
+[X] Worker detail page. Review-backlog task 023 records implementation and validation.
 [X] Capacity-aware placement (review-backlog task 014). Placement sorted eligible runners
    by UID and took the first, so a runner won on its identifier and kept winning however
    far behind it fell. It now picks by spare capacity — online workers minus queued and
@@ -328,10 +324,10 @@ looks deceptively like passing.
    before the broker is dialled, existing-stream drift reconciled or reported,
    and Prometheus metrics on `/metrics` for stream, outbox and dead-letter state.
    See [task 013](docs/review-backlog/tasks/013-bound-and-observe-jetstream.md).
-[] Live run logs return 406 in a browser: `EventSource` sends
-   `Accept: text/event-stream` and `bark.ContentTypeAPI()` on the `/api/v1` group
-   refuses it before the handler runs. See
-   [task 019](docs/review-backlog/tasks/019-serve-run-log-stream.md).
+[X] Authenticated live run logs stream through the current `/v1` project routes.
+   `test/integration/runlogs_test.go` covers bearer authentication and stored logs.
+   Task 019 retains the original failure record and still requires reconciliation
+   of its full acceptance criteria before its tracker status changes.
 [X] SQLite AutoMigrate failed with `index idx_name already exists`: wyrd's
    `ObjectMeta.Name` hardcoded `gorm:"index:idx_name"` and every model embeds it.
    Fixed in wyrd v0.3.0 (indexes are named per table). Correction to what was
@@ -348,13 +344,14 @@ looks deceptively like passing.
 [] Move `script` out of `CreateScenario` => `Scenario`
 [] Use proper types for Script marshaling
 [] runner/log.go must implement `go/logger` interface!
-## NATS migration (ADR 0004)
+## NATS hardening (ADR 0004)
 
 `cmd/nats-worker`, `pkg/natsq`, per-runner JetStream consumers, worker sessions, the
 authenticated claim, live run logs, the transactional dispatch outbox, and the
-dispatch/execution reconciler have landed as a development slice.
+dispatch/execution reconciler, Runner-scoped JWTs and shared machine-token
+enrollment are implemented. Full production security validation remains open.
 
-The detailed NATS review and migration work is tracked in
+The detailed NATS review and hardening work is tracked in
 [`docs/review-backlog/`](docs/review-backlog/README.md). Those task files are the source of
 truth for outbox/reconciliation, claim outcomes, NATS credentials, enrollment and run
 capabilities, immutable execution snapshots, Runner policy and blocklists, JetStream ACKs,

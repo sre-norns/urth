@@ -1,4 +1,4 @@
-# 005: Secure Runner Enrollment Issuance and Rotation
+# 005: Verify Shared Machine-Token Enrollment Lifecycle
 
 Shared context: [`CONTEXT.md`](../CONTEXT.md).
 
@@ -10,6 +10,32 @@ Shared context: [`CONTEXT.md`](../CONTEXT.md).
 | Depends on | — |
 | Likely conflicts | 004, 006, 009 |
 | Owner | Unclaimed |
+
+## Current evidence and remaining criteria (2026-10-03)
+
+Shared identity supersedes the proposed standalone enrollment store. Status stays
+open for lifecycle verification; do not implement a second token store or a
+fallback operator authorizer.
+
+| Classification | Evidence / remaining requirement |
+| --- | --- |
+| Completed mechanism | `pkg/urth/runner_identity.go` creates the paired Runner machine identity transactionally. `machineToken` uses shared `MachineTokens().Create`; `machineRunner` validates through shared identity. |
+| Completed contract | The canonical shared token endpoint returns an operation-only secret. `test/integration/m8_contract_test.go` covers replay redaction. List/Get resources do not return a token secret. |
+| Superseded | Public `GET /auth/runners/:id`, a global enrollment JWT, the separate salted verifier/generation store, automatic token-on-Runner-create and a provisional `OperatorAuthorizer`. The mounted API uses shared authenticated identity. |
+| Superseded | Rotation as one generation switch. Shared tokens are individually issued and revoked; more than one token can be active. Issue a replacement, update installations, then revoke the old token. |
+| Outstanding | Prove unauthorized token issuance denial on the mounted router, immediate old-token enrollment denial after revocation, fresh-token success, Runner disable/delete and identity suspension. |
+| Outstanding | Record shared token storage protection, secret exclusion and matching CLI/UI issue/revoke workflows with exact tests. |
+
+Revoking enrollment prevents new enrollment or refresh with that token. It does
+not by itself cancel already issued Worker sessions or claimed run capabilities.
+Use Runner disable, Worker deletion or blocklisting for new-claim denial, subject
+to the documented current-state checks. Prove each operation independently.
+
+Current completion requires the remaining checks above. The original
+single-generation rotation criteria below are historical requirements, not an
+instruction to add a competing credential mechanism.
+
+## Historical review baseline and superseded design
 
 ## Why This Matters
 

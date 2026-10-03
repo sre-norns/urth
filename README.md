@@ -68,8 +68,9 @@ DNS and ICMP semantics should be familiar if you already run it.
 
 ---
 
-Every API route is authenticated and scoped to an account or project: users sign in
-through the shared identity service (password, email links, Google/GitHub/OIDC), and
+Product resource routes require authentication and account or project authority.
+Users sign in through the shared identity service (password, email links,
+Google/GitHub/OIDC), and
 runners use revocable machine tokens. See the [M4 notes](docs/m4-backend-tenancy.md)
 and the [api-server identity settings](cmd/api-server/README.md#identity-issuer-sign-in-mail-and-the-first-user).
 `urthctl auth login` signs the CLI in through the same service (the OAuth device grant).
@@ -221,11 +222,10 @@ are recorded in [the architecture decision records](./docs/README.md).
 > - **There is no scheduling loop yet.** Scenario `schedule` fields are stored and
 >   validated, but runs must currently be triggered manually via the API, UI, or
 >   `urthctl`.
-> - **Runner-level NATS queues are a development implementation.** The topology, the
->   authenticated claim, and the transactional dispatch outbox exist, but reconciliation,
->   scoped NATS credentials, complete Runner policy, and failure workflows are not
->   finished. Track the ordered work in the
->   [NATS review backlog](./docs/review-backlog/README.md).
+> - **NATS hardening remains a release gate.** The transactional dispatch outbox,
+>   reconciler, dead-letter workflow and Runner-scoped NATS JWTs exist. Credential
+>   lifetime, revocation, TLS and complete policy validation require evidence from
+>   the [review backlog](./docs/review-backlog/README.md).
 > - **Authentication is not yet reviewed for production.** Users sign in through the
 >   shared identity service and runner tokens are issued only to account administrators
 >   (M4, M5), but the combined auth surface has not had its security review (M9). Run
@@ -235,35 +235,44 @@ are recorded in [the architecture decision records](./docs/README.md).
 
 ### Worker authentication model
 
-The intended model is:
+The credential stages for the M9 candidate are:
 
-1. An operator creates a **Runner** resource. Its creation mints the initial Runner
-   enrollment credential.
-2. A Worker presents that credential to register a **WorkerInstance**. The API checks
-   the Runner's policy and returns the instance identity with a short-lived Worker
-   session.
-3. The WorkerInstance joins that Runner's logical queue and waits.
-4. Before executing a job, it authenticates the claim with its Worker session. The API
-   checks current Runner and Worker state, blocklist, channel policy, and concrete stored
-   Worker capabilities, then atomically assigns the pending Result.
-5. The API issues a short-lived capability token scoped to that Result. The worker uses
-   it only to post the Result's status and Artifacts.
+1. An account administrator creates a **Runner** with its shared machine identity.
+2. The administrator issues a shared machine token through the identity service.
+   Runner creation does not return an enrollment token. Ordinary resource reads
+   never return token secrets.
+3. A Worker uses the machine token and proves possession of its persistent
+   installation key with a server challenge. It receives a **WorkerInstance**,
+   short-lived Worker session and restricted NATS credentials.
+4. The Worker presents its session on each claim. The API checks current Runner,
+   Worker and project grant state before it assigns the pending Result.
+5. The API issues a capability for that execution. It permits only the Result
+   status and Artifact writes for the claimed run, within its bounded lifetime.
 
-Enrollment grants permission to join one Runner pool; a Worker session grants permission
-to request job claims; a run capability grants permission to report one execution. The
-server controls each lifetime, with the run token bounded by the Scenario's maximum
-duration plus a small upload margin. [ADR 0002](./docs/adr/0002-worker-authentication.md)
-records the trust model, revocation semantics, and known implementation gaps.
+Shared machine tokens authorize enrollment. Worker sessions authorize claims.
+NATS credentials authorize broker operations. Run capabilities authorize one
+execution's reporting. Revoking a project grant prevents new claims; an already
+claimed run retains its bounded reporting authority.
 
-The development implementation has the staged Worker session and atomic claim, but the
-blocklist, full channel policy, enrollment boundary, and scoped NATS authority remain in
-the [review backlog](./docs/review-backlog/README.md). This description is the target
-contract, not a claim that every check is already enforced.
+The [M9 evidence matrix](docs/m9-release-validation.md) distinguishes implemented
+controls from outstanding security and release checks. The original enrollment
+store proposal is superseded by shared identity. The M9 candidate adds stable
+Worker proof and blocklists; full production validation and merge remain open
+in the
+[review backlog](./docs/review-backlog/README.md).
 
 The channel and executor relationship is defined by
 [ADR 0003](./docs/adr/0003-runner-worker-model.md).
 
 ---
+
+## Fresh installation
+
+Use a new PostgreSQL database and a new NATS store. Deploy the API, worker, CLI
+and website from the same validated release set. No earlier resource format or
+existing-resource migration is supported. Keep old ADR migration discussions as
+historical design records. Complete the
+[release checklist](docs/m9-release-validation.md) before release.
 
 ## Quick start
 
@@ -312,9 +321,18 @@ urthctl apply ./examples/scenario.tcp.yaml
 urthctl get scenarios
 
 # 6. Issue the runner a token, then start a worker with it
-export RUNNER_TOKEN=$(urthctl runners token example-runner-yaml)
-make run-nats-worker
+RUNNER_TOKEN_FILE=$(mktemp)
+chmod 600 "$RUNNER_TOKEN_FILE"
+urthctl runners token example-runner-yaml > "$RUNNER_TOKEN_FILE"
+go run ./cmd/nats-worker --token-file "$RUNNER_TOKEN_FILE" \
+  --allow-insecure-api --nats.allow-insecure
 ```
+
+The two insecure flags apply only to loopback development endpoints. Production
+uses HTTPS and authenticated NATS over TLS. The Worker stores its installation
+key at `$XDG_CONFIG_HOME/urth/worker.key` (or the platform configuration directory
+when XDG is unset). Use `--identity-key-file` to give each installation its own
+private persistent key.
 
 `apply` is quiet on success. Start a run now rather than waiting for the schedule, then
 inspect its result:
@@ -340,7 +358,7 @@ and its clones ([goreman](https://github.com/mattn/goreman),
 [honcho](https://github.com/nickstenning/honcho)):
 
 ```bash
-export RUNNER_TOKEN=...   # from step 6; the worker needs it
+export RUNNER_TOKEN=...   # local development only; the Makefile passes a process argument
 goreman start
 ```
 

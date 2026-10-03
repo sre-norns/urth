@@ -14,7 +14,10 @@ of ADRs 0002–0004. In particular, its own migration notes acknowledge missing
 outbox, reconciliation, broker authorization, blocklisting, and dead-letter work.
 
 Line numbers in tasks refer to that baseline. They are evidence anchors, not
-authority: revalidate them after merging earlier tasks.
+authority: revalidate them after merging earlier tasks. Current evidence appears
+in the M9 headers for tasks 004/005/009/024. Shared machine-token enrollment and
+Runner-scoped NATS JWTs supersede parts of the original diagnosis. Use fresh
+PostgreSQL and NATS storage; old migration discussions are historical.
 
 ## Product and Execution Flow
 
@@ -48,11 +51,12 @@ validation or ownership.
 - **Run capability**: short-lived authority to report one claimed Result and its
   Artifacts; it is not a general Worker or Runner credential.
 - **Runner queue**: one exact subject plus one durable pull consumer shared by all
-  Workers enrolled in that Runner. Addressed by the Runner's immutable *name* per
-  [ADR 0007](../adr/0007-runner-queue-addressing.md), so it outlives any one
-  generation of the resource; the code is still UID-addressed
-  (`urth.v1.jobs.<runner-uid>`) until
-  [task 021](tasks/021-name-keyed-runner-queues.md) lands.
+  Workers enrolled in that Runner. The current address is
+  `urth.v2.jobs.<account-uid>.<encoded-runner-name>` per
+  [ADR 0007](../adr/0007-runner-queue-addressing.md). Account and immutable name
+  determine the queue; Runner UID determines execution entitlement. Task 021
+  retains its historical review; its full acceptance criteria need separate
+  reconciliation before its tracker status changes.
 - **Runner generation**: one lifetime of a Runner resource — same name, new UID after
   a delete and re-apply. A new generation inherits its predecessor's *queue*, never
   its runs: entitlement is keyed by UID in Postgres.
@@ -139,7 +143,8 @@ silently weaken them.
   is a pre-existing misnomer: it holds *probe execution*, not the Runner
   resource, which is why `pkg/worker` sits awkwardly beside it. Renaming it is
   not worth the churn; knowing it is.
-- `pkg/redqueue/` and `cmd/asynq-runner/`: migration-only legacy transport.
+- `pkg/redqueue/` and `cmd/asynq-runner/`: retired historical transport; these
+  paths are not part of the current deployment.
 - `website/`: resource UI and live run-log client.
 - `cmd/urthctl/`: kubectl-shaped CLI over every resource, and a co-equal operator
   surface with the Web UI rather than a convenience wrapper.
