@@ -109,6 +109,12 @@ test('login → create project → grant runner → execute scenario → logs an
     await page.setViewportSize({width: 390, height: 844})
     await page.screenshot({path: info.outputPath('live-run-narrow.png'), fullPage: true})
     await page.setViewportSize({width: 1280, height: 720})
+    // Executor labels are written only by a real claim; the runner's run list selects on them.
+    await page.goto(`${base}/runners/${runnerID}`)
+    const runnerRuns = page.getByRole('table', {name: 'Runs on this runner'})
+    await expect(runnerRuns.getByRole('link', {name: runURL.split('/').at(-1)!, exact: true})).toBeVisible()
+    await expect(runnerRuns.getByText(workerName, {exact: true})).toBeVisible()
+    await page.goto(runURL)
     await page.getByRole('link', {name: 'Run artifacts', exact: true}).click()
     await expect(page.getByRole('table')).toBeVisible()
     const artifactURL = await page.locator('tbody a').first().getAttribute('href')

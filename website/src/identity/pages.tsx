@@ -17,6 +17,7 @@ import type {ReactNode} from 'react'
 import {Link, useNavigate, useParams} from 'react-router-dom'
 import {z} from 'zod'
 import {page} from '../api/models'
+import {RunnerRuns} from '../monitoring/Runs'
 import {resourcePath, useResource} from '../api/queries'
 import {projectPath} from './links'
 
@@ -154,6 +155,7 @@ export function ProjectRunnerPage() {
   return (
     <ProjectFrame projectId={projectId}>
       <ProjectMachineDetail projectId={projectId} machineId={runnerId} />
+      <RunnerRuns projectId={projectId} runnerId={runnerId} />
     </ProjectFrame>
   )
 }
