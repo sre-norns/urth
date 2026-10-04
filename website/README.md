@@ -29,7 +29,10 @@ project on its scenarios and shows their count, read from the scenario list's
 advisory total; a non-member's project opens on its access. Runner identity URLs use IDs; product runner
 and run detail endpoints use names. Resource edits retain the ETag read when
 opening the form. A stale edit preserves the draft and requires explicit review
-of the latest document before retrying. Worker pause remains unversioned.
+of the latest document before retrying. Worker pause remains unversioned. A project's runner page
+lists the project's runs placed on that runner, selected by the
+`urth/runner.uid` label: placement writes it, so queued runs appear before a
+worker claims them; unschedulable runs have no runner and do not.
 
 Scenario forms accept probe configuration, labels and placement requirements as
 YAML. Probe configuration supports the complete server schema, including script

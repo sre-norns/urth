@@ -32,7 +32,7 @@ test.beforeEach(async ({page}) => {
     if (path.endsWith('/results/run-1')) return json(run)
     if (path.endsWith('/results')) return json(pageOf([run]))
     if (path.endsWith('/logs')) return route.fulfill({contentType: 'text/event-stream', body: 'data: authenticated browser log\n\nevent: end\ndata: completed\n\n'})
-    if (path.endsWith('/artifacts')) return json(pageOf([{apiVersion: 'urth.sre-norns.com/v1', kind: 'artifacts', metadata: {...metadata, name: 'trace-1'}, spec: {dataClass: 'secret-bearing'}}]))
+    if (path.endsWith('/artifacts')) return json(pageOf([{apiVersion: 'urth.sre-norns.com/v1', kind: 'artifacts', metadata: {...metadata, name: 'trace-1', labels: {'urth/result.name': 'run-1'}}, spec: {dataClass: 'secret-bearing'}}]))
     if (path.endsWith('/artifacts/trace-1')) return json({apiVersion: 'urth.sre-norns.com/v1', kind: 'artifacts', metadata: {...metadata, name: 'trace-1'}, spec: {dataClass: 'secret-bearing'}})
     if (path.endsWith('/artifacts/trace-1/content')) return route.fulfill({contentType: 'text/plain', body: 'sensitive trace'})
     if (path.endsWith('/dispatch-failures/failure-1')) return json({apiVersion: 'urth.sre-norns.com/v1', kind: 'dispatch-failures', metadata: {...metadata, name: 'failure-1'}, spec: {reason: 'delivery-exhausted', occurredAt: stamp, resultUID: 'run-1'}, status: {resolved: false}})
@@ -90,6 +90,45 @@ test('run detail links its scenario and artifacts and offers no reconnect once f
   await page.goBack()
   await page.locator('.page-heading').getByRole('link', {name: 'checkout-health', exact: true}).click()
   await expect(page).toHaveURL(`${base}/scenarios/checkout-health`)
+})
+
+test('run and artifact lists link to the scenario and the run', async ({page}) => {
+  await page.goto(`${base}/runs`)
+  await page.getByRole('table', {name: 'Runs'}).getByRole('link', {name: 'checkout-health', exact: true}).click()
+  await expect(page).toHaveURL(`${base}/scenarios/checkout-health`)
+  await page.goto(`${base}/artifacts`)
+  await page.getByRole('table', {name: 'Artifacts'}).getByRole('link', {name: 'run-1', exact: true}).click()
+  await expect(page).toHaveURL(`${base}/runs/run-1`)
+})
+
+test("a project's runner lists its runs, queued ones included, and pages through them", async ({page}) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  const queued = {...run, metadata: {...run.metadata, name: 'run-2', uid: 'run-2'}, status: {status: 'pending'}}
+  const claimed = {...run, spec: {probKind: 'http', start_time: stamp, end_time: '2026-10-01T00:00:01.5Z'}, status: {...run.status, executor: {runnerId: 'runner-1', runnerName: 'edge', workerName: 'edge-worker-a'}}}
+  const selectors: (string | null)[] = []
+  await page.route('**/v1/**', async (route) => {
+    const url = new URL(route.request().url())
+    if (url.pathname.startsWith('/v1/agent-identities/runner-1')) return route.fulfill({json: url.pathname.endsWith('runner-1') ? identityResource('agent-identities', 'runner-1', {description: 'Edge runner'}, {}, {name: 'edge'}) : pageOf([])})
+    if (url.pathname === `/v1/projects/${project}/agent-authorizations`) return route.fulfill({json: pageOf([])})
+    if (url.pathname !== `/v1/projects/${project}/results`) return route.fallback()
+    selectors.push(url.searchParams.get('labels'))
+    return route.fulfill({json: url.searchParams.get('cursor') === 'page-2' ? {items: [claimed], limit: 20} : {items: [queued], limit: 20, next: 'page-2'}})
+  })
+  await page.goto(`${base}/runners/runner-1`)
+  const runs = page.getByRole('table', {name: 'Runs on this runner'})
+  await expect(runs.getByRole('link', {name: 'run-2', exact: true})).toBeVisible()
+  await expect(runs.getByText('Not claimed', {exact: true})).toBeVisible()
+  expect((await new AxeBuilder({page}).analyze()).violations).toEqual([])
+  await page.screenshot({path: test.info().outputPath('runner-runs-queued.png'), fullPage: true})
+  await page.getByRole('navigation', {name: 'Runner runs'}).getByRole('button', {name: 'Next', exact: true}).click()
+  await expect(runs.getByText('edge-worker-a', {exact: true})).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await page.screenshot({path: test.info().outputPath('runner-runs.png'), fullPage: true})
+  expect(new Set(selectors)).toEqual(new Set(['urth/runner.uid=runner-1']))
+  await runs.getByRole('link', {name: 'checkout-health', exact: true}).click()
+  await expect(page).toHaveURL(`${base}/scenarios/checkout-health`)
+  expect(errors).toEqual([])
 })
 
 test('artifact reveal and download are authenticated and accessible', async ({page}) => {

@@ -6,17 +6,17 @@ import {Link, useParams} from 'react-router-dom'
 import {productProblem} from '../api/http'
 import {artifact} from '../api/models'
 import {resourcePath, useResource} from '../api/queries'
-import {projectPath} from '../identity/links'
+import {artifactPath, runPath} from '../identity/links'
 import {Collection, Heading} from './common'
 
 export function Artifacts() {
   const {accountId = '', projectId = ''} = useParams()
   return <><Heading title="Artifacts" description="Logs, traces and files produced by scenario runs." />
     <Collection path={resourcePath('projects', projectId, 'artifacts')} schema={artifact} scope={projectId} title="Artifacts" columns={[
-      {header: 'Artifact', cell: (a) => <Link to={`${projectPath(accountId, projectId)}/artifacts/${encodeURIComponent(a.metadata.name)}`}>{a.metadata.name}</Link>},
+      {header: 'Artifact', cell: (a) => <Link to={artifactPath(accountId, projectId, a.metadata.name)}>{a.metadata.name}</Link>},
       {header: 'Kind', cell: (a) => a.spec.rel || a.metadata.labels?.['urth/artifact.kind'] || 'Unknown'},
       {header: 'Data class', cell: (a) => <Badge>{a.spec.dataClass || a.metadata.labels?.['urth/artifact.data-class'] || 'unknown'}</Badge>},
-      {header: 'Run', cell: (a) => a.metadata.labels?.['urth/result.name'] || 'Unknown'},
+      {header: 'Run', cell: (a) => a.metadata.labels?.['urth/result.name'] ? <Link to={runPath(accountId, projectId, a.metadata.labels['urth/result.name'])}>{a.metadata.labels['urth/result.name']}</Link> : 'Unknown'},
       {header: 'Created', cell: (a) => a.metadata.creationTimestamp ? new Date(a.metadata.creationTimestamp).toLocaleString() : 'Unknown'},
     ]} /></>
 }
@@ -68,7 +68,7 @@ export function ArtifactDetail() {
     <Heading title={a.metadata.name} description={a.spec.rel || 'Artifact'} />
     <Card><h2>Content handling</h2><Badge>{classification}</Badge><p>{unsafe ? 'This artifact may contain credentials or private data. Reveal it only when you intend to inspect sensitive content.' : 'The producer classified this content for inspection.'}</p>
       {unsafe && !revealed && <Button variant="danger" onClick={() => setRevealed(true)}>Reveal sensitive content</Button>}
-      {a.metadata.labels?.['urth/result.name'] && <p><Link to={`${projectPath(accountId, projectId)}/runs/${encodeURIComponent(a.metadata.labels['urth/result.name'])}`}>Source run</Link></p>}
+      {a.metadata.labels?.['urth/result.name'] && <p><Link to={runPath(accountId, projectId, a.metadata.labels['urth/result.name'])}>Source run</Link></p>}
     </Card>
     {(!unsafe || revealed) && <Card><h2>Preview</h2>
       {content.isPending && <LoadingState />}{content.isError && <ErrorState error={content.error} retry={() => void content.refetch()} />}
