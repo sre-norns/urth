@@ -1,9 +1,9 @@
 import {Badge, Card, ErrorState, LoadingState, Metric} from '@sre-norns/components'
 import {isAccountAdmin, usePrincipal} from '@sre-norns/components/identity'
 import {Link, Navigate, useParams} from 'react-router-dom'
-import {page, run, type Run} from '../api/models'
+import {isTerminalRun, page, run, type Run} from '../api/models'
 import {listPath, resourcePath, useResource} from '../api/queries'
-import {accountPath, projectPath} from '../identity/links'
+import {accountPath, projectPath, runArtifactsPath, scenarioPath} from '../identity/links'
 import {Collection, Heading, Labels} from './common'
 import {LiveRunLog} from './LiveRunLog'
 
@@ -42,11 +42,12 @@ export function RunDetail() {
   if (!query.data) return <LoadingState />
   const r = query.data.data
   const scenario = r.metadata.labels?.['urth/scenario.name']
-  const base = projectPath(accountId, projectId)
+  const scenarioLink = scenario && scenarioPath(accountId, projectId, scenario)
+  const artifacts = runArtifactsPath(accountId, projectId, r.metadata.uid)
   const executor = r.status?.executor
   return <>
-    <Heading title={r.metadata.name} description={scenario ? `Scenario: ${scenario}` : 'Scenario run'}><RunState value={r} /></Heading>
-    <div className="grid"><Metric label="Duration" value={duration(r)} /><Metric label="Artifacts" value={r.status?.numberArtifacts ?? 0} /><Metric label="Probe" value={r.spec.probKind || 'Unknown'} /></div>
+    <Heading title={r.metadata.name} description={scenarioLink ? <>Scenario: <Link to={scenarioLink}>{scenario}</Link></> : 'Scenario run'}><RunState value={r} /></Heading>
+    <div className="grid"><Metric label="Duration" value={duration(r)} /><Metric label="Artifacts" value={<Link to={artifacts}>{r.status?.numberArtifacts ?? 0}</Link>} /><Metric label="Probe" value={r.spec.probKind || 'Unknown'} /></div>
     <Card><h2>Execution</h2>
       <p>Started: {r.spec.start_time ? new Date(r.spec.start_time).toLocaleString() : 'Not started'}</p>
       <p>Ended: {r.spec.end_time ? new Date(r.spec.end_time).toLocaleString() : 'Not finished'}</p>
@@ -54,9 +55,9 @@ export function RunDetail() {
       <p>Worker: {admin && executor?.workerName ? <Link to={`${accountPath(accountId)}/workers/${encodeURIComponent(executor.workerName)}`}>{executor.workerName}</Link> : executor?.workerName || 'Not claimed'}</p>
       {r.metadata.labels?.['urth/result.unschedulable'] && <p>Placement: {r.metadata.labels['urth/result.unschedulable']}</p>}
       <Labels value={r.metadata.labels} />
-      <div className="actions">{scenario && <Link to={`${base}/scenarios/${encodeURIComponent(scenario)}`}>Scenario definition</Link>}<Link to={`${base}/artifacts?${new URLSearchParams({labels: `urth/result.uid=${r.metadata.uid}`})}`}>Run artifacts</Link></div>
+      <div className="actions">{scenarioLink && <Link to={scenarioLink}>Scenario definition</Link>}<Link to={artifacts}>Run artifacts</Link></div>
     </Card>
-    <Card><h2>Run log</h2>{scenario ? <LiveRunLog key={r.metadata.uid} project={projectId} scenario={scenario} run={r.metadata.name} running={['pending', 'running'].includes(r.status?.status ?? '')} /> : <p>No scenario reference was recorded for this run.</p>}</Card>
+    <Card><h2>Run log</h2>{scenario ? <LiveRunLog key={r.metadata.uid} project={projectId} scenario={scenario} run={r.metadata.name} running={['pending', 'running'].includes(r.status?.status ?? '')} terminal={isTerminalRun(r)} /> : <p>No scenario reference was recorded for this run.</p>}</Card>
   </>
 }
 
