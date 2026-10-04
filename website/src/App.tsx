@@ -10,7 +10,7 @@ function identity(name: string) {
     return {Component: screens[name as keyof typeof screens] as ComponentType}
   }
 }
-function page(name: 'ProjectPage' | 'ProjectRunnerPage' | 'RunnerPage' | 'NotFound') {
+function page(name: 'ProjectsPage' | 'ProjectPage' | 'ProjectRunnerPage' | 'RunnerPage' | 'NotFound') {
   return async () => ({Component: (await import('./identity/pages'))[name]})
 }
 function LegacyRedirect() {
@@ -47,7 +47,7 @@ export const routes: RouteObject[] = [{
           path: '/a/:accountId',
           children: [
             {index: true, element: <Navigate to="projects" replace />},
-            {path: 'projects', lazy: identity('ProjectsDirectory')},
+            {path: 'projects', lazy: page('ProjectsPage')},
             {path: 'projects/new', lazy: identity('CreateProject')},
             {path: 'members', lazy: identity('AccountMembers')},
             {path: 'invitations', lazy: identity('AccountInvitations')},

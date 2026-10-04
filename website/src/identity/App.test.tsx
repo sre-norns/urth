@@ -16,9 +16,45 @@ describe('Urth identity routes', () => {
       ),
     )
     renderAt('/projects')
+    // Not a member: monitoring would refuse, so the project opens on its access,
+    // and no scenario count is requested (msw fails an unhandled request).
     expect(await screen.findByRole('link', {name: /Plant 2/})).toHaveAttribute('href', '/a/acct-1/p/proj-1/members')
+    expect(screen.getByText('Not a member')).toBeInTheDocument()
     expect(screen.getByText('URTH')).toBeInTheDocument()
     expect(screen.getByRole('link', {name: 'Runners'})).toHaveAttribute('href', '/a/acct-1/runners')
+  })
+
+  it("opens a member's project on its scenarios and counts them", async () => {
+    signIn(['proj-1'])
+    const requested: string[] = []
+    server.use(
+      http.get(api('/accounts/acct-1/projects'), () =>
+        HttpResponse.json(page([resource('projects', 'proj-1', {description: 'Floor network'}, {}, {name: 'Plant 2'})])),
+      ),
+      http.get(api('/projects/proj-1/scenarios'), ({request}) => {
+        requested.push(new URL(request.url).search)
+        return HttpResponse.json({items: [], limit: 1, next: 'c1', total: 3})
+      }),
+    )
+    renderAt('/projects')
+    expect(await screen.findByRole('link', {name: 'Plant 2'})).toHaveAttribute('href', '/a/acct-1/p/proj-1/scenarios')
+    expect(await screen.findByText('3 scenarios')).toBeInTheDocument()
+    expect(screen.getByRole('link', {name: 'Plant 2 members'})).toHaveAttribute('href', '/a/acct-1/p/proj-1/members')
+    expect(requested).toEqual(['?limit=1'])
+  })
+
+  it('counts scenarios in the project table too', async () => {
+    signIn(['proj-1'])
+    server.use(
+      http.get(api('/accounts/acct-1/projects'), () =>
+        HttpResponse.json(page([resource('projects', 'proj-1', {description: ''}, {}, {name: 'Plant 2'})])),
+      ),
+      http.get(api('/projects/proj-1/scenarios'), () => HttpResponse.json({items: [{}], limit: 1, total: 1})),
+    )
+    renderAt('/projects?view=table')
+    const row = (await screen.findByRole('link', {name: 'Plant 2'})).closest('tr')!
+    expect(screen.getByRole('link', {name: 'Plant 2'})).toHaveAttribute('href', '/a/acct-1/p/proj-1/scenarios')
+    expect(await within(row).findByText('1 scenario')).toBeInTheDocument()
   })
 
   it("heads a project's access with the project's name", async () => {

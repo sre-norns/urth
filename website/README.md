@@ -24,7 +24,9 @@ Check `ss -ltnp` before choosing ports on a shared machine.
 
 Account infrastructure lives at `/a/:accountId`; project monitoring lives at
 `/a/:accountId/p/:projectId`. Project membership is required for monitoring,
-even for account administrators. Runner identity URLs use IDs; product runner
+even for account administrators. The project directory opens a member's
+project on its scenarios and shows their count, read from the scenario list's
+advisory total; a non-member's project opens on its access. Runner identity URLs use IDs; product runner
 and run detail endpoints use names. Resource edits retain the ETag read when
 opening the form. A stale edit preserves the draft and requires explicit review
 of the latest document before retrying. Worker pause remains unversioned.

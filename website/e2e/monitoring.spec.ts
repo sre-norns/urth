@@ -9,7 +9,7 @@ const base = `/a/${account}/p/${project}`
 const metadata = {name: 'checkout-health', uid: 'scenario-1', version: 1, account, project}
 const scenario = {apiVersion: 'urth.sre-norns.com/v1', kind: 'scenarios', metadata, spec: {active: true, description: 'Checkout service health', prob: {kind: 'http'}}, status: {}}
 const run = {apiVersion: 'urth.sre-norns.com/v1', kind: 'results', metadata: {...metadata, name: 'run-1', uid: 'run-1', labels: {'urth/scenario.name': 'checkout-health'}}, spec: {probKind: 'http'}, status: {status: 'completed', result: 'success'}}
-const pageOf = (items: unknown[]) => ({items, limit: 20})
+const pageOf = (items: unknown[]) => ({items, limit: 20, total: items.length})
 
 test.skip(Boolean(process.env.URTH_LIVE_E2E), 'Mock route suite; live mode runs live.spec.ts')
 test.beforeEach(async ({page}) => {
@@ -39,6 +39,7 @@ test.beforeEach(async ({page}) => {
     throw new Error(`Unhandled browser request: ${route.request().method()} ${path}`)
   })
 })
+
 test('scenario → placement → run → authenticated log, with accessible layouts', async ({page}) => {
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
@@ -50,6 +51,17 @@ test('scenario → placement → run → authenticated log, with accessible layo
   expect(errors).toEqual([])
   await page.screenshot({path: test.info().outputPath('run.png'), fullPage: true})
 })
+
+test('a project card counts its scenarios and opens on them', async ({page}) => {
+  await page.goto(`/a/${account}/projects`)
+  await expect(page.getByText('1 scenario', {exact: true})).toBeVisible()
+  expect((await new AxeBuilder({page}).analyze()).violations).toEqual([])
+  await page.screenshot({path: test.info().outputPath('projects.png'), fullPage: true})
+  await page.getByRole('link', {name: 'Plant 2', exact: true}).click()
+  await expect(page).toHaveURL(`${base}/scenarios`)
+  await expect(page.getByRole('link', {name: 'checkout-health', exact: true})).toBeVisible()
+})
+
 test('scenario list shows the next run and runs a scenario directly', async ({page}) => {
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
@@ -66,6 +78,7 @@ test('scenario list shows the next run and runs a scenario directly', async ({pa
   await expect(page.getByLabel('Run log', {exact: true})).toContainText('authenticated browser log')
   expect(errors).toEqual([])
 })
+
 test('run detail links its scenario and artifacts and offers no reconnect once finished', async ({page}) => {
   await page.goto(`${base}/runs/run-1`)
   await expect(page.getByLabel('Run log', {exact: true})).toContainText('authenticated browser log')
@@ -78,6 +91,7 @@ test('run detail links its scenario and artifacts and offers no reconnect once f
   await page.locator('.page-heading').getByRole('link', {name: 'checkout-health', exact: true}).click()
   await expect(page).toHaveURL(`${base}/scenarios/checkout-health`)
 })
+
 test('artifact reveal and download are authenticated and accessible', async ({page}) => {
   await page.goto(`${base}/artifacts`)
   await page.getByRole('link', {name: 'trace-1', exact: true}).click()
@@ -98,7 +112,6 @@ test('project and account dead-letter details and confirmation dialogs are acces
   }
 })
 
-
 test('worker block controls use readable fields and accessible versioned dialogs', async ({page}) => {
   const fingerprint = `sha256:${'a'.repeat(64)}`
   let version = 1
@@ -117,6 +130,7 @@ test('worker block controls use readable fields and accessible versioned dialogs
     }
     return route.fulfill({json: runner(), headers: {ETag: `"${version}"`}})
   })
+  
   await page.goto(`/a/${account}/runners/runner-1`)
   await page.getByRole('button', {name: 'Block worker', exact: true}).click()
   let dialog = page.getByRole('dialog')

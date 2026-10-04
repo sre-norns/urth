@@ -17,7 +17,7 @@ export {identityResource as resource} from '../test/identity-fixtures'
 import {identityResource as resource} from '../test/identity-fixtures'
 export const page = (items: unknown[]) => ({items, limit: 100, total: items.length})
 
-export function signIn() {
+export function signIn(projectIds: string[] = []) {
   sessionStorage.setItem(
     'urth.session',
     JSON.stringify({
@@ -39,7 +39,7 @@ export function signIn() {
         account_id: 'acct-1',
         credential_id: 'sess-1',
         account_role: 'owner',
-        project_ids: [],
+        project_ids: projectIds,
         system_admin: false,
       }),
     ),
