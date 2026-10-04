@@ -14,7 +14,7 @@ spec = spec_from_file_location("build_release", Path(__file__).with_name("build-
 builder = module_from_spec(spec)
 spec.loader.exec_module(builder)
 
-IMAGES = {"ghcr.io/sre-norns/" + name for name in ("urth-api-server", "urth-worker", "urthctl", "urth-website")}
+IMAGES = {"ghcr.io/sre-norns/" + name for name in ("urth-api-srv", "urth-worker", "urthctl", "urth-web")}
 
 
 def record(output, images):

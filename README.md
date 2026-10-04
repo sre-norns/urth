@@ -273,6 +273,8 @@ and website from the same validated release set. No earlier resource format or
 existing-resource migration is supported. Keep old ADR migration discussions as
 historical design records. Complete the
 [release checklist](docs/m9-release-validation.md) before release.
+[Release packaging](docs/releases.md) lists the archives, Debian packages, snaps
+(including the Worker service snap), images, Nix and Homebrew names.
 
 ## Quick start
 

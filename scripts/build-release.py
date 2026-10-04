@@ -18,8 +18,8 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 COMPONENTS = {
-    "api-server": ("linux",),
-    "nats-worker": ("linux",),
+    "urth-api-srv": ("linux",),
+    "urth-worker": ("linux",),
     "urthctl": ("linux", "darwin"),
 }
 ARCHES = ("amd64", "arm64")
@@ -135,11 +135,11 @@ def build(output, website, info, snap=True):
             shutil.copy2(path, staged / path.name)
         archives = sorted(path.name for path in built if path.name.endswith(".tar.gz"))
         packages = sorted(path.name for path in built if not path.name.endswith(".tar.gz"))
-        name = f"urth-website_{info['version']}.tar.gz"
+        name = f"urth-web_{info['version']}.tar.gz"
         asset_entries.update({
             "LICENSE": ((ROOT / "LICENSE").read_bytes(), 0o644),
             "README.md": ((ROOT / "website" / "README.md").read_bytes(), 0o644),
-            "release.json": (encoded(dict(info, component="urth-website")), 0o644),
+            "release.json": (encoded(dict(info, component="urth-web")), 0o644),
         })
         archive(staged / name, asset_entries, info["epoch"])
         archives.append(name)

@@ -1,0 +1,55 @@
+#!/bin/sh
+# Configure hook for the urth-worker snap. It runs after install, refresh and
+# every `snap set`. The service is installed disabled; this hook enables it only
+# once the worker can start, and refuses settings that cannot work, so a bad
+# `snap set` is rolled back instead of producing a crash-looping service.
+#
+# Settings:  api-url   (required) Urth API URL, e.g. https://urth.example
+#            nats-url  (optional) NATS URL; the worker's default otherwise
+#            args      (optional) extra worker flags; never a token
+# Token:     $SNAP_COMMON/runner-token, owned by root, mode 0600.
+set -eu
+
+service="$SNAP_INSTANCE_NAME.urth-worker"
+token="$SNAP_COMMON/runner-token"
+api_url="$(snapctl get api-url)"
+nats_url="$(snapctl get nats-url)"
+args="$(snapctl get args)"
+
+fail() {
+	echo "urth-worker: $*" >&2
+	exit 1
+}
+
+if [ -z "$api_url" ]; then
+	# Not configured, or configuration removed: keep the worker stopped.
+	snapctl stop --disable "$service"
+	exit 0
+fi
+
+case "$api_url" in
+http://* | https://*) ;;
+*) fail "api-url must be an http:// or https:// URL" ;;
+esac
+case "$nats_url" in
+"" | nats://* | tls://* | ws://* | wss://*) ;;
+*) fail "nats-url must be a nats://, tls://, ws:// or wss:// URL" ;;
+esac
+# Arguments are visible to every local user in the process table.
+case " $args" in
+*" --token"* | *" --client.token"*) fail "do not pass a token in args; write it to $token" ;;
+esac
+
+[ -f "$token" ] || fail "write the Runner token to $token (owner root, mode 0600) before setting api-url"
+[ "$(stat -c %u "$token")" = 0 ] || fail "$token must be owned by root"
+case "$(stat -c %a "$token")" in
+400 | 600) ;;
+*) fail "$token must not be readable by other users: chmod 600 $token" ;;
+esac
+
+# A running worker reads its settings only at start.
+if snapctl services "$service" | grep -qw active; then
+	snapctl restart "$service"
+else
+	snapctl start --enable "$service"
+fi
