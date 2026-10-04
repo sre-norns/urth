@@ -74,7 +74,7 @@ run-postgres-podman: # Start postgres using podman container
 # not highly available. Production wants three replicas on persistent volumes.
 .PHONY: run-nats-podman
 run-nats-podman: # Start NATS with JetStream using podman container
-	@podman run -p 4222:4222 -p 8222:8222 nats:2.10-alpine -js -m 8222
+	@podman run -p 4222:4222 -p 8222:8222 nats:2.15-alpine -js -m 8222
 
 
 # ==================================================================================== #
