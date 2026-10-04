@@ -133,6 +133,20 @@ dashboards and other feature items remain separate work. M9 does not close them.
   appears after a refetch. Per ADR 0004, resource changes belong on the durable
   `URTH_EVENTS` JetStream stream used by the scheduler and projections -- do not
   build a separate notification transport for the UI in the meantime.
+- `TestBrokerClusterRouteCertificateRotation` still fails under heavy CPU
+  contention, at stages after cluster formation. The formation flakes CI hit
+  are fixed; see `loadAccountEverywhere` and `clusterRoutes`. Measured with
+  four concurrent `-race` copies pinned to two CPUs, 40 runs each: before that
+  fix, 2/40 timed out at "rolling route refresh must restore quorum before the
+  next node changes"; after it, 1/40 failed in `delivery` with `nats: no
+  response from stream` straight after a rolling route refresh. Neither has
+  been seen on CI and neither root cause is established. The second reads like
+  stream interest not yet re-sent over the new routes, but that is unverified.
+  Do not lengthen timeouts or add retries until one is.
+- nats-server 2.15.0 can expose a half-loaded account when two things load it
+  at once (see `inspectJobStream`). Worth an upstream report with a minimal
+  reproduction: three-node operator-mode cluster, client on a node that is not
+  the meta leader, first `STREAM.INFO` -- 1-2% of runs under contention.
 
 ---
 
