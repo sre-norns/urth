@@ -19,7 +19,7 @@ export function ProjectMemberOnly() {
 export function Presence({value}: {value: string}) {
   return <Badge tone={value === 'online' ? 'success' : value === 'offline' ? 'error' : value === 'unknown' ? 'neutral' : 'attention'}>{value.replaceAll('-', ' ')}</Badge>
 }
-export function Heading({title, description, children}: {title: string; description?: string; children?: ReactNode}) {
+export function Heading({title, description, children}: {title: string; description?: ReactNode; children?: ReactNode}) {
   return <header className="page-heading"><div><h1>{title}</h1>{description && <p>{description}</p>}</div>{children}</header>
 }
 export function Labels({value}: {value?: Record<string, string>}) {
