@@ -39,6 +39,7 @@ test.beforeEach(async ({page}) => {
     throw new Error(`Unhandled browser request: ${route.request().method()} ${path}`)
   })
 })
+
 test('scenario → placement → run → authenticated log, with accessible layouts', async ({page}) => {
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
@@ -50,6 +51,7 @@ test('scenario → placement → run → authenticated log, with accessible layo
   expect(errors).toEqual([])
   await page.screenshot({path: test.info().outputPath('run.png'), fullPage: true})
 })
+
 test('a project card counts its scenarios and opens on them', async ({page}) => {
   await page.goto(`/a/${account}/projects`)
   await expect(page.getByText('1 scenario', {exact: true})).toBeVisible()
@@ -59,6 +61,37 @@ test('a project card counts its scenarios and opens on them', async ({page}) => 
   await expect(page).toHaveURL(`${base}/scenarios`)
   await expect(page.getByRole('link', {name: 'checkout-health', exact: true})).toBeVisible()
 })
+
+test('scenario list shows the next run and runs a scenario directly', async ({page}) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  const next = new Date(Date.now() + 27 * 60_000 + 30_000).toISOString()
+  const scheduled = {...scenario, spec: {...scenario.spec, schedule: '*/30 * * * *'}, status: {nextScheduledRunTime: next}}
+  const disabled = {...scenario, metadata: {...metadata, name: 'nightly-export', uid: 'scenario-2'}, spec: {...scenario.spec, active: false, schedule: '@daily'}}
+  await page.route((url) => url.pathname === `/v1/projects/${project}/scenarios`, (route) => route.fulfill({json: pageOf([scheduled, disabled])}))
+  await page.goto(`${base}/scenarios`)
+  await expect(page.getByText('in 27 minutes', {exact: true})).toBeVisible()
+  await expect(page.getByRole('button', {name: 'Run nightly-export now'})).toBeDisabled()
+  expect((await new AxeBuilder({page}).analyze()).violations).toEqual([])
+  await page.screenshot({path: test.info().outputPath('scenarios.png'), fullPage: true})
+  await page.getByRole('button', {name: 'Run checkout-health now'}).click()
+  await expect(page.getByLabel('Run log', {exact: true})).toContainText('authenticated browser log')
+  expect(errors).toEqual([])
+})
+
+test('run detail links its scenario and artifacts and offers no reconnect once finished', async ({page}) => {
+  await page.goto(`${base}/runs/run-1`)
+  await expect(page.getByLabel('Run log', {exact: true})).toContainText('authenticated browser log')
+  await expect(page.getByRole('button', {name: 'Reconnect log'})).toHaveCount(0)
+  expect((await new AxeBuilder({page}).analyze()).violations).toEqual([])
+  await page.screenshot({path: test.info().outputPath('run-detail.png'), fullPage: true})
+  await page.getByRole('link', {name: '0', exact: true}).click()
+  await expect(page).toHaveURL(`${base}/artifacts?labels=urth%2Fresult.uid%3Drun-1`)
+  await page.goBack()
+  await page.locator('.page-heading').getByRole('link', {name: 'checkout-health', exact: true}).click()
+  await expect(page).toHaveURL(`${base}/scenarios/checkout-health`)
+})
+
 test('artifact reveal and download are authenticated and accessible', async ({page}) => {
   await page.goto(`${base}/artifacts`)
   await page.getByRole('link', {name: 'trace-1', exact: true}).click()
@@ -79,7 +112,6 @@ test('project and account dead-letter details and confirmation dialogs are acces
   }
 })
 
-
 test('worker block controls use readable fields and accessible versioned dialogs', async ({page}) => {
   const fingerprint = `sha256:${'a'.repeat(64)}`
   let version = 1
@@ -98,6 +130,7 @@ test('worker block controls use readable fields and accessible versioned dialogs
     }
     return route.fulfill({json: runner(), headers: {ETag: `"${version}"`}})
   })
+  
   await page.goto(`/a/${account}/runners/runner-1`)
   await page.getByRole('button', {name: 'Block worker', exact: true}).click()
   let dialog = page.getByRole('dialog')

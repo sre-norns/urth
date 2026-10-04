@@ -33,7 +33,9 @@ of the latest document before retrying. Worker pause remains unversioned.
 
 Scenario forms accept probe configuration, labels and placement requirements as
 YAML. Probe configuration supports the complete server schema, including script
-probes. Run now performs a fresh placement check. Lists follow opaque cursors;
+probes. Run now, on the scenario page or the list's play button, performs a
+fresh placement check when pressed. The list shows the server-computed next
+scheduled run (`status.nextScheduledRunTime`) as a date and a countdown. Lists follow opaque cursors;
 totals are informational. Account dead letters show unassignable diagnostics;
 project dead letters can retry the original execution snapshot.
 

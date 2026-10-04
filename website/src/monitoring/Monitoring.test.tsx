@@ -24,6 +24,52 @@ describe('project monitoring', () => {
     renderAt('/a/acct-1/p/proj-1/scenarios')
     expect(await screen.findByRole('link', {name: 'http-check'})).toHaveAttribute('href', '/a/acct-1/p/proj-1/scenarios/http-check')
   })
+  it('shows the server-computed next run as a date and a countdown', async () => {
+    project()
+    const next = new Date(Date.now() + 27 * 60_000 + 30_000).toISOString()
+    server.use(http.get(api('/projects/proj-1/scenarios'), () => HttpResponse.json(page([
+      {...scenario, spec: {...scenario.spec, schedule: '*/30 * * * *'}, status: {nextScheduledRunTime: next}},
+      {...scenario, metadata: {...meta, name: 'paused', uid: 'scenario-2'}, spec: {...scenario.spec, active: false, schedule: '@hourly'}},
+    ]))))
+    renderAt('/a/acct-1/p/proj-1/scenarios')
+    expect(await screen.findByText('in 27 minutes')).toBeInTheDocument()
+    expect(screen.getByText(new Date(next).toLocaleString())).toBeInTheDocument()
+    expect(screen.getByText('*/30 * * * *')).toBeInTheDocument()
+    expect(screen.getByText('Scheduling disabled')).toBeInTheDocument()
+  })
+  it('runs a scenario from the list after a fresh placement check', async () => {
+    project()
+    let placements = 0
+    let body: unknown
+    server.use(
+      http.get(api('/projects/proj-1/scenarios'), () => HttpResponse.json(page([scenario, {...scenario, metadata: {...meta, name: 'paused', uid: 'scenario-2'}, spec: {...scenario.spec, active: false}}]))),
+      http.get(api('/projects/proj-1/scenarios/http-check/placement'), () => {placements++; return HttpResponse.json({schedulable: true, eligibleRunners: 1, readyWorkers: 1})}),
+      http.post(api('/projects/proj-1/scenarios/http-check/results'), async ({request}) => {body = await request.json(); return HttpResponse.json(run, {status: 201})}),
+      http.get(api('/projects/proj-1/results/run-1'), () => HttpResponse.json(run)),
+      http.get(api('/projects/proj-1/scenarios/http-check/results/run-1/logs'), () => new HttpResponse('event: end\ndata: completed\n\n', {headers: {'Content-Type': 'text/event-stream'}})),
+    )
+    renderAt('/a/acct-1/p/proj-1/scenarios')
+    const play = await screen.findByRole('button', {name: 'Run http-check now'})
+    expect(screen.getByRole('button', {name: 'Run paused now'})).toBeDisabled()
+    expect(placements).toBe(0)
+    await userEvent.click(play)
+    expect(await screen.findByRole('heading', {name: 'run-1'})).toBeInTheDocument()
+    expect(placements).toBe(1)
+    expect(body).toMatchObject({kind: 'results', metadata: {labels: {trigger: 'manual', triggerAgent: 'website'}}})
+  })
+  it('does not enqueue a list run that cannot be placed', async () => {
+    project()
+    let created = false
+    server.use(
+      http.get(api('/projects/proj-1/scenarios'), () => HttpResponse.json(page([scenario]))),
+      http.get(api('/projects/proj-1/scenarios/http-check/placement'), () => HttpResponse.json({schedulable: false, eligibleRunners: 0, readyWorkers: 0, reason: 'no-eligible-runner'})),
+      http.post(api('/projects/proj-1/scenarios/http-check/results'), () => {created = true; return HttpResponse.json(run, {status: 201})}),
+    )
+    renderAt('/a/acct-1/p/proj-1/scenarios')
+    await userEvent.click(await screen.findByRole('button', {name: 'Run http-check now'}))
+    expect(await screen.findByText('no-eligible-runner')).toBeInTheDocument()
+    expect(created).toBe(false)
+  })
   it('does not treat account administration as project membership', async () => {
     project(false)
     renderAt('/a/acct-1/p/proj-1/scenarios')

@@ -20,8 +20,11 @@ export const selector = z.object({
   matchExpressions: z.array(z.object({key: z.string(), operator: z.string(), values: z.array(z.string()).optional()})).optional(),
 }).loose()
 export const prob = z.object({kind: z.string(), timeout: z.number().optional(), spec: z.record(z.string(), z.unknown()).optional()}).loose()
+// urth.JobStatus: pending -> running -> completed | timeout | errored.
+export const runStatus = z.enum(['pending', 'running', 'completed', 'timeout', 'errored'])
+const terminalRunStatus: readonly z.infer<typeof runStatus>[] = ['completed', 'timeout', 'errored']
 export const run = manifest('results', z.object({probKind: z.string().optional(), start_time: z.string().optional(), end_time: z.string().optional()}).loose(), z.object({
-  status: z.enum(['pending', 'running', 'completed', 'timeout', 'errored']).optional(),
+  status: runStatus.optional(),
   result: z.string().optional(), deadline: z.string().optional(), numberArtifacts: z.number().optional(),
   executor: z.object({runnerId: z.string().optional(), runnerName: z.string().optional(), workerId: z.string().optional(), workerName: z.string().optional()}).loose().optional(),
 }).loose())
@@ -45,6 +48,7 @@ export const artifact = manifest('artifacts', z.object({rel: z.string().optional
 export const placement = z.object({schedulable: z.boolean(), eligibleRunners: z.number(), readyWorkers: z.number(), reason: z.string().optional(), detail: z.string().optional()}).loose()
 export type Scenario = z.infer<typeof scenario>
 export type Run = z.infer<typeof run>
+export const isTerminalRun = (r: Run) => terminalRunStatus.includes(r.status?.status as never)
 export type Runner = z.infer<typeof runner>
 export type Worker = z.infer<typeof worker>
 export const failure = manifest('dispatch-failures', z.object({reason: z.string(), detail: z.string().optional(), occurredAt: z.string(), resultUID: z.string().optional(), scenarioName: z.string().optional(), runnerUID: z.string().optional(), deliveries: z.number().optional()}).loose(), z.object({resolved: z.boolean(), resolvedAt: z.string().optional(), retryResultUID: z.string().optional(), retryResultName: z.string().optional()}).loose())
