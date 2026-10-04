@@ -62,12 +62,12 @@ describe('project monitoring', () => {
     let created = false
     server.use(
       http.get(api('/projects/proj-1/scenarios'), () => HttpResponse.json(page([scenario]))),
-      http.get(api('/projects/proj-1/scenarios/http-check/placement'), () => HttpResponse.json({schedulable: false, eligibleRunners: 0, readyWorkers: 0, reason: 'no-eligible-runner'})),
+      http.get(api('/projects/proj-1/scenarios/http-check/placement'), () => HttpResponse.json({schedulable: false, eligibleRunners: 0, readyWorkers: 0, reason: 'job-policy-rejected', detail: 'Runner rejects probe kind http'})),
       http.post(api('/projects/proj-1/scenarios/http-check/results'), () => {created = true; return HttpResponse.json(run, {status: 201})}),
     )
     renderAt('/a/acct-1/p/proj-1/scenarios')
     await userEvent.click(await screen.findByRole('button', {name: 'Run http-check now'}))
-    expect(await screen.findByText('no-eligible-runner')).toBeInTheDocument()
+    expect(await screen.findByText('Runner rejects probe kind http')).toBeInTheDocument()
     expect(created).toBe(false)
   })
   it('does not treat account administration as project membership', async () => {
@@ -79,11 +79,11 @@ describe('project monitoring', () => {
     project()
     server.use(
       http.get(api('/projects/proj-1/scenarios/http-check'), () => HttpResponse.json(scenario, {headers: {ETag: '"1"'}})),
-      http.get(api('/projects/proj-1/scenarios/http-check/placement'), () => HttpResponse.json({schedulable: false, eligibleRunners: 0, readyWorkers: 0, reason: 'no-eligible-runner'})),
+      http.get(api('/projects/proj-1/scenarios/http-check/placement'), () => HttpResponse.json({schedulable: false, eligibleRunners: 0, readyWorkers: 0, reason: 'job-policy-rejected'})),
     )
     renderAt('/a/acct-1/p/proj-1/scenarios/http-check')
     expect(await screen.findByRole('button', {name: 'Run now'})).toBeDisabled()
-    expect(await screen.findByText('no-eligible-runner')).toBeInTheDocument()
+    expect(await screen.findByText('Matching runners reject this job. Check the accepted probe kinds, job labels, and duration limits.')).toBeInTheDocument()
   })
   it('authenticates scoped stored logs and displays multiline events', async () => {
     project()

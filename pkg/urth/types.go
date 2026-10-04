@@ -20,8 +20,9 @@ var (
 // A worker is not a trusted party here: everything in this struct arrives from
 // the worker, so nothing that governs whether it may take jobs belongs in it.
 type WorkerInstanceSpec struct {
-	Proof    *WorkerProof        `json:"proof,omitempty" yaml:"proof,omitempty" gorm:"-"`
-	RunnerID manifest.ResourceID `json:"-" yaml:"-"`
+	Capabilities WorkerCapabilities  `json:"capabilities" yaml:"capabilities" gorm:"serializer:json"`
+	Proof        *WorkerProof        `json:"proof,omitempty" yaml:"proof,omitempty" gorm:"-"`
+	RunnerID     manifest.ResourceID `json:"-" yaml:"-"`
 	// Runner is the 'class' that this worker is an instance of
 	Runner Runner `json:"-" yaml:"-" gorm:"foreignKey:RunnerID;references:UID"`
 
@@ -34,8 +35,9 @@ type WorkerInstanceSpec struct {
 // survive -- a paused worker that could un-pause itself by reconnecting would
 // not be paused at all.
 type WorkerInstanceStatus struct {
-	Fingerprint string        `json:"fingerprint" yaml:"fingerprint" gorm:"index"`
-	TTL         time.Duration `form:"ttl,omitempty" json:"ttl,omitempty" yaml:"ttl,omitempty" xml:"ttl,omitempty"`
+	EffectiveCapabilities WorkerCapabilities `json:"effectiveCapabilities" yaml:"effectiveCapabilities" gorm:"serializer:json"`
+	Fingerprint           string             `json:"fingerprint" yaml:"fingerprint" gorm:"index"`
+	TTL                   time.Duration      `form:"ttl,omitempty" json:"ttl,omitempty" yaml:"ttl,omitempty" xml:"ttl,omitempty"`
 
 	// IsPaused stops this worker from taking new jobs while leaving it
 	// registered and leaving its runner active. Used to take one misbehaving
@@ -91,8 +93,9 @@ type RunnerSpec struct {
 	// Description is a human readable text to describe intent behind this runner
 	Description string `form:"description" json:"description,omitempty" yaml:"description,omitempty" xml:"description,omitempty"`
 
-	// Requirements are optional to select sub-set of jobs this worker capable of taking
-	Requirements manifest.LabelSelector `form:"requirements" json:"requirements,omitempty" yaml:"requirements,omitempty" xml:"requirements" gorm:"serializer:json"`
+	JobRequirements    JobRequirements    `json:"jobRequirements" yaml:"jobRequirements" gorm:"serializer:json"`
+	WorkerRequirements WorkerRequirements `json:"workerRequirements" yaml:"workerRequirements" gorm:"serializer:json"`
+	PropagatedLabels   manifest.Labels    `json:"propagatedLabels,omitempty" yaml:"propagatedLabels,omitempty" gorm:"serializer:json"`
 
 	// IsActive is true if this worker is permitted to take on jobs
 	IsActive bool `form:"active" json:"active" yaml:"active" xml:"active"`
@@ -103,6 +106,7 @@ type RunnerSpec struct {
 
 // RunnerStatus is information that owned and managed by the runner itself
 type RunnerStatus struct {
+	LastAdmissionRejection *AdmissionRejection `json:"lastAdmissionRejection,omitempty" yaml:"lastAdmissionRejection,omitempty" gorm:"serializer:json"`
 	// Instances of this runner that are currently active
 	NumberInstances uint64 `json:"numberInstances" yaml:"numberInstances" gorm:"-"`
 
@@ -217,6 +221,8 @@ type ResultSpec struct {
 // readable after the runner is deleted -- which is exactly when someone is
 // likely to be looking at it.
 type ExecutorRef struct {
+	RunnerVersion    manifest.Version `json:"runnerVersion,omitempty" yaml:"runnerVersion,omitempty"`
+	PropagatedLabels manifest.Labels  `json:"propagatedLabels,omitempty" yaml:"propagatedLabels,omitempty" gorm:"serializer:json"`
 	// RunnerID is the UID of the runner this job was dispatched to.
 	//
 	// Indexed with the job status, because placement asks the reverse question
@@ -228,7 +234,7 @@ type ExecutorRef struct {
 	// `results` alone.
 	RunnerID manifest.ResourceID `form:"runnerId,omitempty" json:"runnerId,omitempty" yaml:"runnerId,omitempty" xml:"runnerId,omitempty" gorm:"index:idx_results_placement,priority:1"`
 
-	// RunnerName is the name of the runner at the time the job was claimed.
+	// RunnerName is the name of the Runner at scheduling time.
 	RunnerName manifest.ResourceName `form:"runnerName,omitempty" json:"runnerName,omitempty" yaml:"runnerName,omitempty" xml:"runnerName,omitempty"`
 
 	// WorkerID is the UID of the worker instance that claimed the job.
@@ -407,6 +413,9 @@ func NewRunner(m manifest.ResourceManifest) (Runner, error) {
 
 	if err == nil {
 		err = validateBlocklist(entry.Spec.BlockedWorkers)
+		if err == nil {
+			err = entry.Spec.ValidatePolicy()
+		}
 	}
 	return entry, err
 }

@@ -76,11 +76,10 @@ func (w *Worker) runTimeout(auth urth.AuthJobResponse) time.Duration {
 		timeout = auth.Prob.Timeout
 	}
 
-	// The server's deadline is a hard ceiling. Reserve a little of it for the
-	// upload that follows, so a run that uses its whole budget still has time
-	// to say what happened rather than being cut off mid-report.
+	// The server deadline bounds execution. Reporting uses the separate
+	// capability grace period, so it does not reduce the probe budget.
 	if !auth.Deadline.IsZero() {
-		remaining := time.Until(auth.Deadline) - uploadReserve
+		remaining := time.Until(auth.Deadline)
 		if remaining > 0 && remaining < timeout {
 			timeout = remaining
 		}
@@ -92,9 +91,6 @@ func (w *Worker) runTimeout(auth urth.AuthJobResponse) time.Duration {
 
 	return timeout
 }
-
-// uploadReserve is how much of the run's lease is held back for reporting.
-const uploadReserve = 15 * time.Second
 
 // report uploads artifacts and the final status under the run capability.
 func (w *Worker) report(ctx context.Context, envelope natsq.DispatchEnvelope, auth urth.AuthJobResponse, runResult urth.ResultStatus, artifacts []urth.ArtifactSpec) {

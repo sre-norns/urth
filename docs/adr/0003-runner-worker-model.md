@@ -417,3 +417,13 @@ The current development implementation does **not** yet satisfy the complete dec
 
 These gaps describe migration from the prototype's shared queue and selectors to the
 accepted channel model. They do not change the architectural rules above.
+
+
+## Implementation update (2026-10-04)
+
+The historical acceptance baseline above records the prototype. The current
+contract uses typed job and Worker admission, stored effective capabilities,
+claim-time placement and job checks, and immutable Runner propagation snapshots.
+[ADR 0009](0009-runner-channel-policy.md) defines schema, defaults, duration and
+version semantics, concurrency and refusal behavior. Queue addressing follows
+ADR 0007. Fresh installations reject the obsolete Runner requirements field.

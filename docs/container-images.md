@@ -127,10 +127,11 @@ mode or add raw-socket capabilities automatically.
 
 Capability advertisement does not replace Runner and Scenario selection
 policy. Keep native-only Workers in pools selected for supported probes. Browser
-pools can set `Runner.spec.requirements` to require Puppeteer and refuse native
-Worker registration. An unconstrained browser Scenario is not automatically
-excluded from every native pool merely because this capability label is absent.
-The existing task 008/022 policy gaps are outside image packaging.
+pools can set `Runner.spec.jobRequirements.probeKinds` and
+`Runner.spec.workerRequirements.runtimeVersions` to require Puppeteer and refuse native
+Worker registration. The channel probe allowlist rejects unsupported jobs before dispatch. Claims
+recheck typed capabilities and the stored placement selector. See
+[ADR 0009](adr/0009-runner-channel-policy.md) for channel coverage rules.
 
 Puppeteer is absent from this image's registry and capability labels. It is
 not installed at runtime. The default host Worker archive retains Puppeteer

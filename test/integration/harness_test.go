@@ -363,7 +363,7 @@ func (h *harness) applyRunner(name manifest.ResourceName, labels manifest.Labels
 
 	runner := urth.Runner{
 		ObjectMeta: manifest.ObjectMeta{Name: name, Labels: labels},
-		Spec:       urth.RunnerSpec{IsActive: true},
+		Spec:       urth.RunnerSpec{IsActive: true, JobRequirements: urth.JobRequirements{ProbeKinds: []string{string(testProbKind), "http", "tcp"}}},
 	}
 	value, err := h.Server.Service.Runners().Create(h.ctx, runner.ToManifest())
 	require.NoError(h.t, err)
@@ -847,7 +847,7 @@ func (h *harness) startWorker(runnerName manifest.ResourceName, options ...worke
 	cfg.Concurrency = 2
 	cfg.APIRegistrationTimeout = 30 * time.Second
 	cfg.HeartbeatInterval = time.Minute
-	cfg.RunnerConfig.Timeout = 30 * time.Second
+	cfg.RunnerConfig.Timeout = time.Minute
 	// Log streaming is a separate publication over the same connection and
 	// nothing here tails a run; leaving it on would only add traffic.
 	cfg.StreamLogs = false

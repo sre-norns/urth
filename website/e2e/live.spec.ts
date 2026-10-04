@@ -6,6 +6,8 @@ import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import {createServer, type ServerResponse} from 'node:http'
 
+// Enrollment responses contain one-time secrets. Keep browser traces disabled.
+test.use({trace: 'off'})
 test.skip(!process.env.URTH_LIVE_E2E, 'Requires an isolated API, database, NATS and built worker; see README')
 test('login → create project → grant runner → execute scenario → logs and artifacts', async ({page}, info) => {
   test.skip(info.project.name !== 'desktop', 'One worker execution per live stack')
@@ -32,6 +34,8 @@ test('login → create project → grant runner → execute scenario → logs an
   await page.goto(`${accountBase}/runners`)
   await page.getByRole('button', {name: 'Register runner', exact: true}).click()
   await page.getByLabel('Runner name').fill(runnerName)
+  await page.getByLabel(/Job requirements/).fill(JSON.stringify({probeKinds: ['http'], maxDuration: '1m'}))
+  await page.getByLabel(/Propagated labels/).fill(JSON.stringify({region: 'live-test'}))
   await page.getByRole('dialog').getByRole('button', {name: 'Save', exact: true}).click()
   await page.waitForURL(/\/runners\//)
   const runnerURL = new URL(page.url()).pathname
@@ -104,6 +108,8 @@ test('login → create project → grant runner → execute scenario → logs an
     }
     await expect(page.getByLabel('Run log', {exact: true})).toContainText('Probe succeeded', {timeout: 60_000})
     await expect(page.getByText('success', {exact: true})).toBeVisible({timeout: 30_000})
+    await expect(page.getByText(/Selected Runner version: [1-9]/)).toBeVisible()
+    await expect(page.getByText('region=live-test')).toHaveCount(2)
     const runURL = new URL(page.url()).pathname
     await page.screenshot({path: info.outputPath('live-run.png'), fullPage: true})
     await page.setViewportSize({width: 390, height: 844})
@@ -132,6 +138,9 @@ test('login → create project → grant runner → execute scenario → logs an
       await expect(page.getByRole('status', {name: 'Loading', exact: true})).toHaveCount(0)
       expect((await new AxeBuilder({page}).analyze()).violations, route).toEqual([])
     }
+    await page.goto(`${accountBase}/workers/${workerName}`)
+    await expect(page.getByRole('heading', {name: 'Stored capabilities', exact: true})).toBeVisible()
+    await expect(page.getByRole('heading', {name: 'Stored capabilities', exact: true}).locator('..')).toContainText('http')
     expect(runtimeErrors).toEqual([])
     // The stream must remain inaccessible without the user's bearer token.
     const runName = runURL.split('/').at(-1)!

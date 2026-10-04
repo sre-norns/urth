@@ -308,8 +308,10 @@ func (p placement) candidates(ctx context.Context, requirements manifest.LabelSe
 // there were, and then threw the list away -- every job went to one shared queue
 // and any worker could take it, so a scenario that declared it needed a runner
 // inside a particular network had no way of getting one.
-func (p placement) Place(ctx context.Context, requirements manifest.LabelSelector, scenarioName manifest.ResourceName) (placementDecision, error) {
+func (p placement) Place(ctx context.Context, requirements manifest.LabelSelector, scenarioName manifest.ResourceName, job ExecutionSnapshot) (placementDecision, error) {
 	matching, eligible, err := p.candidates(ctx, requirements)
+	activeCount := len(eligible)
+	eligible = jobEligible(eligible, job)
 	if err != nil {
 		// A selector that does not parse is a property of the scenario, not a
 		// fault in this request: the run is recorded as unschedulable in the same
@@ -323,6 +325,9 @@ func (p placement) Place(ctx context.Context, requirements manifest.LabelSelecto
 		log.Printf("no active runner matches requirements %q for scenario %q (%d considered)",
 			requirements.AsLabels(), scenarioName, len(matching))
 
+		if activeCount > 0 {
+			return placementDecision{Reason: "job-policy-rejected"}, nil
+		}
 		return placementDecision{Reason: ReasonNoEligibleRunner}, nil
 	}
 
@@ -493,10 +498,12 @@ func (p placement) selectRunner(eligible []Runner, capacity map[manifest.Resourc
 }
 
 // Preview reports what Place would decide, without creating anything.
-func (p placement) Preview(ctx context.Context, requirements manifest.LabelSelector) (PlacementPreview, error) {
+func (p placement) Preview(ctx context.Context, requirements manifest.LabelSelector, job ExecutionSnapshot) (PlacementPreview, error) {
 	preview := PlacementPreview{Requirements: requirements.AsLabels()}
 
 	matching, eligible, err := p.candidates(ctx, requirements)
+	activeCount := len(eligible)
+	eligible = jobEligible(eligible, job)
 	if err != nil {
 		// Reported as an unschedulable scenario rather than as a failed request:
 		// this endpoint exists to explain why a run cannot be made, and "the
@@ -512,6 +519,10 @@ func (p placement) Preview(ctx context.Context, requirements manifest.LabelSelec
 	preview.Schedulable = len(eligible) > 0
 	if !preview.Schedulable {
 		preview.Reason = ReasonNoEligibleRunner
+		if activeCount > 0 {
+			preview.Reason = "job-policy-rejected"
+			preview.Detail = "Active matching Runners reject the probe kind, duration or job labels."
+		}
 		if p.identityDB != nil {
 			var count int64
 			scope := RequestScope(ctx)
@@ -620,4 +631,15 @@ func (p placement) workerCapacity(ctx context.Context, runners []Runner) (map[ma
 	}
 
 	return capacity, nil
+}
+
+// jobEligible is shared by placement and preview. Capacity runs after admission.
+func jobEligible(runners []Runner, job ExecutionSnapshot) []Runner {
+	result := runners[:0]
+	for _, r := range runners {
+		if r.Spec.AcceptsJob(job, job.JobLabels) == nil {
+			result = append(result, r)
+		}
+	}
+	return result
 }

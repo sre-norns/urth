@@ -255,6 +255,9 @@ func (m *runnersAPIImpl) admitVerifiedWorker(ctx context.Context, token APIToken
 		runner, worker, err = copy.admitWorker(ctx, token, entry)
 		return err
 	})
+	if err != nil {
+		m.recordAdmissionRejection(ctx, id, err)
+	}
 	return runner, worker, err
 }
 

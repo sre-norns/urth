@@ -259,12 +259,16 @@ func (w *Worker) register(ctx context.Context) (urth.WorkerRegistrationResponse,
 		w.identityKey = key
 	}
 	public := w.identityKey.Public().(ed25519.PublicKey)
+	spec := urth.WorkerInstanceSpec{
+		Proof:        &urth.WorkerProof{PublicKey: base64.RawURLEncoding.EncodeToString(public)},
+		Capabilities: w.config.GetCapabilities(regoCtx),
+	}
 	entry := urth.WorkerInstance{
 		ObjectMeta: manifest.ObjectMeta{Name: w.config.Name, Labels: w.config.GetEffectiveLabels()},
-		Spec:       urth.WorkerInstanceSpec{Proof: &urth.WorkerProof{PublicKey: base64.RawURLEncoding.EncodeToString(public)}},
+		Spec:       spec,
 	}.ToManifest()
 	// ToManifest omits request proof from resource reads; enrollment adds it explicitly.
-	entry.Spec = &urth.WorkerInstanceSpec{Proof: &urth.WorkerProof{PublicKey: base64.RawURLEncoding.EncodeToString(public)}}
+	entry.Spec = &spec
 	entry.Status = nil
 	challenge, err := w.apiClient.Runners().ChallengeWorker(regoCtx, w.token, entry)
 	if err != nil {

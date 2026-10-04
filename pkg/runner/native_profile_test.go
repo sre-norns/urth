@@ -3,6 +3,7 @@
 package runner
 
 import (
+	"context"
 	"testing"
 
 	"github.com/sre-norns/urth/pkg/prob"
@@ -16,6 +17,9 @@ func TestNativeWorkerProbeRegistry(t *testing.T) {
 	}
 	cfg := NewDefaultConfig()
 	labels := cfg.GetEffectiveLabels()
+	caps := cfg.discoverCapabilities(context.Background(), func(context.Context, string, string, ...string) ([]byte, error) {
+		return []byte(`{"puppeteer":"24.0.0","path":"/browser"}`), nil
+	}, func() (bool, bool) { return true, true })
 	for _, kind := range want {
 		if _, ok := registered[kind]; !ok {
 			t.Errorf("native prober %q is absent", kind)
@@ -25,6 +29,9 @@ func TestNativeWorkerProbeRegistry(t *testing.T) {
 		}
 	}
 	for _, kind := range []prob.Kind{"puppeteer", "pypuppeteer"} {
+		if _, ok := caps.ProbeVersions[string(kind)]; ok {
+			t.Errorf("native typed capability %q is advertised", kind)
+		}
 		if _, ok := registered[kind]; ok {
 			t.Errorf("external-runtime prober %q is registered", kind)
 		}

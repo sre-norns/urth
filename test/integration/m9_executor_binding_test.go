@@ -36,7 +36,7 @@ func TestM9RunCapabilityRejectsChangedStoredExecutor(t *testing.T) {
 				} else {
 					column, originalID = "status_executor_worker_id", run.Status.Executor.WorkerID
 					token := h.enrolmentToken(run.Status.Executor.RunnerName)
-					entry := urth.WorkerInstance{ObjectMeta: manifest.ObjectMeta{Name: "replacement-worker"}}.ToManifest()
+					entry := urth.WorkerInstance{ObjectMeta: manifest.ObjectMeta{Name: "replacement-worker"}, Spec: urth.WorkerInstanceSpec{Capabilities: testPolicyCapabilities()}}.ToManifest()
 					entry = h.signedWorker(token, entry, nil)
 					replacement, err := h.client("").Runners().AuthWorker(h.ctx, token, entry)
 					require.NoError(t, err)

@@ -47,7 +47,7 @@ func TestWorkerProofIdentityReplayAndBlocklist(t *testing.T) {
 	require.True(t, found)
 	_, key, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
-	entry := manifest.ResourceManifest{TypeMeta: manifest.TypeMeta{APIVersion: urth.APIVersion, Kind: urth.KindWorkerInstance}, Metadata: manifest.ObjectMeta{Name: "stable-worker"}, Spec: &urth.WorkerInstanceSpec{}}
+	entry := manifest.ResourceManifest{TypeMeta: manifest.TypeMeta{APIVersion: urth.APIVersion, Kind: urth.KindWorkerInstance}, Metadata: manifest.ObjectMeta{Name: "stable-worker"}, Spec: &urth.WorkerInstanceSpec{Capabilities: testPolicyCapabilities()}}
 	proof := signedWorker(t, srv, ctx, token, entry, key)
 	// A forged signature cannot consume the valid proof.
 	forged, err := urth.NewWorkerInstance(proof)
@@ -130,7 +130,7 @@ func TestConcurrentWorkerChallengeReplayHasOneWinner(t *testing.T) {
 	require.NoError(t, err)
 	_, key, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
-	entry := manifest.ResourceManifest{TypeMeta: manifest.TypeMeta{Kind: urth.KindWorkerInstance}, Metadata: manifest.ObjectMeta{Name: "concurrent"}, Spec: &urth.WorkerInstanceSpec{}}
+	entry := manifest.ResourceManifest{TypeMeta: manifest.TypeMeta{Kind: urth.KindWorkerInstance}, Metadata: manifest.ObjectMeta{Name: "concurrent"}, Spec: &urth.WorkerInstanceSpec{Capabilities: testPolicyCapabilities()}}
 	entry = signedWorker(t, srv, ctx, token, entry, key)
 	var successes atomic.Int32
 	var wg sync.WaitGroup
@@ -156,7 +156,7 @@ func TestWorkerChallengeCapacityIsBounded(t *testing.T) {
 	require.NoError(t, err)
 	_, key, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
-	entry := manifest.ResourceManifest{TypeMeta: manifest.TypeMeta{Kind: urth.KindWorkerInstance}, Metadata: manifest.ObjectMeta{Name: "bounded"}, Spec: &urth.WorkerInstanceSpec{Proof: &urth.WorkerProof{PublicKey: base64.RawURLEncoding.EncodeToString(key.Public().(ed25519.PublicKey))}}}
+	entry := manifest.ResourceManifest{TypeMeta: manifest.TypeMeta{Kind: urth.KindWorkerInstance}, Metadata: manifest.ObjectMeta{Name: "bounded"}, Spec: &urth.WorkerInstanceSpec{Capabilities: testPolicyCapabilities(), Proof: &urth.WorkerProof{PublicKey: base64.RawURLEncoding.EncodeToString(key.Public().(ed25519.PublicKey))}}}
 	for i := 0; i < 128; i++ {
 		_, err = srv.Runners().ChallengeWorker(ctx, token, entry)
 		require.NoError(t, err)

@@ -4,6 +4,7 @@ import type {
   MachineRegistration,
 } from '@sre-norns/components/identity'
 import {z} from 'zod'
+import {jobRequirements, workerRequirements} from '../api/models'
 
 // How Urth names the shared identity concepts. A machine identity is a Runner:
 // the machine that runs the probes, as a GitHub runner runs jobs.
@@ -61,11 +62,14 @@ export const runnerRegistration: MachineRegistration = {
     metadata: {name: values.name},
     // Explicit: spec.active is a plain bool, so an omitted field would create
     // an inactive Runner that placement skips, while its identity looked active.
-    spec: {active: true, description: values.description ?? ''},
+    spec: {active: true, description: values.description ?? '', jobRequirements: jobRequirements.parse(JSON.parse(values.jobRequirements || '{}')), workerRequirements: workerRequirements.parse(JSON.parse(values.workerRequirements || '{}')), propagatedLabels: z.record(z.string(), z.string()).parse(JSON.parse(values.propagatedLabels || '{}'))},
   }),
   response: runnerReply,
   fields: [
     {name: 'name', label: 'Runner name', required: true},
     {name: 'description', label: 'Description', type: 'textarea'},
+    {name: 'jobRequirements', label: 'Job requirements (JSON)', type: 'textarea', hint: 'Explicit probe kinds are required to admit jobs. Duration limits use values such as 30s.'},
+    {name: 'workerRequirements', label: 'Worker requirements (JSON)', type: 'textarea', hint: 'Version constraints such as >=1.9.0 <2.0.0, runtimes, platform, and privileges.'},
+    {name: 'propagatedLabels', label: 'Propagated labels (JSON)', type: 'textarea', hint: 'Labels copied to each run and its artifacts.'},
   ],
 }

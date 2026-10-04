@@ -4,26 +4,23 @@ Shared context: [`CONTEXT.md`](../CONTEXT.md).
 
 | Field | Value |
 |---|---|
-| Status | `ready` |
+| Status | `in-progress` |
 | Priority | `P0` |
 | Workstream | Runner contract |
 | Depends on | — |
 | Likely conflicts | 006, 007, 009, 014 |
-| Owner | Unclaimed |
+| Owner | Codex; `feat/runner-channel-policy` |
 
-## Current scope and retained backlog (2026-10-03)
+## Current scope (2026-10-04)
 
-This is separate Runner-policy work. M9 Worker proof, blocklists and broker
-credentials do not implement the proposed `jobRequirements`,
-`workerRequirements` or `propagatedLabels` policy sections. Keep its policy and
-snapshot acceptance criteria open; do not expand Worker-security work to close
-them.
+Runner channel policy is separate Urth product work. The implementation is ready
+for review on `feat/runner-channel-policy`. M9 Worker identity and broker security
+remain in place. The [validation record](../../runner-channel-policy-validation.md)
+contains the acceptance matrix and local evidence.
 
-Fresh installations only. The original compatibility/deprecation constraint,
-manifest migration sequence and legacy-manifest acceptance item below are
-historical proposals. They are superseded by the fresh-install contract.
-Future policy work must define clear validation/errors for its selected schema;
-it need not add an existing-resource reader or migration.
+Fresh installations use the explicit policy schema. Obsolete Runner
+`requirements` receives a clear error. Existing-resource migration and
+compatibility readers are out of scope.
 
 ## Historical review baseline and policy requirements
 
@@ -77,15 +74,15 @@ Artifacts inherit Result labels server-side; Worker labels cannot override them.
   labels and server-reserved identity labels.
 - Every Worker admitted to a Runner must satisfy every job class the Runner accepts.
   Reject incoherent Runner policy on create/update where it can be proven.
-- Preserve compatibility by explicitly migrating/deprecating legacy `requirements`;
-  do not silently reinterpret it differently for existing manifests.
+- Reject obsolete Runner `requirements` explicitly. Do not add migration or
+  compatibility reads. Scenario placement requirements remain unchanged.
 - Runner UID/name/version and propagated labels are snapshotted at Result creation.
 - Artifact server code derives inheritance from Result state, not from Worker upload.
 
 ## Suggested Implementation Sequence
 
 1. Define typed policy/capability value objects with parser/comparison tests.
-2. Add manifest compatibility and validation tests.
+2. Add strict fresh-install manifest and validation tests.
 3. Split scheduling into placement and Runner job-admission evaluations.
 4. Store effective Worker capabilities at enrollment and recheck at claim.
 5. Snapshot propagated labels on Result and derive Artifact labels server-side.
@@ -99,12 +96,13 @@ Artifacts inherit Result labels server-side; Worker labels cannot override them.
 
 ## Acceptance Criteria / Definition of Done
 
-- [ ] Placement, Runner job admission, and Worker admission are separately modeled.
-- [ ] Incoherent policies are rejected or cannot admit an incapable Worker.
-- [ ] Concrete claim checks use stored capabilities, never claim-body labels.
-- [ ] Version and duration ranges have domain-correct comparison tests.
-- [ ] Result and Artifact labels are immutable server-derived Runner snapshots.
-- [ ] Legacy manifests receive a documented migration/error path.
+- [x] Placement, Runner job admission, and Worker admission are separately modeled.
+- [x] Incoherent policies are rejected or cannot admit an incapable Worker.
+- [x] Concrete claim checks use stored capabilities, never claim-body labels.
+- [x] Version and duration ranges have domain-correct comparison tests.
+- [x] Result and Artifact labels are immutable server-derived Runner snapshots.
+- [x] Fresh-install manifests reject obsolete Runner `requirements` with a clear error.
+  Existing-resource migration is out of scope.
 
 ## Required Tests
 
@@ -126,8 +124,23 @@ git diff --check
 
 ## Completion Record
 
-- **Implemented:**
-- **Tests added/updated:**
-- **Documentation updated:**
-- **Validation evidence:**
-- **Follow-ups:**
+Implementation review is in progress on `feat/runner-channel-policy`. The source
+baseline is `50aa0d5bea8aa828637bae1e5a6819e3a4538187`. The maintainer reviews
+and merges the implementation. No release or deployment is included.
+
+- **Implemented:** Separate job and Worker policies, validated typed capability
+  snapshots, placement/claim enforcement, immutable provenance, strict fresh-install
+  decoding, and operator-visible admission rejection state. Workers receive generic
+  refusal responses.
+- **Tests added/updated:** `test/integration/channel_policy_test.go` covers real
+  PostgreSQL, scoped HTTP, NATS and Worker boundaries. Existing domain and M9
+  fixtures declare explicit job policies and typed capabilities.
+- **Documentation updated:** ADR 0003, Runner manifests, CLI/API guidance and
+  this task record describe the fresh-install contract.
+- **Validation evidence:** See the [acceptance record](../../runner-channel-policy-validation.md).
+  The baseline claim regression fails before enforcement. Real boundary, native
+  profile, concurrency, client and race checks pass. The full PostgreSQL audit passes.
+  Exact PR CI remains a review gate.
+- **Follow-ups:** Record the implementation PR and exact CI. The maintainer
+  reviews and merges the change. Record merged-main CI after merge. Release
+  publication requires separate authorization.

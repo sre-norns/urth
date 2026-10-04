@@ -42,7 +42,7 @@ func seedScenarioWithProb(t *testing.T, store *dbstore.DBStore, probManifest pro
 
 	runner := urth.Runner{
 		ObjectMeta: manifest.ObjectMeta{Name: "test-runner"},
-		Spec:       urth.RunnerSpec{IsActive: true},
+		Spec:       urth.RunnerSpec{IsActive: true, JobRequirements: urth.JobRequirements{ProbeKinds: []string{"http", "tcp", "rest", "dns", "grpc", "icmp", "har", "puppeteer"}}},
 	}
 	require.NoError(t, store.Create(ctx, &runner))
 
@@ -301,7 +301,7 @@ func claimRunErr(t *testing.T, srv urth.Service, result urth.Result) (urth.AuthJ
 	registration, err := enrollTestWorker(t, srv, ctx, enrolment, manifest.ResourceManifest{
 		TypeMeta: manifest.TypeMeta{Kind: urth.KindWorkerInstance},
 		Metadata: manifest.ObjectMeta{Name: "test-worker"},
-		Spec:     &urth.WorkerInstanceSpec{},
+		Spec:     &urth.WorkerInstanceSpec{Capabilities: testPolicyCapabilities()},
 	})
 	require.NoError(t, err)
 

@@ -132,7 +132,7 @@ func TestWorkerBlockAndDeleteComposeWithSecuredBroker(t *testing.T) {
 	token := h.enrolmentToken(runner.Name)
 	_, key, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
-	entry := manifest.ResourceManifest{TypeMeta: manifest.TypeMeta{APIVersion: urth.APIVersion, Kind: urth.KindWorkerInstance}, Metadata: manifest.ObjectMeta{Name: "secure-worker"}, Spec: &urth.WorkerInstanceSpec{}}
+	entry := manifest.ResourceManifest{TypeMeta: manifest.TypeMeta{APIVersion: urth.APIVersion, Kind: urth.KindWorkerInstance}, Metadata: manifest.ObjectMeta{Name: "secure-worker"}, Spec: &urth.WorkerInstanceSpec{Capabilities: testPolicyCapabilities()}}
 	entry = h.signedWorker(token, entry, key)
 	registration, err := h.client("").Runners().AuthWorker(h.ctx, token, entry)
 	require.NoError(t, err)
@@ -167,7 +167,7 @@ func TestWorkerBlockAndDeleteComposeWithSecuredBroker(t *testing.T) {
 	code, _ := h.httpRequest("POST", fmt.Sprintf("/v1/auth/runs/%s/claim", next.UID), registration.Session, body)
 	require.Equal(t, 403, code, "blocked active session attempted a new claim")
 	entry.Status = nil
-	entry.Spec = &urth.WorkerInstanceSpec{Proof: &urth.WorkerProof{PublicKey: workerPublicKey(key)}}
+	entry.Spec = &urth.WorkerInstanceSpec{Capabilities: testPolicyCapabilities(), Proof: &urth.WorkerProof{PublicKey: workerPublicKey(key)}}
 	_, err = h.client("").Runners().ChallengeWorker(h.ctx, token, entry)
 	require.Error(t, err, "block prevents a fresh proof challenge")
 	// An already claimed run reports under its own deadline after blocking.
@@ -343,7 +343,7 @@ func TestBlocklistCommitPrecedesWaitingWorkerClaim(t *testing.T) {
 	runner := h.applyRunner("serial-runner", nil)
 	scenario := h.applyScenario("serial-probe", testProbSpec{}, manifest.LabelSelector{})
 	token := h.enrolmentToken(runner.Name)
-	entry := manifest.ResourceManifest{TypeMeta: manifest.TypeMeta{APIVersion: urth.APIVersion, Kind: urth.KindWorkerInstance}, Metadata: manifest.ObjectMeta{Name: "serial-worker"}, Spec: &urth.WorkerInstanceSpec{}}
+	entry := manifest.ResourceManifest{TypeMeta: manifest.TypeMeta{APIVersion: urth.APIVersion, Kind: urth.KindWorkerInstance}, Metadata: manifest.ObjectMeta{Name: "serial-worker"}, Spec: &urth.WorkerInstanceSpec{Capabilities: testPolicyCapabilities()}}
 	registration, err := h.client("").Runners().AuthWorker(h.ctx, token, h.signedWorker(token, entry, nil))
 	require.NoError(t, err)
 	worker, err := urth.NewWorkerInstance(registration.Worker)
@@ -385,7 +385,7 @@ func TestExpiredWorkerSessionKeepsOnlyBoundedInFlightAuthority(t *testing.T) {
 	runner := h.applyRunner("expiring-runner", nil)
 	scenario := h.applyScenario("expiring-probe", testProbSpec{}, manifest.LabelSelector{})
 	token := h.enrolmentToken(runner.Name)
-	entry := manifest.ResourceManifest{TypeMeta: manifest.TypeMeta{APIVersion: urth.APIVersion, Kind: urth.KindWorkerInstance}, Metadata: manifest.ObjectMeta{Name: "expiring-worker"}, Spec: &urth.WorkerInstanceSpec{RequestedTTL: 2 * time.Second}}
+	entry := manifest.ResourceManifest{TypeMeta: manifest.TypeMeta{APIVersion: urth.APIVersion, Kind: urth.KindWorkerInstance}, Metadata: manifest.ObjectMeta{Name: "expiring-worker"}, Spec: &urth.WorkerInstanceSpec{Capabilities: testPolicyCapabilities(), RequestedTTL: 2 * time.Second}}
 	registration, err := h.client("").Runners().AuthWorker(h.ctx, token, h.signedWorker(token, entry, nil))
 	require.NoError(t, err)
 	require.False(t, registration.NATS.Credential.ExpiresAt.After(registration.SessionExpiresAt))
@@ -435,7 +435,7 @@ func TestRunnerLockDatabaseFailureLeavesClaimRetryable(t *testing.T) {
 	runner := h.applyRunner("lock-failure-runner", nil)
 	scenario := h.applyScenario("lock-failure-probe", testProbSpec{}, manifest.LabelSelector{})
 	token := h.enrolmentToken(runner.Name)
-	entry := manifest.ResourceManifest{TypeMeta: manifest.TypeMeta{APIVersion: urth.APIVersion, Kind: urth.KindWorkerInstance}, Metadata: manifest.ObjectMeta{Name: "lock-failure-worker"}, Spec: &urth.WorkerInstanceSpec{}}
+	entry := manifest.ResourceManifest{TypeMeta: manifest.TypeMeta{APIVersion: urth.APIVersion, Kind: urth.KindWorkerInstance}, Metadata: manifest.ObjectMeta{Name: "lock-failure-worker"}, Spec: &urth.WorkerInstanceSpec{Capabilities: testPolicyCapabilities()}}
 	registration, err := h.client("").Runners().AuthWorker(h.ctx, token, h.signedWorker(token, entry, nil))
 	require.NoError(t, err)
 	run := h.createRun(scenario.Name)
@@ -487,7 +487,7 @@ func TestMachineTokenRevocationDeniesFreshProofButPreservesSession(t *testing.T)
 	token := h.enrolmentToken(runner.Name)
 	_, key, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
-	entry := manifest.ResourceManifest{TypeMeta: manifest.TypeMeta{APIVersion: urth.APIVersion, Kind: urth.KindWorkerInstance}, Metadata: manifest.ObjectMeta{Name: "rotated-token-worker"}, Spec: &urth.WorkerInstanceSpec{}}
+	entry := manifest.ResourceManifest{TypeMeta: manifest.TypeMeta{APIVersion: urth.APIVersion, Kind: urth.KindWorkerInstance}, Metadata: manifest.ObjectMeta{Name: "rotated-token-worker"}, Spec: &urth.WorkerInstanceSpec{Capabilities: testPolicyCapabilities()}}
 	registration, err := h.client("").Runners().AuthWorker(h.ctx, token, h.signedWorker(token, entry, key))
 	require.NoError(t, err)
 	proof := h.signedWorker(token, entry, key)

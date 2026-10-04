@@ -110,7 +110,7 @@ func claimRun(t *testing.T, srv urth.Service, result urth.Result) urth.AuthJobRe
 	registration, err := enrollTestWorker(t, srv, ctx, enrolment, manifest.ResourceManifest{
 		TypeMeta: manifest.TypeMeta{Kind: urth.KindWorkerInstance},
 		Metadata: manifest.ObjectMeta{Name: "test-worker"},
-		Spec:     &urth.WorkerInstanceSpec{},
+		Spec:     &urth.WorkerInstanceSpec{Capabilities: testPolicyCapabilities()},
 	})
 	require.NoError(t, err)
 
@@ -180,6 +180,10 @@ func TestReconcilerExpiresRunAbandonedAfterClaim(t *testing.T) {
 		urth.WithMaxRunDuration(time.Millisecond),
 	)
 	scenarioName := seedScenario(t, store)
+	var concrete urth.Scenario
+	require.NoError(t, db.Where("name = ?", scenarioName).First(&concrete).Error)
+	concrete.Spec.Prob.Timeout = time.Millisecond
+	require.NoError(t, db.Save(&concrete).Error)
 
 	ctx := context.Background()
 
@@ -227,6 +231,10 @@ func TestReconcilerDoesNotReopenAnExpiredRun(t *testing.T) {
 		urth.WithMaxRunDuration(time.Millisecond),
 	)
 	scenarioName := seedScenario(t, store)
+	var concrete urth.Scenario
+	require.NoError(t, db.Where("name = ?", scenarioName).First(&concrete).Error)
+	concrete.Spec.Prob.Timeout = time.Millisecond
+	require.NoError(t, db.Save(&concrete).Error)
 
 	ctx := context.Background()
 
@@ -459,6 +467,10 @@ func TestReconcilerRetiresDeliveredDispatchWithoutTouchingTheBroker(t *testing.T
 		urth.WithMaxRunDuration(time.Millisecond),
 	)
 	scenarioName := seedScenario(t, store)
+	var concrete urth.Scenario
+	require.NoError(t, db.Where("name = ?", scenarioName).First(&concrete).Error)
+	concrete.Spec.Prob.Timeout = time.Millisecond
+	require.NoError(t, db.Save(&concrete).Error)
 
 	ctx := context.Background()
 
@@ -710,6 +722,10 @@ func TestReconcilerContinuesPastAFailedPass(t *testing.T) {
 		urth.WithMaxRunDuration(time.Millisecond),
 	)
 	scenarioName := seedScenario(t, store)
+	var concrete urth.Scenario
+	require.NoError(t, db.Where("name = ?", scenarioName).First(&concrete).Error)
+	concrete.Spec.Prob.Timeout = time.Millisecond
+	require.NoError(t, db.Save(&concrete).Error)
 
 	ctx := context.Background()
 

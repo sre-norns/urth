@@ -6,6 +6,7 @@ import {request} from '../api/http'
 import {placement, run, type Scenario} from '../api/models'
 import {resourcePath} from '../api/queries'
 import {projectPath} from '../identity/links'
+import {policyReason} from './common'
 
 const units = [['day', 86_400], ['hour', 3_600], ['minute', 60], ['second', 1]] as const
 
@@ -54,7 +55,7 @@ export function useRunNow() {
     setPending(name); setError(undefined)
     try {
       const check = await request(session, `${path}/placement`, placement)
-      if (!check.data.schedulable) throw new Error(check.data.detail || check.data.reason || 'No eligible runner is available.')
+      if (!check.data.schedulable) throw new Error(check.data.detail || policyReason(check.data.reason) || 'No eligible runner is available.')
       const created = await request(session, `${path}/results`, run, {method: 'POST', body: {apiVersion: 'urth.sre-norns.com/v1', kind: 'results', metadata: {labels: {trigger: 'manual', triggerAgent: 'website'}}, spec: {}}})
       void queryClient.invalidateQueries({queryKey: [accountId, projectId]})
       void navigate(`${projectPath(accountId, projectId)}/runs/${encodeURIComponent(created.data.metadata.name)}`)

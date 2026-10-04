@@ -4,12 +4,12 @@ Shared context: [`CONTEXT.md`](../CONTEXT.md).
 
 | Field | Value |
 |---|---|
-| Status | `ready` |
+| Status | `in-progress` |
 | Priority | `P1` |
 | Workstream | Claim lifecycle / Runner contract |
 | Depends on | — |
 | Likely conflicts | 008, 014, 018 (done), 021 |
-| Owner | Unclaimed |
+| Owner | Codex; `feat/runner-channel-policy` |
 
 ## Why This Matters
 
@@ -108,14 +108,14 @@ loaded on the claim path.
 
 ## Acceptance Criteria / Definition of Done
 
-- [ ] A Runner relabelled after placement cannot claim the queued run.
-- [ ] The run reaches a terminal state with a distinct, operator-readable reason and label.
-- [ ] The dispatch is acknowledged, not redelivered until `MaxDeliver`.
-- [ ] An empty requirement set still matches.
-- [ ] Unparseable requirements fail closed.
-- [ ] The placed-Runner UID check is unchanged.
-- [ ] One selector evaluator serves both placement and the recheck.
-- [ ] Regression tests fail against the current code before the fix.
+- [x] A Runner relabelled after placement cannot claim the queued run.
+- [x] The run reaches a terminal state with a distinct, operator-readable reason and label.
+- [x] The dispatch is acknowledged, not redelivered until `MaxDeliver`.
+- [x] An empty requirement set still matches.
+- [x] Unparseable requirements fail closed.
+- [x] The placed-Runner UID check is unchanged.
+- [x] One selector evaluator serves both placement and the recheck.
+- [x] Regression tests fail against the current code before the fix.
 
 ## Required Tests
 
@@ -140,8 +140,21 @@ the new.
 
 ## Completion Record
 
-- **Implemented:**
-- **Tests added/updated:**
-- **Documentation updated:**
-- **Validation evidence:**
-- **Follow-ups:**
+Implementation review is in progress on `feat/runner-channel-policy`. The source
+baseline is `50aa0d5bea8aa828637bae1e5a6819e3a4538187`. The maintainer reviews
+and merges the implementation. No release or deployment is included.
+
+- **Implemented:** Claims use the stored Scenario placement selector and current
+  Runner labels. Invalid or changed placement records a terminal reason before
+  claim authority is issued. The Worker acknowledges obsolete dispatches.
+- **Tests added/updated:** `test/integration/channel_policy_test.go` covers real
+  PostgreSQL, scoped HTTP, NATS and Worker boundaries. Existing domain and M9
+  fixtures declare explicit job policies and typed capabilities.
+- **Documentation updated:** ADR 0003, claim guidance and this task record.
+- **Validation evidence:** See the [acceptance record](../../runner-channel-policy-validation.md).
+  The baseline claim regression fails before enforcement. Real boundary, native
+  profile, concurrency, client and race checks pass. The full PostgreSQL audit passes.
+  Exact PR CI remains a review gate.
+- **Follow-ups:** Record the implementation PR and exact CI. The maintainer
+  reviews and merges the change. Record merged-main CI after merge. Release
+  publication requires separate authorization.

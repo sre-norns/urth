@@ -43,10 +43,14 @@ func GetNodeRuntimeLabels() manifest.Labels {
 	}
 
 	vstr := strings.TrimSpace(string(out))
-	return manifest.Labels{
-		LabelNodeJsVersion:      vstr[1:],
-		LabelNodeJsVersionMajor: semver.Major(vstr)[1:],
+	labels := manifest.Labels{}
+	if vstr != "" {
+		labels[LabelNodeJsVersion] = urth.LabelSafeValue(strings.TrimPrefix(vstr, "v"))
 	}
+	if major := strings.TrimPrefix(semver.Major(vstr), "v"); major != "" {
+		labels[LabelNodeJsVersionMajor] = major
+	}
+	return labels
 }
 
 func GetPythonRuntimeLabels() manifest.Labels {
@@ -62,10 +66,14 @@ func GetPythonRuntimeLabels() manifest.Labels {
 	}
 
 	vstr := strings.TrimSpace(parts[1])
-	return manifest.Labels{
-		LabelPythonVersion:      vstr,
-		LabelPythonVersionMajor: semver.Major("v" + vstr)[1:],
+	labels := manifest.Labels{}
+	if vstr != "" {
+		labels[LabelPythonVersion] = urth.LabelSafeValue(vstr)
 	}
+	if major := strings.TrimPrefix(semver.Major("v"+vstr), "v"); major != "" {
+		labels[LabelPythonVersionMajor] = major
+	}
+	return labels
 }
 
 func GetRuntimeLabels() manifest.Labels {

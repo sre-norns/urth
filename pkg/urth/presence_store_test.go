@@ -28,7 +28,7 @@ func seedWorker(t *testing.T, store *dbstore.DBStore) (urth.Runner, urth.WorkerI
 
 	runner := urth.Runner{
 		ObjectMeta: manifest.ObjectMeta{Name: "presence-runner"},
-		Spec:       urth.RunnerSpec{IsActive: true},
+		Spec:       urth.RunnerSpec{IsActive: true, JobRequirements: urth.JobRequirements{ProbeKinds: []string{"http", "tcp", "rest", "dns", "grpc", "icmp", "har", "puppeteer"}}},
 	}
 	require.NoError(t, store.Create(ctx, &runner))
 

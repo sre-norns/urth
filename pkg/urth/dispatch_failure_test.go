@@ -35,7 +35,7 @@ func workerSession(t *testing.T, srv urth.Service, name manifest.ResourceName) u
 	registration, err := enrollTestWorker(t, srv, ctx, enrolment, manifest.ResourceManifest{
 		TypeMeta: manifest.TypeMeta{Kind: urth.KindWorkerInstance},
 		Metadata: manifest.ObjectMeta{Name: name},
-		Spec:     &urth.WorkerInstanceSpec{},
+		Spec:     &urth.WorkerInstanceSpec{Capabilities: testPolicyCapabilities()},
 	})
 	require.NoError(t, err)
 

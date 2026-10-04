@@ -76,3 +76,11 @@ export function EditResource<T>({title, path, schema, snapshot, fields, defaults
     </ResourceForm>
   </Dialog>
 }
+
+export function policyReason(reason?: string) {
+  if (reason === 'job-policy-rejected') return 'Matching runners reject this job. Check the accepted probe kinds, job labels, and duration limits.'
+  if (reason === 'runner-job-policy-changed') return 'The Runner policy changed after placement and no longer accepts this job.'
+  if (reason === 'runner-placement-changed') return 'The Runner labels no longer satisfy the stored Scenario placement requirements.'
+  if (reason === 'job-duration-exceeds-server-limit') return 'The required job duration exceeds the API execution limit.'
+  return reason
+}

@@ -28,7 +28,7 @@ func TestEnrollmentLifecycleRejectsFreshAndRefresh(t *testing.T) {
 				token := h.enrolmentToken(runner.Name)
 				_, key, err := ed25519.GenerateKey(rand.Reader)
 				require.NoError(t, err)
-				entry := manifest.ResourceManifest{TypeMeta: manifest.TypeMeta{APIVersion: urth.APIVersion, Kind: urth.KindWorkerInstance}, Metadata: manifest.ObjectMeta{Name: "lifecycle-worker"}, Spec: &urth.WorkerInstanceSpec{}}
+				entry := manifest.ResourceManifest{TypeMeta: manifest.TypeMeta{APIVersion: urth.APIVersion, Kind: urth.KindWorkerInstance}, Metadata: manifest.ObjectMeta{Name: "lifecycle-worker"}, Spec: &urth.WorkerInstanceSpec{Capabilities: testPolicyCapabilities()}}
 				registered, err := h.client("").Runners().AuthWorker(h.ctx, token, h.signedWorker(token, entry, key))
 				require.NoError(t, err, "active Runner permits enrollment")
 				renewed, err := h.client("").Runners().AuthWorker(h.ctx, token, h.signedWorker(token, entry, key))
@@ -105,7 +105,7 @@ func TestEnrollmentStoredStateAndManifestsExcludeBearerSecret(t *testing.T) {
 		require.NotEmpty(t, data)
 		require.False(t, strings.Contains(data, string(token)), "stored row must exclude the bearer secret")
 	}
-	entry := manifest.ResourceManifest{TypeMeta: manifest.TypeMeta{APIVersion: urth.APIVersion, Kind: urth.KindWorkerInstance}, Metadata: manifest.ObjectMeta{Name: "stored-token-worker"}, Spec: &urth.WorkerInstanceSpec{}}
+	entry := manifest.ResourceManifest{TypeMeta: manifest.TypeMeta{APIVersion: urth.APIVersion, Kind: urth.KindWorkerInstance}, Metadata: manifest.ObjectMeta{Name: "stored-token-worker"}, Spec: &urth.WorkerInstanceSpec{Capabilities: testPolicyCapabilities()}}
 	proof := h.signedWorker(token, entry, nil)
 	body, err := json.Marshal(proof)
 	require.NoError(t, err)

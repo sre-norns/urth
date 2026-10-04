@@ -43,8 +43,9 @@ var ErrNoExecutionSnapshot = errors.New("result carries no execution snapshot")
 // logged. That is why ResultSpec hides it from serialization rather than relying
 // on callers to remember.
 type ExecutionSnapshot struct {
-	Account manifest.ResourceID `json:"account,omitempty"`
-	Project manifest.ResourceID `json:"project,omitempty"`
+	JobLabels manifest.Labels     `json:"jobLabels,omitempty"`
+	Account   manifest.ResourceID `json:"account,omitempty"`
+	Project   manifest.ResourceID `json:"project,omitempty"`
 	// ScenarioUID identifies the scenario this run was created from. It is the
 	// UID rather than the name because a name can be reused.
 	ScenarioUID manifest.ResourceID `json:"scenarioUid,omitempty"`
@@ -58,8 +59,8 @@ type ExecutionSnapshot struct {
 	ScenarioVersion manifest.Version `json:"scenarioVersion,omitempty"`
 
 	// Requirements is the placement selector as it stood when the run was
-	// scheduled. Placement already happened by then, so this is not re-evaluated
-	// here; it is recorded so a later admission check -- and an operator asking
+	// scheduled. Claims recheck this selector against current Runner labels.
+	// It is recorded so admission -- and an operator asking
 	// why this run went to that runner -- reads the requirement the decision was
 	// actually made against.
 	Requirements manifest.LabelSelector `json:"requirements"`
@@ -76,7 +77,8 @@ type ExecutionSnapshot struct {
 // to do. Validate rejects that rather than persisting it.
 func NewExecutionSnapshot(scenario Scenario) ExecutionSnapshot {
 	return ExecutionSnapshot{
-		Account: scenario.Account, Project: scenario.Project,
+		JobLabels: manifest.MergeLabels(scenario.Labels),
+		Account:   scenario.Account, Project: scenario.Project,
 		ScenarioUID:     scenario.UID,
 		ScenarioName:    scenario.Name,
 		ScenarioVersion: scenario.Version,
@@ -110,6 +112,9 @@ func (s ExecutionSnapshot) Validate() error {
 	}
 	if s.Prob.Kind == "" {
 		return fmt.Errorf("execution snapshot for scenario %v has no prob kind", s.ScenarioName)
+	}
+	if s.Prob.Timeout < 0 {
+		return fmt.Errorf("probe timeout must not be negative")
 	}
 	if s.Prob.Spec == nil {
 		return fmt.Errorf("execution snapshot for scenario %v has no prob spec", s.ScenarioName)

@@ -52,7 +52,7 @@ func registerWorker(t *testing.T, srv urth.Service, runnerName, workerName manif
 	registration, err := enrollTestWorker(t, srv, ctx, enrolment, manifest.ResourceManifest{
 		TypeMeta: manifest.TypeMeta{Kind: urth.KindWorkerInstance},
 		Metadata: manifest.ObjectMeta{Name: workerName},
-		Spec:     &urth.WorkerInstanceSpec{},
+		Spec:     &urth.WorkerInstanceSpec{Capabilities: testPolicyCapabilities()},
 	})
 	require.NoError(t, err)
 

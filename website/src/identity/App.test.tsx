@@ -85,7 +85,7 @@ describe('Urth identity routes', () => {
     const posted: JsonBodyType[] = []
     server.use(
       http.get(api('/accounts/acct-1/runners'), () => HttpResponse.json(page([]))),
-      http.get(api('/accounts/acct-1/runners/edge-eu'), () => HttpResponse.json({apiVersion: 'urth.sre-norns.com/v1', kind: 'runners', metadata: {uid: 'run-1', name: 'edge-eu', version: 1, account: 'acct-1'}, spec: {active: true, description: 'Frankfurt'}})),
+      http.get(api('/accounts/acct-1/runners/edge-eu'), () => HttpResponse.json({apiVersion: 'urth.sre-norns.com/v1', kind: 'runners', metadata: {uid: 'run-1', name: 'edge-eu', version: 1, account: 'acct-1'}, spec: {active: true, description: 'Frankfurt', jobRequirements: {probeKinds: ['http'], maxDuration: '30s'}, workerRequirements: {version: '>=1.9.0'}, propagatedLabels: {region: 'eu'}}})),
       http.get(api('/accounts/acct-1/workers'), () => HttpResponse.json(page([]))),
       http.get(api('/agent-identities/run-1'), () => HttpResponse.json(resource('agent-identities', 'run-1', {description: 'Frankfurt'}, {}, {name: 'edge-eu'}))),
       http.get(api('/agent-identities/run-1/project-grants'), () => HttpResponse.json(page([]))),
@@ -97,7 +97,7 @@ describe('Urth identity routes', () => {
             apiVersion: 'urth.sre-norns.com/v1',
             kind: 'runners',
             metadata: {uid: 'run-1', name: 'edge-eu', version: 1, account: 'acct-1'},
-            spec: {active: true, description: 'Frankfurt'},
+            spec: {active: true, description: 'Frankfurt', jobRequirements: {probeKinds: ['http'], maxDuration: '30s'}, workerRequirements: {version: '>=1.9.0'}, propagatedLabels: {region: 'eu'}},
           },
           {status: 201},
         )
@@ -109,10 +109,16 @@ describe('Urth identity routes', () => {
     const dialog = await screen.findByRole('dialog')
     await user.type(within(dialog).getByLabelText(/Runner name/), 'edge-eu')
     await user.type(within(dialog).getByLabelText(/Description/), 'Frankfurt')
+    await user.click(within(dialog).getByLabelText(/Job requirements/))
+    await user.paste( '{\"probeKinds\":[\"http\"],\"maxDuration\":\"30s\"}')
+    await user.click(within(dialog).getByLabelText(/Worker requirements/))
+    await user.paste( '{\"version\":\">=1.9.0\"}')
+    await user.click(within(dialog).getByLabelText(/Propagated labels/))
+    await user.paste( '{\"region\":\"eu\"}')
     await user.click(within(dialog).getByRole('button', {name: 'Save'}))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     expect(posted).toEqual([
-      {apiVersion: 'urth.sre-norns.com/v1', kind: 'runners', metadata: {name: 'edge-eu'}, spec: {active: true, description: 'Frankfurt'}},
+      {apiVersion: 'urth.sre-norns.com/v1', kind: 'runners', metadata: {name: 'edge-eu'}, spec: {active: true, description: 'Frankfurt', jobRequirements: {probeKinds: ['http'], maxDuration: '30s'}, workerRequirements: {version: '>=1.9.0'}, propagatedLabels: {region: 'eu'}}},
     ])
     expect(await screen.findByRole('heading', {name: 'edge-eu'})).toBeInTheDocument()
   })
