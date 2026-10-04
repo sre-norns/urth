@@ -166,3 +166,43 @@ The identity API requires wyrd identity/v0.7.0 canonical resources. Deploy the
 backend and this UI together. Flat resource reads and writes are unsupported.
 Runner enrolment uses the shared token operation; its secret appears only in
 the create result and is redacted on replay and ordinary reads.
+
+
+## Runner channel policy
+
+Scenario `requirements` selects Runner metadata labels. Runner `jobRequirements`
+selects concrete jobs. Set `probeKinds` explicitly; an empty list admits no jobs,
+and a kind the API server has no prober for is rejected. ICMP probes that set
+`dont_fragment` need raw sockets: list `raw-sockets` in `jobRequirements.privileges`
+to accept them, and every enrolled Worker must then hold that privilege.
+Duration limits use Go strings such as `30s` and `1m`. The default accepted
+interval is `1ns` to `1m`.
+
+Runner `workerRequirements` controls enrollment. Version constraints use semantic
+version comparators, for example `>=1.9.0 <2.0.0`. Missing or invalid required
+capability values fail admission. Every enrolled Worker must cover every accepted
+probe kind and the complete accepted duration interval. Worker capabilities are
+validated declarations; they are not remote attestations.
+
+Runner `propagatedLabels` copies operator labels into each Result and its Artifacts.
+The Result stores the selected Runner UID, name, version, and label snapshot.
+Later Runner edits do not change this history. Protected identity and security
+label keys cannot be propagated or supplied by Worker uploads.
+
+The UI Runner form accepts all three policy objects. Edit forms retain the ETag
+and preserve drafts after a stale write. Worker details show stored effective
+capabilities. Run details show the selected Runner version and propagated labels.
+Use `urthctl get runner NAME -o yaml`, `urthctl get worker NAME -o json`, and
+`urthctl get workers -o wide` to inspect the same information. Apply a Runner
+manifest with `urthctl apply FILE`; updates use the version read by the client.
+The removed Runner `requirements` field returns a validation error.
+
+Placement preview reports the rejection reason when no channel accepts a job.
+Run details retain unschedulable reasons. Dispatch failure details explain policy
+changes that invalidate queued jobs. A Worker that cannot execute a queued job
+does not receive a run lease.
+
+Runner details also show the last enrollment rejection after a valid installation
+proof. The record contains the verified fingerprint, policy reason, and time.
+Use `urthctl get runner NAME -o wide` or `-o json` to inspect it. This operational
+record grants no Worker or session authority. Workers receive a generic refusal.

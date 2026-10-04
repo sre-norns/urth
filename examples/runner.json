@@ -1,24 +1,33 @@
 {
-    "apiVersion": "urth.sre-norns.com/v1",
-    "kind": "runners",
-    "metadata": {
-        "name": "example-runner-json",
-        "labels": {
-            "os": "linux",
-            "cloud": "local"
-        }
-    },
-    "spec": {
-        "active": true,
-        "maxInstance": 1,
-        "description": "Mock Cloud runner",
-        "requirements": {
-            "matchSelector": [
-                {
-                    "key": "urth/capability.prob.tcp",
-                    "operator": "NotIn"
-                }
-            ]
-        }
+  "apiVersion": "urth.sre-norns.com/v1",
+  "kind": "runners",
+  "metadata": {
+    "name": "example-runner-json",
+    "labels": {
+      "os": "linux",
+      "cloud": "local"
     }
+  },
+  "spec": {
+    "active": true,
+    "maxInstance": 1,
+    "description": "Mock Cloud runner",
+    "jobRequirements": {
+      "probeKinds": [
+        "tcp",
+        "http"
+      ],
+      "maxDuration": "1m"
+    },
+    "workerRequirements": {
+      "operatingSystems": [
+        "linux"
+      ],
+      "minDuration": "1ns",
+      "maxDuration": "1m"
+    },
+    "propagatedLabels": {
+      "cloud": "local"
+    }
+  }
 }

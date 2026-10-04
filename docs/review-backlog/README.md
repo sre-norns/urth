@@ -59,7 +59,7 @@ Status values:
 | 005 | P0 | done | [Verify shared machine-token enrollment lifecycle](tasks/005-secure-runner-enrollment.md) | — | 004, 006, 009 |
 | 006 | P0 | done | [Harden run capabilities and reporting authorization](tasks/006-harden-run-capabilities.md) | — | 005, 007, 008, 011 |
 | 007 | P0 | done | [Snapshot immutable execution input on Result](tasks/007-snapshot-result-execution-input.md) | — | 002, 006, 008, 011 |
-| 008 | P0 | ready | [Complete the Runner channel policy contract](tasks/008-runner-channel-policy.md) | — | 006, 007, 009, 014 |
+| 008 | P0 | in-progress | [Complete the Runner channel policy contract](tasks/008-runner-channel-policy.md) | — | 006, 007, 009, 014 |
 | 009 | P0 | done | [Add stable Worker identity and Runner blocklists](tasks/009-worker-identity-and-blocklist.md) | 005 | 004, 008 |
 | 010 | P1 | done | [Synchronously acknowledge claimed dispatches](tasks/010-synchronous-jetstream-ack.md) | — | 001, 003, 011 |
 | 011 | P1 | done | [Exercise the NATS Worker end to end and at crash points](tasks/011-nats-worker-failure-integration-tests.md) | 001, 002, 003, 007, 010 (done) | all runtime tasks |
@@ -73,7 +73,7 @@ Status values:
 | 019 | P1 | ready | [Serve the live run log stream instead of refusing it](tasks/019-serve-run-log-stream.md) | — | — |
 | 020 | P1 | ready | [Settle `notin` selector semantics across both evaluators](tasks/020-settle-notin-selector-semantics.md) | — | 014, 018 |
 | 021 | P1 | blocked | [Address Runner queues by name and reap orphaned ones](tasks/021-name-keyed-runner-queues.md) | 022 | 004, 013, 014, 016 |
-| 022 | P1 | ready | [Recheck execution requirements at claim time](tasks/022-recheck-requirements-at-claim.md) | — | 008, 014, 018, 021 |
+| 022 | P1 | in-progress | [Recheck execution requirements at claim time](tasks/022-recheck-requirements-at-claim.md) | — | 008, 014, 018, 021 |
 | 023 | P2 | done | [Give a Worker its own detail page](tasks/023-worker-detail-page.md) | — | 016 |
 | 024 | P1 | done | [Exercise authorization end to end](tasks/024-authorization-integration-scenarios.md) | 004, 005, 006, 009, 011 (done) | 004, 005, 006, 009 |
 | 025 | P2 | ready | [Make `urthctl get script` work](tasks/025-urthctl-script-parity.md) | — | 017 |

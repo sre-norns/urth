@@ -6,7 +6,7 @@ import {server} from '../test/server'
 import {api, page, renderAt, resource, signIn} from '../identity/test-support'
 
 const metadata = {uid: 'worker-1', name: 'edge-worker', version: 3, account: 'acct-1'}
-const worker = {apiVersion: 'urth.sre-norns.com/v1', kind: 'workerInstances', metadata, spec: {}, status: {fingerprint: `sha256:${'b'.repeat(64)}`, paused: false, presence: {condition: 'api-unreachable', api: 'offline', nats: 'online'}}}
+const worker = {apiVersion: 'urth.sre-norns.com/v1', kind: 'workerInstances', metadata, spec: {}, status: {fingerprint: `sha256:${'b'.repeat(64)}`, paused: false, effectiveCapabilities: {version: '1.10.0', os: 'linux', architecture: 'amd64', probeVersions: {http: '1.0.0'}, maxDuration: '1m'}, presence: {condition: 'api-unreachable', api: 'offline', nats: 'online'}}}
 afterEach(() => sessionStorage.clear())
 
 describe('infrastructure', () => {
@@ -27,6 +27,8 @@ describe('infrastructure', () => {
     expect(await screen.findByText('api unreachable')).toBeInTheDocument()
     expect(screen.getByText('offline')).toBeInTheDocument()
     expect(screen.getByText('online')).toBeInTheDocument()
+    expect(screen.getByRole('heading', {name: 'Stored capabilities'}).parentElement).toHaveTextContent('1.10.0')
+    expect(screen.getByRole('heading', {name: 'Stored capabilities'}).parentElement).toHaveTextContent('http')
     await userEvent.click(screen.getByRole('button', {name: 'Pause worker'}))
     expect(await screen.findByRole('button', {name: 'Resume worker'})).toBeInTheDocument()
   })
@@ -60,7 +62,11 @@ describe('infrastructure', () => {
       http.put(api('/accounts/acct-1/runners/edge'), async ({request}) => {
         writes.push(request.headers.get('If-Match')!)
         if (writes.length === 1) {version = 2; return HttpResponse.json({detail: 'Changed elsewhere'}, {status: 412})}
-        expect((await request.json() as {spec: {description: string}}).spec.description).toBe('My draft')
+        const body = await request.json() as {spec: {description: string; jobRequirements: unknown; workerRequirements: unknown; propagatedLabels: unknown}}
+        expect(body.spec.description).toBe('My draft')
+        expect(body.spec.jobRequirements).toEqual({probeKinds: ['http'], maxDuration: '30s'})
+        expect(body.spec.workerRequirements).toEqual({version: '>=1.9.0'})
+        expect(body.spec.propagatedLabels).toEqual({region: 'eu'})
         return HttpResponse.json(runner(), {headers: {ETag: '"3"'}})
       }),
     )
@@ -69,6 +75,15 @@ describe('infrastructure', () => {
     const dialog = within(screen.getByRole('dialog'))
     await userEvent.clear(dialog.getByLabelText('Description'))
     await userEvent.type(dialog.getByLabelText('Description'), 'My draft')
+    await userEvent.clear(dialog.getByLabelText('Job requirements (JSON)'))
+    await userEvent.click(dialog.getByLabelText('Job requirements (JSON)'))
+    await userEvent.paste(JSON.stringify({probeKinds: ['http'], maxDuration: '30s'}))
+    await userEvent.clear(dialog.getByLabelText('Worker requirements (JSON)'))
+    await userEvent.click(dialog.getByLabelText('Worker requirements (JSON)'))
+    await userEvent.paste(JSON.stringify({version: '>=1.9.0'}))
+    await userEvent.clear(dialog.getByLabelText('Propagated labels (JSON)'))
+    await userEvent.click(dialog.getByLabelText('Propagated labels (JSON)'))
+    await userEvent.paste(JSON.stringify({region: 'eu'}))
     await userEvent.click(dialog.getByRole('button', {name: 'Save'}))
     expect(await dialog.findByRole('heading', {name: 'Resource changed'})).toBeInTheDocument()
     expect(dialog.getByLabelText('Description')).toHaveValue('My draft')
@@ -77,6 +92,22 @@ describe('infrastructure', () => {
     await userEvent.click(dialog.getByRole('button', {name: 'Save'}))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     expect(writes).toEqual(['"1"', '"2"'])
+  })
+  it('shows the stored enrollment rejection to an account operator', async () => {
+    signIn()
+    const fingerprint = `sha256:${'d'.repeat(64)}`
+    server.use(
+      http.get(api('/accounts/acct-1/runners/edge'), () => HttpResponse.json({apiVersion: 'urth.sre-norns.com/v1', kind: 'runners', metadata: {uid: 'runner-1', name: 'edge', version: 1, account: 'acct-1'}, spec: {active: true}, status: {lastAdmissionRejection: {fingerprint, reason: 'worker cannot cover channel probe http', time: '2026-10-04T02:00:00Z'}}})),
+      http.get(api('/accounts/acct-1/workers'), () => HttpResponse.json(page([]))),
+      http.get(api('/agent-identities/runner-1'), () => HttpResponse.json(resource('agent-identities', 'runner-1', {description: 'Identity'}, {}, {name: 'edge'}))),
+      http.get(api('/agent-identities/runner-1/tokens'), () => HttpResponse.json(page([]))),
+      http.get(api('/agent-identities/runner-1/project-authorizations'), () => HttpResponse.json(page([]))),
+    )
+    renderAt('/a/acct-1/runners/runner-1')
+    const card = (await screen.findByRole('heading', {name: 'Last enrollment rejection'})).parentElement!
+    expect(card).toHaveTextContent(fingerprint)
+    expect(card).toHaveTextContent('worker cannot cover channel probe http')
+    expect(card.querySelector('time')).toHaveAttribute('dateTime', '2026-10-04T02:00:00Z')
   })
   it('blocks and unblocks a fingerprint with version checks and preserves concurrent blocks', async () => {
     signIn()

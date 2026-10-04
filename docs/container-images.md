@@ -122,15 +122,23 @@ The Worker image compiles with `-tags=urth_native`. Its registry and advertised
 probe capabilities contain DNS, gRPC, HAR replay, HTTP, ICMP, REST and TCP.
 Its OCI label `org.sre-norns.urth.runtime-profile` is `native`. Native probes
 execute in Go; HAR replay does not launch a browser. ICMP still depends on the
-host's ping-socket or raw-socket policy. The image does not enable privileged
-mode or add raw-socket capabilities automatically.
+host's ping-socket policy. Probes that set `dont_fragment` need raw sockets
+(`CAP_NET_RAW`) and run only on Runners listing `raw-sockets` in
+`jobRequirements.privileges`. The image does not enable privileged mode or add
+raw-socket capabilities automatically.
+
+Images stamp their release version (the `VERSION` build argument) into the
+binaries, because the build context carries no Git metadata. Workers declare
+that version, so Runner `workerRequirements.version` ranges can match image
+Workers. A local build without `VERSION` reports `dev`, which no range accepts.
 
 Capability advertisement does not replace Runner and Scenario selection
 policy. Keep native-only Workers in pools selected for supported probes. Browser
-pools can set `Runner.spec.requirements` to require Puppeteer and refuse native
-Worker registration. An unconstrained browser Scenario is not automatically
-excluded from every native pool merely because this capability label is absent.
-The existing task 008/022 policy gaps are outside image packaging.
+pools can set `Runner.spec.jobRequirements.probeKinds` and
+`Runner.spec.workerRequirements.runtimeVersions` to require Puppeteer and refuse native
+Worker registration. The channel probe allowlist rejects unsupported jobs before dispatch. Claims
+recheck typed capabilities and the stored placement selector. See
+[ADR 0009](adr/0009-runner-channel-policy.md) for channel coverage rules.
 
 Puppeteer is absent from this image's registry and capability labels. It is
 not installed at runtime. The default host Worker archive retains Puppeteer

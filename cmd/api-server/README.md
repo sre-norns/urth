@@ -911,3 +911,27 @@ documentation candidate is released.
 The [M9 evidence matrix](../../docs/m9-release-validation.md) records which
 permission, expiry, renewal and revocation checks remain open. A production
 configuration recommendation is not evidence that all checks pass.
+
+
+## Runner channel policy
+
+Runner `requirements` is obsolete. Use `jobRequirements`, `workerRequirements`
+and `propagatedLabels`. [ADR 0009](../../docs/adr/0009-runner-channel-policy.md)
+defines the fields. The API rejects obsolete fields and invalid ranges.
+
+Placement and preview check both Scenario selectors and concrete job policy.
+Capacity selects among accepted authorized channels. A rejected job has a
+terminal Result and no dispatch outbox row. Empty probe-kind lists accept no jobs.
+
+Registration validates the capability document and stores effective capabilities
+in Worker status. Registration refresh preserves pause and fingerprint state.
+New claims use this stored document. They recheck current Runner labels and policy
+against the private Result execution snapshot. Placement changes are terminal with
+`runner-placement-changed`; job policy changes use `runner-job-policy-changed`.
+An individual incapable Worker receives a retryable refusal while the dispatch
+remains available. Workers receive disposition classes, not internal reasons.
+
+Runner UID, name, version and propagation labels remain the scheduling-time
+snapshot. Artifact uploads cannot override that map or reserved identity and
+classification labels. A new Runner edit affects future admission; it does not
+replace the provenance or cancel an existing execution lease.

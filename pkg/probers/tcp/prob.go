@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"reflect"
-	"runtime/debug"
-	"strings"
 
 	bxconfig "github.com/prometheus/blackbox_exporter/config"
 	"github.com/prometheus/blackbox_exporter/prober"
@@ -26,10 +24,7 @@ type Spec struct {
 }
 
 func init() {
-	moduleVersion := "devel"
-	if bi, ok := debug.ReadBuildInfo(); ok {
-		moduleVersion = strings.Trim(bi.Main.Version, "()")
-	}
+	moduleVersion := prob.BuildVersion()
 
 	// Ignore double registration error
 	_ = prob.RegisterProbKind(

@@ -2,7 +2,7 @@ import {expect, test} from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 import {spawn, spawnSync} from 'node:child_process'
 import {generateKeyPairSync} from 'node:crypto'
-import {mkdtempSync, readFileSync, rmSync} from 'node:fs'
+import {mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 
@@ -64,9 +64,27 @@ test('CLI and UI issue/revoke the same Runner tokens without ordinary secret dis
     await page.goto(`${accountBase}/runners`)
     await page.getByRole('button', {name: 'Register runner', exact: true}).click()
     await page.getByLabel('Runner name').fill(runnerName)
+    await page.getByLabel(/Job requirements/).fill(JSON.stringify({probeKinds: ['http'], maxDuration: '1m'}))
+    await page.getByLabel(/Worker requirements/).fill(JSON.stringify({operatingSystems: ['linux']}))
+    await page.getByLabel(/Propagated labels/).fill(JSON.stringify({region: 'clients'}))
     await page.getByRole('dialog').getByRole('button', {name: 'Save', exact: true}).click()
     await page.waitForURL(/\/runners\//)
     const runnerURL = new URL(page.url()).pathname
+    const runnerRead = runCLI(['get', 'runner', runnerName, '-o', 'json'])
+    expect(runnerRead.status).toBe(0)
+    const runnerManifest = JSON.parse(runnerRead.stdout)
+    expect(runnerManifest.spec.jobRequirements).toMatchObject({probeKinds: ['http'], maxDuration: '1m'})
+    expect(runnerManifest.spec.workerRequirements).toMatchObject({operatingSystems: ['linux']})
+    expect(runnerManifest.spec.propagatedLabels).toEqual({region: 'clients'})
+    const manifestPath = join(dir, 'runner.json')
+    writeFileSync(manifestPath, runnerRead.stdout, {mode: 0o600})
+    expect(runCLI(['apply', manifestPath]).status).toBe(0)
+    const yamlRead = runCLI(['get', 'runner', runnerName, '-o', 'yaml'])
+    expect(yamlRead.status).toBe(0)
+    expect(yamlRead.stdout).toContain('jobRequirements:')
+    expect(yamlRead.stdout).toContain('workerRequirements:')
+    const workersRead = runCLI(['get', 'workers', '-o', 'json'])
+    expect(workersRead.status).toBe(0)
     const key = `client-issue-${suffix}`
     const expiresAt = new Date(Date.now() + 86_400_000).toISOString().replace(/\.\d{3}Z$/, 'Z')
     const created = runCLI(['runners', 'tokens', 'issue', runnerName, 'cli-installation', `--idempotency-key=${key}`, `--expires-at=${expiresAt}`, '-o', 'json'], true)
@@ -91,6 +109,7 @@ test('CLI and UI issue/revoke the same Runner tokens without ordinary secret dis
       expect(response.status(), 'Mounted Worker challenge checks token authority').toBe(expected)
     }
     await challenge(creation.token, 200)
+    await page.reload()
     await page.getByRole('button', {name: 'Manage tokens', exact: true}).click()
     const cliRow = page.getByRole('row').filter({hasText: 'cli-installation'})
     await expect(cliRow).toBeVisible()

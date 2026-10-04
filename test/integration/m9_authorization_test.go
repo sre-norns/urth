@@ -38,7 +38,7 @@ func (h *harness) m9Claim(name manifest.ResourceName) (urth.Result, urth.WorkerR
 	scenario := h.applyScenario(name, testProbSpec{}, manifest.LabelSelector{})
 	run := h.createRun(scenario.Name)
 	token := h.enrolmentToken(runner.Name)
-	entry := urth.WorkerInstance{ObjectMeta: manifest.ObjectMeta{Name: name}}.ToManifest()
+	entry := urth.WorkerInstance{ObjectMeta: manifest.ObjectMeta{Name: name}, Spec: urth.WorkerInstanceSpec{Capabilities: testPolicyCapabilities()}}.ToManifest()
 	entry = h.signedWorker(token, entry, nil)
 	registration, err := h.client("").Runners().AuthWorker(h.ctx, token, entry)
 	require.NoError(h.t, err)

@@ -6,7 +6,7 @@ import {server} from '../test/server'
 import {api, page, renderAt, resource, signIn} from '../identity/test-support'
 
 const meta = {name: 'run-1', uid: 'run-uid-1', version: 1, account: 'acct-1', project: 'proj-1', labels: {'urth/scenario.name': 'http-check'}}
-const run = (status: string, result?: string) => ({apiVersion: 'urth.sre-norns.com/v1', kind: 'results', metadata: meta, spec: {probKind: 'http'}, status: {status, result, numberArtifacts: 2}})
+const run = (status: string, result?: string) => ({apiVersion: 'urth.sre-norns.com/v1', kind: 'results', metadata: meta, spec: {probKind: 'http'}, status: {status, result, numberArtifacts: 2, executor: {runnerId: 'runner-uid', runnerName: 'edge', runnerVersion: 7, propagatedLabels: {region: 'eu'}}}})
 const storedLog = () => new HttpResponse('data: stored line\n\nevent: end\ndata: completed\n\n', {headers: {'Content-Type': 'text/event-stream'}})
 // A live tail that stays open, as the server's does while a run executes.
 const liveLog = () => new HttpResponse(new ReadableStream({start(c) {c.enqueue(new TextEncoder().encode('data: live line\n\n'))}}), {headers: {'Content-Type': 'text/event-stream'}})
@@ -31,6 +31,8 @@ describe('run detail', () => {
     const artifacts = '/a/acct-1/p/proj-1/artifacts?labels=urth%2Fresult.uid%3Drun-uid-1'
     expect(screen.getByRole('link', {name: '2'})).toHaveAttribute('href', artifacts)
     expect(screen.getByRole('link', {name: 'Run artifacts'})).toHaveAttribute('href', artifacts)
+    expect(screen.getByText('Selected Runner version: 7')).toBeInTheDocument()
+    expect(screen.getByText('region=eu')).toBeInTheDocument()
   })
   it.each(['completed', 'timeout', 'errored'])('offers no log reconnect for a %s run', async (status) => {
     project()

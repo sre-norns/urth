@@ -54,7 +54,7 @@ func seedPlacement(t *testing.T, store *dbstore.DBStore, runner urth.Runner, req
 func labelledRunner(name manifest.ResourceName, active bool, labels manifest.Labels) urth.Runner {
 	return urth.Runner{
 		ObjectMeta: manifest.ObjectMeta{Name: name, Labels: labels},
-		Spec:       urth.RunnerSpec{IsActive: active},
+		Spec:       urth.RunnerSpec{IsActive: active, JobRequirements: urth.JobRequirements{ProbeKinds: []string{"http", "tcp", "rest", "dns", "grpc", "icmp", "har", "puppeteer"}}},
 	}
 }
 

@@ -2,6 +2,7 @@ package runner
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -64,4 +65,19 @@ func TestHostnameLabelOmitsUnrepresentableValues(t *testing.T) {
 func defaultEffectiveLabels() manifest.Labels {
 	cfg := NewDefaultConfig()
 	return cfg.GetEffectiveLabels()
+}
+
+func TestRuntimeLabelsUnknownVersionsDoNotPanic(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "node"), []byte("#!/bin/sh\nprintf 'development-build\\n'\n"), 0700))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "python3"), []byte("#!/bin/sh\nprintf 'Python unknown\\n'\n"), 0700))
+	t.Setenv("PATH", dir)
+	node := GetNodeRuntimeLabels()
+	python := GetPythonRuntimeLabels()
+	require.Equal(t, "development-build", node[LabelNodeJsVersion])
+	require.NotContains(t, node, LabelNodeJsVersionMajor)
+	require.Equal(t, "unknown", python[LabelPythonVersion])
+	require.NotContains(t, python, LabelPythonVersionMajor)
+	require.NoError(t, node.Validate())
+	require.NoError(t, python.Validate())
 }

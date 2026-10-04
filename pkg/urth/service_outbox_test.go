@@ -66,7 +66,7 @@ func seedScenario(t *testing.T, store *dbstore.DBStore) manifest.ResourceName {
 
 	runner := urth.Runner{
 		ObjectMeta: manifest.ObjectMeta{Name: "test-runner"},
-		Spec:       urth.RunnerSpec{IsActive: true},
+		Spec:       urth.RunnerSpec{IsActive: true, JobRequirements: urth.JobRequirements{ProbeKinds: []string{"http", "tcp", "rest", "dns", "grpc", "icmp", "har", "puppeteer"}}},
 	}
 	require.NoError(t, store.Create(ctx, &runner))
 

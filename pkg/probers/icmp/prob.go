@@ -2,11 +2,10 @@ package icmp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"reflect"
-	"runtime/debug"
-	"strings"
 
 	bxconfig "github.com/prometheus/blackbox_exporter/config"
 	"github.com/prometheus/blackbox_exporter/prober"
@@ -26,10 +25,7 @@ type Spec struct {
 }
 
 func init() {
-	moduleVersion := "devel"
-	if bi, ok := debug.ReadBuildInfo(); ok {
-		moduleVersion = strings.Trim(bi.Main.Version, "()")
-	}
+	moduleVersion := prob.BuildVersion()
 
 	// Ignore double registration error
 	_ = prob.RegisterProbKind(
@@ -39,6 +35,7 @@ func init() {
 			RunFunc:     RunScript,
 			ContentType: ScriptMimeType,
 			Version:     moduleVersion,
+			Privileges:  privileges,
 		},
 	)
 }
@@ -58,4 +55,33 @@ func RunScript(ctx context.Context, probSpec any, config prob.RunOptions, regist
 	}
 
 	return prob.RunFinishedSuccess, nil, nil
+}
+
+// privileges reports raw sockets for don't-fragment probes only. Setting an IP
+// header option is impossible on an unprivileged ping socket, so the blackbox
+// prober opens a raw socket for those; every other ICMP probe tries a ping
+// socket first.
+func privileges(spec any) ([]string, error) {
+	var typed Spec
+	switch s := spec.(type) {
+	case *Spec:
+		if s == nil {
+			return nil, nil
+		}
+		typed = *s
+	case Spec:
+		typed = s
+	default:
+		data, err := json.Marshal(spec)
+		if err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(data, &typed); err != nil {
+			return nil, fmt.Errorf("cannot classify icmp spec: %w", err)
+		}
+	}
+	if typed.ICMP.DontFragment {
+		return []string{prob.PrivilegeRawSockets}, nil
+	}
+	return nil, nil
 }

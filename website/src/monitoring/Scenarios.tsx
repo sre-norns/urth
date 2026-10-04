@@ -10,7 +10,7 @@ import {request} from '../api/http'
 import {placement, prob, scenario, selector, type Scenario} from '../api/models'
 import {resourcePath, useResource} from '../api/queries'
 import {projectPath} from '../identity/links'
-import {Collection, EditResource, Heading, Labels} from './common'
+import {Collection, EditResource, Heading, Labels, policyReason} from './common'
 import {NextRun, runnable, useRunNow} from './schedule'
 
 export function Scenarios() {
@@ -50,7 +50,7 @@ export function ScenarioDetail() {
     {Boolean(error) && <ErrorState error={error} />}
     {preflight.isError && <ErrorState error={preflight.error} retry={() => void preflight.refetch()} />}
     <div className="grid"><Metric label="Scheduling" value={s.spec.active ? 'Enabled' : 'Disabled'} /><Metric label="Eligible runners" value={preflight.data?.data.eligibleRunners ?? 'Unknown'} /><Metric label="Ready workers" value={preflight.data?.data.readyWorkers ?? 'Unknown'} /></div>
-    {preflight.data && !preflight.data.data.schedulable && <Card><h2>Placement unavailable</h2><p>{preflight.data.data.detail || preflight.data.data.reason || 'Grant an active runner with matching labels to this project.'}</p></Card>}
+    {preflight.data && !preflight.data.data.schedulable && <Card><h2>Placement unavailable</h2><p>{preflight.data.data.detail || policyReason(preflight.data.data.reason) || 'Grant an active runner with matching labels to this project.'}</p></Card>}
     <div className="grid"><Card><h2>Definition</h2><p>Probe: {s.spec.prob?.kind || 'Not configured'}</p><p>Schedule: {s.spec.schedule || 'Manual'}</p><p>Next scheduled run: {s.status?.nextScheduledRunTime ? new Date(s.status.nextScheduledRunTime).toLocaleString() : 'Not scheduled'}</p><pre tabIndex={0}>{stringify(s.spec.prob ?? {})}</pre></Card>
     <Card><h2>Runner requirements</h2><pre tabIndex={0}>{stringify(s.spec.requirements ?? {})}</pre><h3>Labels</h3><Labels value={s.metadata.labels} /></Card></div>
     <Link to={`${base}/scenarios/${encodeURIComponent(scenarioName)}/runs`}>View run history</Link>

@@ -10,8 +10,6 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
-	"runtime/debug"
-	"strings"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sre-norns/urth/pkg/prob"
@@ -34,10 +32,7 @@ type Spec struct {
 }
 
 func init() {
-	moduleVersion := "devel"
-	if bi, ok := debug.ReadBuildInfo(); ok {
-		moduleVersion = strings.Trim(bi.Main.Version, "()")
-	}
+	moduleVersion := prob.BuildVersion()
 
 	// Ignore double registration error
 	_ = prob.RegisterProbKind(

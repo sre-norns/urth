@@ -628,7 +628,7 @@ func (m *scenarioAPIImpl) Placement(ctx context.Context, id manifest.ResourceNam
 		return PlacementPreview{}, false, nil
 	}
 
-	preview, err := m.placement.Preview(ctx, scenario.Spec.Requirements)
+	preview, err := m.placement.Preview(ctx, scenario.Spec.Requirements, NewExecutionSnapshot(scenario))
 
 	return preview, true, err
 }
@@ -765,6 +765,14 @@ func (m *resultsAPIImpl) Create(ctx context.Context, newEntry manifest.ResourceM
 		Result: prob.RunNotFinished,
 	}
 
+	customLabels := manifest.Labels{}
+	for key, value := range entry.Labels {
+		if !strings.HasPrefix(key, LabelsPrefix) {
+			customLabels[key] = value
+		}
+	}
+	entry.Labels = customLabels
+
 	// Labels describe the snapshot, not the scenario as it may later become.
 	// These are the run's audit trail: `urth/scenario.version` has to name the
 	// revision this run actually executes, or the history says a run of v3 that
@@ -787,7 +795,7 @@ func (m *resultsAPIImpl) Create(ctx context.Context, newEntry manifest.ResourceM
 	// channel it was dispatched to from the moment it exists. ADR 0003 binds a
 	// scheduled Result to a Runner and leaves worker identity empty until a
 	// claim, which is exactly the shape of ExecutorRef here.
-	decision, err := m.placement.Place(ctx, snapshot.Requirements, snapshot.ScenarioName)
+	decision, err := m.placement.Place(ctx, snapshot.Requirements, snapshot.ScenarioName, snapshot)
 	if err != nil {
 		return Result{}, err
 	}
@@ -796,9 +804,12 @@ func (m *resultsAPIImpl) Create(ctx context.Context, newEntry manifest.ResourceM
 	case decision.Placed:
 		entry.Status.Executor.RunnerID = decision.Runner.UID
 		entry.Status.Executor.RunnerName = decision.Runner.Name
-		entry.Labels = manifest.MergeLabels(entry.Labels, manifest.Labels{
-			LabelRunnerName: string(decision.Runner.Name),
-			LabelRunnerUID:  string(decision.Runner.UID),
+		entry.Status.Executor.RunnerVersion = decision.Runner.Version
+		entry.Status.Executor.PropagatedLabels = manifest.MergeLabels(decision.Runner.Spec.PropagatedLabels)
+		entry.Labels = manifest.MergeLabels(entry.Labels, entry.Status.Executor.PropagatedLabels, manifest.Labels{
+			LabelRunnerName:    string(decision.Runner.Name),
+			LabelRunnerUID:     string(decision.Runner.UID),
+			LabelRunnerVersion: decision.Runner.Version.String(),
 		})
 	default:
 		// A run nothing can take is terminal here, before it is written. It used
@@ -833,6 +844,42 @@ func (m *resultsAPIImpl) Create(ctx context.Context, newEntry manifest.ResourceM
 // createWithDispatch commits a new Result and, when it should be dispatched, its
 // outbox entry in one transaction.
 func (m *resultsAPIImpl) createWithDispatch(ctx context.Context, entry *Result) error {
+	if m.identityDB != nil {
+		return m.identityDB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if m.shouldDispatch(*entry) {
+				var runner Runner
+				if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where("uid = ?", entry.Status.Executor.RunnerID).First(&runner).Error; err != nil {
+					return err
+				}
+				if runner.Version != entry.Status.Executor.RunnerVersion {
+					return bark.ErrResourceVersionConflict
+				}
+				if err := runner.Spec.AcceptsJob(entry.Spec.Execution, entry.Spec.Execution.JobLabels); err != nil {
+					return bark.ErrResourceVersionConflict
+				}
+				granted, err := runnerGranted(ctx, tx, runner, entry.Scope())
+				if err != nil {
+					return err
+				}
+				if !granted {
+					return bark.ErrResourceVersionConflict
+				}
+			}
+			store, err := dbstore.NewDBStore(tx, dbstore.ManifestModel)
+			if err != nil {
+				return err
+			}
+			if err = store.Create(ctx, entry, dbstore.Omit(clause.Associations)); err != nil {
+				return err
+			}
+			if m.shouldDispatch(*entry) {
+				outbox := NewDispatchOutboxEntry(*entry, time.Now())
+				return store.Create(ctx, &outbox)
+			}
+			return nil
+		})
+	}
+
 	tx, err := m.store.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to open transaction to create a run: %w", err)
@@ -871,17 +918,6 @@ func (m *resultsAPIImpl) shouldDispatch(entry Result) bool {
 		entry.Spec.Scenario.Spec.IsActive
 }
 
-// executorRef builds the record of who is executing a run, from the worker that
-// just authenticated and the runner it belongs to.
-func executorRef(worker WorkerInstance, runner Runner) ExecutorRef {
-	return ExecutorRef{
-		RunnerID:   worker.Spec.RunnerID,
-		RunnerName: runner.Name,
-		WorkerID:   worker.UID,
-		WorkerName: worker.Name,
-	}
-}
-
 // workerLabels ties a worker instance back to its runner, so that "the workers
 // claiming to be this runner" is a label query. Without it the association is
 // only a foreign key, which the search API cannot reach.
@@ -902,10 +938,13 @@ func executorLabels(executor ExecutorRef) manifest.Labels {
 
 	putLabel(labels, LabelRunnerName, string(executor.RunnerName))
 	putLabel(labels, LabelRunnerUID, string(executor.RunnerID))
+	if executor.RunnerVersion != 0 {
+		putLabel(labels, LabelRunnerVersion, executor.RunnerVersion.String())
+	}
 	putLabel(labels, LabelWorkerName, string(executor.WorkerName))
 	putLabel(labels, LabelWorkerUID, string(executor.WorkerID))
 
-	return labels
+	return manifest.MergeLabels(executor.PropagatedLabels, labels)
 }
 
 // ClaimRun authorises a worker to execute a dispatched job.
@@ -943,6 +982,9 @@ func (m *resultsAPIImpl) ClaimRun(ctx context.Context, resultUID manifest.Resour
 	err := m.identityDB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		copy := *m
 		copy.identityDB = tx
+		if m.presence != nil {
+			copy.presence = NewWorkerPresenceStore(tx)
+		}
 		store, err := dbstore.NewDBStore(tx, dbstore.ManifestModel)
 		if err != nil {
 			return err
@@ -979,6 +1021,15 @@ func (m *resultsAPIImpl) claimRun(ctx context.Context, resultUID manifest.Resour
 				return AuthJobResponse{}, claimForbidden("runner missing")
 			}
 			return AuthJobResponse{}, claimUnavailable("lock runner for claim", err)
+		}
+	}
+	if m.identityDB != nil {
+		var locked WorkerInstance
+		if err := m.identityDB.WithContext(ctx).Clauses(clause.Locking{Strength: "NO KEY UPDATE"}).Where("uid = ?", claims.WorkerID).First(&locked).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return AuthJobResponse{}, claimForbidden("worker missing")
+			}
+			return AuthJobResponse{}, claimUnavailable("lock worker capabilities", err)
 		}
 	}
 	worker, runner, err := m.loadClaimant(ctx, claims)
@@ -1052,7 +1103,9 @@ func (m *resultsAPIImpl) claimRun(ctx context.Context, resultUID manifest.Resour
 	// record it as the run that was requested.
 	if entry.Spec.Execution.IsZero() {
 		log.Printf("run %q (%v) has no execution snapshot and cannot be claimed", entry.Name, entry.UID)
-		m.markUnschedulable(ctx, entry, ReasonNoExecutionSnapshot)
+		if err := m.markUnschedulable(ctx, entry, ReasonNoExecutionSnapshot); err != nil {
+			return AuthJobResponse{}, claimUnavailable("record terminal policy refusal", err)
+		}
 
 		return AuthJobResponse{}, claimObsolete("result has no execution snapshot")
 	}
@@ -1080,24 +1133,58 @@ func (m *resultsAPIImpl) claimRun(ctx context.Context, resultUID manifest.Resour
 			return AuthJobResponse{}, claimUnavailable("read runner grant", err)
 		}
 		if !granted || scope != entry.Scope() {
-			m.markUnschedulable(ctx, entry, "runner-not-authorized")
+			if err := m.markUnschedulable(ctx, entry, "runner-not-authorized"); err != nil {
+				return AuthJobResponse{}, claimUnavailable("record terminal policy refusal", err)
+			}
 			return AuthJobResponse{}, claimObsolete("runner is no longer granted to this project")
 		}
 	}
 
-	// Business Rule: the server sets the deadline. A worker may ask for less
-	// time than the server allows -- and often should, so a hung probe fails
-	// rather than holding a slot -- but the ceiling is not negotiable. The
-	// prototype signed the run token with the worker's requested timeout
-	// verbatim, so a worker could mint itself a capability valid for a week.
-	duration := clampRunDuration(request.Timeout, m.maxRunDuration)
+	// Current channel policy and stored execution input control new claims only.
+	selector, err := selectorFor(entry.Spec.Execution.Requirements)
+	if err != nil {
+		if err := m.markUnschedulable(ctx, entry, ReasonInvalidRequirements); err != nil {
+			return AuthJobResponse{}, claimUnavailable("record terminal policy refusal", err)
+		}
+		return AuthJobResponse{}, claimObsolete("invalid stored placement selector")
+	}
+	if !selector.Matches(runner.Labels) {
+		if err := m.markUnschedulable(ctx, entry, "runner-placement-changed"); err != nil {
+			return AuthJobResponse{}, claimUnavailable("record terminal policy refusal", err)
+		}
+		return AuthJobResponse{}, claimObsolete("runner no longer matches placement")
+	}
+	if err := runner.Spec.AcceptsJob(entry.Spec.Execution, entry.Spec.Execution.JobLabels); err != nil {
+		if err := m.markUnschedulable(ctx, entry, "runner-job-policy-changed"); err != nil {
+			return AuthJobResponse{}, claimUnavailable("record terminal policy refusal", err)
+		}
+		return AuthJobResponse{}, claimObsolete("runner no longer accepts job")
+	}
+	if err := runner.Spec.AdmitCapabilities(worker.Status.EffectiveCapabilities, worker.Labels); err != nil || !worker.Status.EffectiveCapabilities.CanExecute(entry.Spec.Execution) {
+		// Another Worker can execute this dispatch. Keep it available for redelivery.
+		return AuthJobResponse{}, claimUnavailable("stored worker capabilities do not cover channel", nil)
+	}
+	requiredDuration := executionDuration(entry.Spec.Execution)
+	if m.maxRunDuration > 0 && requiredDuration > m.maxRunDuration {
+		if err := m.markUnschedulable(ctx, entry, "job-duration-exceeds-server-limit"); err != nil {
+			return AuthJobResponse{}, claimUnavailable("record terminal policy refusal", err)
+		}
+		return AuthJobResponse{}, claimObsolete("execution exceeds server limit")
+	}
+	if request.Timeout > 0 && request.Timeout < requiredDuration {
+		return AuthJobResponse{}, claimUnavailable("worker requested insufficient execution duration", nil)
+	}
+	// The snapshot sets the execution budget. The Worker request cannot
+	// shorten this job or extend its lease beyond that budget.
+	duration := requiredDuration
 
 	now := time.Now()
 	deadline := now.Add(duration)
 
 	entry.Spec.TimeStarted = &now
 	entry.Status.Status = JobRunning
-	entry.Status.Executor = executorRef(worker, runner)
+	entry.Status.Executor.WorkerID = worker.UID
+	entry.Status.Executor.WorkerName = worker.Name
 	entry.Status.DispatchID = request.DispatchID
 	entry.Status.Deadline = deadline
 
@@ -1173,12 +1260,11 @@ func (m *resultsAPIImpl) recordClaimContact(ctx context.Context, workerUID manif
 // reconciler is what ends it; overwriting it here would erase the executor
 // recorded against a run that may still be in flight.
 //
-// Failures are logged rather than returned. The caller is refusing the claim
-// either way, and turning a bookkeeping failure into a retryable claim error
-// would have the worker redeliver a dispatch that can never succeed.
-func (m *resultsAPIImpl) markUnschedulable(ctx context.Context, entry Result, reason string) {
+// A failed terminal write remains retryable. The Worker must not acknowledge
+// a dispatch while PostgreSQL can still describe its Result as pending.
+func (m *resultsAPIImpl) markUnschedulable(ctx context.Context, entry Result, reason string) error {
 	if entry.Status.Status != JobPending {
-		return
+		return nil
 	}
 
 	now := time.Now()
@@ -1195,11 +1281,14 @@ func (m *resultsAPIImpl) markUnschedulable(ctx context.Context, entry Result, re
 
 	if ok, err := m.store.Update(ctx, &entry, entry.UID, dbstore.WithVersion(entry.Version), dbstore.Omit(clause.Associations)); err != nil {
 		log.Printf("failed to mark run %q unschedulable (%v): %v", entry.Name, reason, err)
+		return err
 	} else if !ok {
 		// Someone else moved the Result on. Whatever they did to it is newer
 		// than this decision, so it stands.
 		log.Printf("run %q changed while being marked unschedulable (%v)", entry.Name, reason)
+		return bark.ErrResourceVersionConflict
 	}
+	return nil
 }
 
 // authorizeRun mints the run capability and assembles the claim response,
@@ -1255,26 +1344,6 @@ func (m *resultsAPIImpl) authorizeRun(_ context.Context, entry Result, deadline 
 // working, so results and artifacts from a run that used its whole budget still
 // land.
 const artifactUploadGrace = 5 * time.Minute
-
-// clampRunDuration decides how long a worker may hold a run capability.
-//
-// The direction of the clamp is the point. A worker asking for less than the
-// server allows is granted it -- a worker that knows its probe should finish in
-// ten seconds is right to ask for a short lease, because a hung probe then
-// fails instead of occupying a slot. A worker asking for more is given the
-// server's limit, not its request: the prototype passed the requested timeout
-// straight into the token's expiry, so a worker could ask for a week and get it.
-func clampRunDuration(requested, maximum time.Duration) time.Duration {
-	if maximum <= 0 {
-		maximum = DefaultMaxRunDuration
-	}
-
-	if requested > 0 && requested < maximum {
-		return requested
-	}
-
-	return maximum
-}
 
 func (m *resultsAPIImpl) validateUpdateRequest(_ context.Context, entry Result, bearerToken APIToken) error {
 	claims, err := parseRunCapability(m.keys, bearerToken, runStatusScope)
@@ -1435,12 +1504,17 @@ func (m *runnersAPIImpl) CreateOrUpdate(ctx context.Context, newEntry manifest.R
 }
 
 func (m *runnersAPIImpl) create(ctx context.Context, newEntry Runner) (Runner, error) {
+	// Clients cannot supply operational admission history.
+	newEntry.Status = RunnerStatus{}
 	// TODO: Generate auth token?
 	// 	IdToken: randToken(16),
 
 	// Validate runner's requirements
-	if _, err := newEntry.Spec.Requirements.AsSelector(); err != nil {
+	if err := newEntry.Spec.ValidatePolicy(); err != nil {
 		// Note, failed to parse Runner's requirements so wont be able auth any workers
+		return newEntry, fmt.Errorf("runner's requirements are invalid: %v", err)
+	}
+	if err := newEntry.Spec.ValidateProbeKinds(); err != nil {
 		return newEntry, fmt.Errorf("runner's requirements are invalid: %v", err)
 	}
 
@@ -1464,8 +1538,11 @@ func (m *runnersAPIImpl) update(ctx context.Context, id manifest.VersionedResour
 	}
 
 	// Validate runner's requirements
-	if _, err := newEntry.Spec.Requirements.AsSelector(); err != nil {
+	if err := newEntry.Spec.ValidatePolicy(); err != nil {
 		// Note, failed to parse Runner's requirements so wont be able auth any workers
+		return newEntry, fmt.Errorf("runner's requirements are invalid: %v", err)
+	}
+	if err := newEntry.Spec.ValidateProbeKinds(); err != nil {
 		return newEntry, fmt.Errorf("runner's requirements are invalid: %v", err)
 	}
 
@@ -1651,6 +1728,18 @@ func (m *workersAPIImpl) Heartbeat(ctx context.Context, session APIToken, reques
 // rather than a blind update so that the rest of the worker's record -- which
 // the worker itself owns and rewrites on every registration -- is left alone.
 func (m *workersAPIImpl) SetPaused(ctx context.Context, id manifest.ResourceName, paused bool) (manifest.ResourceManifest, bool, error) {
+	for attempt := 0; attempt < 5; attempt++ {
+		resource, found, err := m.setPausedAtCurrentVersion(ctx, id, paused)
+		if !errors.Is(err, bark.ErrResourceVersionConflict) {
+			return resource, found, err
+		}
+		if ctx.Err() != nil {
+			return resource, found, ctx.Err()
+		}
+	}
+	return manifest.ResourceManifest{}, true, bark.ErrResourceVersionConflict
+}
+func (m *workersAPIImpl) setPausedAtCurrentVersion(ctx context.Context, id manifest.ResourceName, paused bool) (manifest.ResourceManifest, bool, error) {
 	var worker WorkerInstance
 	if exist, err := m.store.GetByName(ctx, &worker, id); err != nil {
 		return manifest.ResourceManifest{}, false, err
@@ -1666,17 +1755,9 @@ func (m *workersAPIImpl) SetPaused(ctx context.Context, id manifest.ResourceName
 
 	worker.Status.IsPaused = paused
 
-	// CreateOrUpdate rather than Update, and not by preference: Update passes the
-	// struct to gorm's Updates, which ignores zero-valued fields. Pausing (false
-	// -> true) would persist while resuming (true -> false) silently did nothing,
-	// leaving a worker that could be taken out of service and never brought back.
-	// CreateOrUpdate goes through Save, which writes every field.
-	//
-	// The cost is the optimistic version check, which Save does not apply. For an
-	// operator toggling one worker that is an acceptable trade -- and arguably
-	// the right one, since a pause should not fail because the worker happened to
-	// re-register a moment earlier.
-	if _, err := m.store.CreateOrUpdate(ctx, &worker, dbstore.Omit(clause.Associations)); err != nil {
+	// Guard the complete save against capability refresh. On conflict, the
+	// unversioned pause operation reloads the current record before retrying.
+	if err := saveResourceAt(ctx, m.store, &worker, worker.Version); err != nil {
 		return manifest.ResourceManifest{}, false, err
 	}
 
@@ -1883,27 +1964,10 @@ func (m *runnersAPIImpl) admitWorker(ctx context.Context, apiToken APIToken, new
 		return result, registered, err
 	}
 
-	// TODO: Validate that the worker matches runner's requirements
-	reqSelector, err := runner.Spec.Requirements.AsSelector()
-	if err != nil {
-		// Note, failed to parse Runner's requirements so can't auth any workers
-		return result, registered, &bark.ErrorResponse{
-			Code:    http.StatusUnauthorized,
-			Message: fmt.Sprintf("runner's requirements are invalid: %v", err),
-		}
+	if err := runner.Spec.AdmitCapabilities(worker.Spec.Capabilities, worker.Labels); err != nil {
+		return result, registered, &admissionPolicyError{ErrorResponse: bark.NewErrorResponse(http.StatusUnauthorized, fmt.Errorf("worker does not satisfy channel policy")), rejection: AdmissionRejection{Fingerprint: fingerprint, Reason: err.Error(), Time: time.Now().UTC()}}
 	}
-
-	log.Printf("Checking if a worker matches runner's requirements: %q", runner.Spec.Requirements.AsLabels())
-	if !reqSelector.Matches(worker.Labels) {
-		log.Printf("worker doesn't matches runner's requirements: %q", runner.Spec.Requirements.AsLabels())
-		// Note, failed to parse Runner's requirements so can't auth any workers
-		return result, registered, &bark.ErrorResponse{
-			Code:    http.StatusUnauthorized,
-			Message: "worker does not satisfy runner's requirements",
-		}
-	} else {
-		log.Printf("...its a match!")
-	}
+	worker.Status.EffectiveCapabilities = worker.Spec.Capabilities
 
 	// TODO: Should do min with pre-set TTL
 	worker.Status.TTL = worker.Spec.RequestedTTL
@@ -1924,6 +1988,7 @@ func (m *runnersAPIImpl) admitWorker(ctx context.Context, apiToken APIToken, new
 		existingWorkerRecord.Name = worker.Name
 		existingWorkerRecord.Labels = manifest.MergeLabels(worker.Labels, workerLabels(runner))
 		existingWorkerRecord.Spec = worker.Spec
+		existingWorkerRecord.Status.EffectiveCapabilities = worker.Status.EffectiveCapabilities
 		err = saveResourceAt(ctx, m.store, existingWorkerRecord, existingWorkerRecord.Version)
 		registered = *existingWorkerRecord
 	} else {

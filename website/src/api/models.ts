@@ -19,6 +19,21 @@ export const selector = z.object({
   matchLabels: labels.optional(),
   matchExpressions: z.array(z.object({key: z.string(), operator: z.string(), values: z.array(z.string()).optional()})).optional(),
 }).loose()
+export const jobRequirements = z.object({
+  probeKinds: z.array(z.string()).nullable().optional(), labels: selector.optional(), privileges: z.array(z.string()).optional(),
+  minDuration: z.string().optional(), maxDuration: z.string().optional(),
+}).strict()
+export const workerRequirements = z.object({
+  labels: selector.optional(), version: z.string().optional(),
+  probeVersions: labels.optional(), runtimeVersions: labels.optional(),
+  operatingSystems: z.array(z.string()).optional(), architectures: z.array(z.string()).optional(), privileges: z.array(z.string()).optional(),
+  minDuration: z.string().optional(), maxDuration: z.string().optional(),
+}).strict()
+export const capabilities = z.object({
+  version: z.string().optional(), os: z.string().optional(), architecture: z.string().optional(),
+  probeVersions: labels.nullable().optional(), runtimeVersions: labels.optional(), privileges: z.array(z.string()).optional(),
+  minDuration: z.string().optional(), maxDuration: z.string().optional(),
+}).strict()
 export const prob = z.object({kind: z.string(), timeout: z.number().optional(), spec: z.record(z.string(), z.unknown()).optional()}).loose()
 // urth.JobStatus: pending -> running -> completed | timeout | errored.
 export const runStatus = z.enum(['pending', 'running', 'completed', 'timeout', 'errored'])
@@ -26,21 +41,22 @@ const terminalRunStatus: readonly z.infer<typeof runStatus>[] = ['completed', 't
 export const run = manifest('results', z.object({probKind: z.string().optional(), start_time: z.string().optional(), end_time: z.string().optional()}).loose(), z.object({
   status: runStatus.optional(),
   result: z.string().optional(), deadline: z.string().optional(), numberArtifacts: z.number().optional(),
-  executor: z.object({runnerId: z.string().optional(), runnerName: z.string().optional(), workerId: z.string().optional(), workerName: z.string().optional()}).loose().optional(),
+  executor: z.object({runnerId: z.string().optional(), runnerName: z.string().optional(), runnerVersion: z.number().int().optional(), propagatedLabels: labels.optional(), workerId: z.string().optional(), workerName: z.string().optional()}).loose().optional(),
 }).loose())
 export const scenario = manifest('scenarios', z.object({
   description: z.string().optional(), active: z.boolean(), schedule: z.string().optional(), requirements: selector.optional(), prob: prob.optional(),
 }).loose(), z.object({nextScheduledRunTime: z.string().optional(), results: z.array(run).optional()}).loose())
 export const presence = z.enum(['online', 'offline', 'api-unreachable', 'nats-unreachable', 'unknown'])
-export const worker = manifest('workerInstances', z.object({requestedTTL: z.number().optional()}).loose(), z.object({
-  fingerprint: z.string().optional(), paused: z.boolean().optional(), ttl: z.number().optional(),
+export const worker = manifest('workerInstances', z.object({requestedTTL: z.number().optional(), capabilities: capabilities.optional()}).loose(), z.object({
+  effectiveCapabilities: capabilities.optional(), fingerprint: z.string().optional(), paused: z.boolean().optional(), ttl: z.number().optional(),
   lastSeenTime: z.string().nullable().optional(), natsLastSeenTime: z.string().nullable().optional(), leftAt: z.string().nullable().optional(), lastSeenVia: z.string().optional(),
   presence: z.object({condition: presence, api: z.string(), nats: z.string()}).optional(),
 }).loose())
 export const blockedWorker = z.object({identity: z.string().regex(/^sha256:[0-9a-f]{64}$/), reason: z.string().max(1024).optional()})
 export const runner = manifest('runners', z.object({
-  active: z.boolean(), description: z.string().optional(), requirements: selector.optional(), maxInstance: z.number().optional(), blockedWorkers: z.array(blockedWorker).max(1024).optional(),
+  active: z.boolean(), description: z.string().optional(), jobRequirements: jobRequirements.optional(), workerRequirements: workerRequirements.optional(), propagatedLabels: labels.optional(), maxInstance: z.number().optional(), blockedWorkers: z.array(blockedWorker).max(1024).optional(),
 }).loose(), z.object({
+  lastAdmissionRejection: z.object({fingerprint: z.string(), reason: z.string(), time: z.string()}).optional(),
   numberInstances: z.number().optional(), activeInstances: z.array(z.unknown()).optional(),
   channel: z.object({observed: z.boolean().optional(), pullers: z.number().optional(), pending: z.number().optional()}).loose().optional(),
 }).loose())

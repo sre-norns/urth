@@ -28,6 +28,26 @@ type ProbRegistration struct {
 
 	// Types of artifacts this prob is expected to produce
 	Produce []string
+
+	// Privileges reports the Worker privileges a concrete spec needs beyond the
+	// prober itself, e.g. raw sockets for an ICMP probe that sets don't-fragment.
+	// Nil means no spec of this kind needs any. An error means the spec cannot be
+	// classified, and policy must treat it as unsatisfiable.
+	Privileges func(spec any) ([]string, error)
+}
+
+// PrivilegeRawSockets is the Worker privilege to open raw IP sockets. Ordinary
+// ICMP echo works without it through unprivileged ping sockets.
+const PrivilegeRawSockets = "raw-sockets"
+
+// KnownPrivileges lists the privilege names Workers can declare and channel
+// policy can require.
+func KnownPrivileges() []string { return []string{PrivilegeRawSockets} }
+
+// FindRegistration returns the registration of a prober kind linked into this binary.
+func FindRegistration(kind Kind) (ProbRegistration, bool) {
+	result, ok := kindRunnerMap[kind]
+	return result, ok
 }
 
 // Registrar of Probing modules

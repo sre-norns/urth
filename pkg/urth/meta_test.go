@@ -39,9 +39,10 @@ metadata:
 spec:
   active: true
   description: Awesome
-  requirements:
-    matchLabels:
-      os: linux
+  workerRequirements:
+    labels:
+      matchLabels:
+        os: linux
 `),
 			expect: manifest.ResourceManifest{
 				TypeMeta: manifest.TypeMeta{
@@ -53,11 +54,11 @@ spec:
 				Spec: &urth.RunnerSpec{
 					IsActive:    true,
 					Description: "Awesome",
-					Requirements: manifest.LabelSelector{
+					WorkerRequirements: urth.WorkerRequirements{Labels: manifest.LabelSelector{
 						MatchLabels: manifest.Labels{
 							"os": "linux",
 						},
-					},
+					}},
 				},
 				Status: &urth.RunnerStatus{},
 			},
@@ -200,11 +201,11 @@ func TestResourceManifest_UnmarshalingJson(t *testing.T) {
 "spec": {
   "active": true,
   "description": "Awesome",
-  "requirements": {
+  "workerRequirements": { "labels": {
 	"matchLabels": {
 	  "os": "linux"
 	  }
-	}
+	}}
 }
 }`),
 			expect: manifest.ResourceManifest{
@@ -217,11 +218,11 @@ func TestResourceManifest_UnmarshalingJson(t *testing.T) {
 				Spec: &urth.RunnerSpec{
 					IsActive:    true,
 					Description: "Awesome",
-					Requirements: manifest.LabelSelector{
+					WorkerRequirements: urth.WorkerRequirements{Labels: manifest.LabelSelector{
 						MatchLabels: manifest.Labels{
 							"os": "linux",
 						},
-					},
+					}},
 				},
 				// Status: &urth.RunnerStatus{},
 			},

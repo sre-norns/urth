@@ -202,25 +202,3 @@ func TestSigningKeysUseConfiguredValues(t *testing.T) {
 	require.Equal(t, []byte("b"), keys.Session)
 	require.Equal(t, []byte("c"), keys.Run)
 }
-
-func TestClampRunDuration(t *testing.T) {
-	const maximum = 30 * time.Minute
-
-	tests := map[string]struct {
-		requested time.Duration
-		maximum   time.Duration
-		want      time.Duration
-	}{
-		"a shorter request is granted":         {requested: time.Minute, maximum: maximum, want: time.Minute},
-		"a longer request is clamped":          {requested: 24 * time.Hour, maximum: maximum, want: maximum},
-		"an unset request takes the maximum":   {requested: 0, maximum: maximum, want: maximum},
-		"a negative request takes the maximum": {requested: -time.Hour, maximum: maximum, want: maximum},
-		"an unset maximum falls back":          {requested: 24 * time.Hour, maximum: 0, want: DefaultMaxRunDuration},
-	}
-
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			require.Equal(t, test.want, clampRunDuration(test.requested, test.maximum))
-		})
-	}
-}

@@ -51,7 +51,16 @@ type (
 		Selector string        `help:"Keys to match" optional:"" name:"selector" short:"l"`
 	}
 
+	Worker struct {
+		Name manifest.ResourceName `arg:"" help:"Worker name"`
+	}
+	Workers struct {
+		Selector string `help:"Label selector" short:"l"`
+	}
+
 	GetCmd struct {
+		Worker    Worker    `cmd:"" help:"Inspect a worker and stored capabilities"`
+		Workers   Workers   `cmd:"" help:"List workers"`
 		Scenario  Scenario  `cmd:"" help:"Get scenario object from the server"`
 		Scenarios Scenarios `cmd:"" help:"List all scenarios"`
 		Script    Script    `cmd:"" help:"Get a script data for a given scenario"`
@@ -242,4 +251,43 @@ func (c *Artifacts) Run(cfg *commandContext) error {
 	}
 
 	return cli.RenderList(cfg.Env.Output, artifacts, page)
+}
+
+func (c *Worker) Run(cfg *commandContext) error {
+	api, err := cfg.NewClient()
+	if err != nil {
+		return err
+	}
+	m, found, err := api.Workers().Get(cfg.Context, c.Name)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return fmt.Errorf("worker %q not found", c.Name)
+	}
+	w, err := urth.NewWorkerInstance(m)
+	return cli.RenderResource(cfg.Env.Output, workerView{w}, err)
+}
+func (c *Workers) Run(cfg *commandContext) error {
+	api, err := cfg.NewClient()
+	if err != nil {
+		return err
+	}
+	q, err := cli.SearchQuery(c.Selector)
+	if err != nil {
+		return err
+	}
+	resources, page, err := collectPages(cfg.Context, q, api.Workers().List)
+	if err != nil {
+		return err
+	}
+	workers := make([]workerView, 0, len(resources))
+	for _, m := range resources {
+		w, err := urth.NewWorkerInstance(m)
+		if err != nil {
+			return err
+		}
+		workers = append(workers, workerView{w})
+	}
+	return cli.RenderList(cfg.Env.Output, workers, page)
 }

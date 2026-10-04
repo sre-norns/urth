@@ -123,7 +123,7 @@ func TestTenancySameRunnerNameAcrossAccounts(t *testing.T) {
 	require.NoError(t, h.DB.Where("user_id = ?", user.ID).First(&member).Error)
 	ctx := identity.WithPrincipal(h.ctx, im.Principal{Type: "user", Scope: im.ScopeAccount, UserID: user.ID, AccountID: member.AccountID})
 	ctx = urth.WithScope(ctx, manifest.ScopeRef{Account: manifest.ResourceID(member.AccountID)})
-	second, err := h.Server.Service.Runners().Create(ctx, urth.Runner{ObjectMeta: manifest.ObjectMeta{Name: first.Name}, Spec: urth.RunnerSpec{IsActive: true}}.ToManifest())
+	second, err := h.Server.Service.Runners().Create(ctx, urth.Runner{ObjectMeta: manifest.ObjectMeta{Name: first.Name}, Spec: urth.RunnerSpec{IsActive: true, JobRequirements: urth.JobRequirements{ProbeKinds: []string{string(testProbKind), "http", "tcp"}}}}.ToManifest())
 	require.NoError(t, err)
 	require.NotEqual(t, first.Account, second.Metadata.Account)
 	require.NotEqual(t, natsq.JobSubject(first.Account, first.Name), natsq.JobSubject(second.Metadata.Account, second.Metadata.Name))
@@ -148,7 +148,7 @@ func TestTenancyRevocationDoesNotInterruptClaimedRun(t *testing.T) {
 	token, found, err := client.Runners().GetToken(h.ctx, runner.Name)
 	require.NoError(t, err)
 	require.True(t, found)
-	worker := manifest.ResourceManifest{TypeMeta: manifest.TypeMeta{APIVersion: urth.APIVersion, Kind: urth.KindWorkerInstance}, Metadata: manifest.ObjectMeta{Name: "claiming-worker"}, Spec: &urth.WorkerInstanceSpec{}}
+	worker := manifest.ResourceManifest{TypeMeta: manifest.TypeMeta{APIVersion: urth.APIVersion, Kind: urth.KindWorkerInstance}, Metadata: manifest.ObjectMeta{Name: "claiming-worker"}, Spec: &urth.WorkerInstanceSpec{Capabilities: testPolicyCapabilities()}}
 	worker = h.signedWorker(token, worker, nil)
 	registration, err := client.Runners().AuthWorker(h.ctx, token, worker)
 	require.NoError(t, err)

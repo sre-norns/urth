@@ -67,7 +67,7 @@ func (v runnerView) MarshalYAML() (any, error)    { return v.ToManifest(), nil }
 func (runnerView) TableHeader(wide bool) []string {
 	header := []string{"NAME", "ENABLED", "ONLINE", "AGE"}
 	if wide {
-		header = append(header, "REQUIREMENTS", "DESCRIPTION")
+		header = append(header, "JOB REQUIREMENTS", "WORKER REQUIREMENTS", "PROPAGATED LABELS", "LAST ENROLLMENT REJECTION", "DESCRIPTION")
 	}
 	return header
 }
@@ -80,7 +80,7 @@ func (v runnerView) TableRow(wide bool) []any {
 	}
 	row := []any{r.Name, r.Spec.IsActive, online, age(r.ObjectMeta)}
 	if wide {
-		row = append(row, r.Spec.Requirements, orDash(r.Spec.Description))
+		row = append(row, policyJSON(r.Spec.JobRequirements), policyJSON(r.Spec.WorkerRequirements), policyJSON(r.Spec.PropagatedLabels), policyJSON(r.Status.LastAdmissionRejection), orDash(r.Spec.Description))
 	}
 	return row
 }
@@ -93,7 +93,7 @@ func (v resultView) MarshalYAML() (any, error)    { return v.ToManifest(), nil }
 func (resultView) TableHeader(wide bool) []string {
 	header := []string{"NAME", "DURATION", "STATUS", "AGE"}
 	if wide {
-		header = append(header, "RESULT", "KIND", "ARTIFACTS")
+		header = append(header, "RESULT", "KIND", "ARTIFACTS", "RUNNER VERSION", "PROPAGATED LABELS")
 	}
 	return header
 }
@@ -102,7 +102,7 @@ func (v resultView) TableRow(wide bool) []any {
 	r := v.Result
 	row := []any{r.Name, maybeDuration(r.Spec.TimeStarted, r.Spec.TimeEnded), r.Status.Status, age(r.ObjectMeta)}
 	if wide {
-		row = append(row, r.Status.Result, r.Spec.ProbKind, r.Status.NumberArtifacts)
+		row = append(row, r.Status.Result, r.Spec.ProbKind, r.Status.NumberArtifacts, r.Status.Executor.RunnerVersion, policyJSON(r.Status.Executor.PropagatedLabels))
 	}
 	return row
 }
@@ -237,4 +237,31 @@ func decodeManifest(content []byte) (m manifest.ResourceManifest, err error) {
 	}
 	m.Status = nil
 	return m, err
+}
+
+func policyJSON(value any) string {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return "<invalid>"
+	}
+	return string(data)
+}
+
+type workerView struct{ urth.WorkerInstance }
+
+func (v workerView) MarshalJSON() ([]byte, error) { return json.Marshal(v.ToManifest()) }
+func (v workerView) MarshalYAML() (any, error)    { return v.ToManifest(), nil }
+func (workerView) TableHeader(wide bool) []string {
+	h := []string{"NAME", "RUNNER", "PAUSED", "AGE"}
+	if wide {
+		h = append(h, "EFFECTIVE CAPABILITIES")
+	}
+	return h
+}
+func (v workerView) TableRow(wide bool) []any {
+	row := []any{v.Name, v.Labels[urth.LabelRunnerName], v.Status.IsPaused, age(v.ObjectMeta)}
+	if wide {
+		row = append(row, policyJSON(v.Status.EffectiveCapabilities))
+	}
+	return row
 }

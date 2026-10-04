@@ -39,7 +39,7 @@ func seedRunnerWithWorkers(t *testing.T, store *dbstore.DBStore, db *gorm.DB, ui
 
 	runner := urth.Runner{
 		ObjectMeta: manifest.ObjectMeta{UID: manifest.ResourceID(uid), Name: name},
-		Spec:       urth.RunnerSpec{IsActive: true},
+		Spec:       urth.RunnerSpec{IsActive: true, JobRequirements: urth.JobRequirements{ProbeKinds: []string{"http", "tcp", "rest", "dns", "grpc", "icmp", "har", "puppeteer"}}},
 	}
 	require.NoError(t, store.Create(ctx, &runner))
 

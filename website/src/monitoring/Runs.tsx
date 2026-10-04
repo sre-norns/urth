@@ -4,7 +4,7 @@ import {Link, Navigate, useParams} from 'react-router-dom'
 import {isTerminalRun, page, run, type Run} from '../api/models'
 import {listPath, resourcePath, useResource} from '../api/queries'
 import {accountPath, runArtifactsPath, runPath, scenarioPath} from '../identity/links'
-import {Collection, Heading, Labels} from './common'
+import {Collection, Heading, Labels, policyReason} from './common'
 import {LiveRunLog} from './LiveRunLog'
 
 export function RunState({value}: {value: Run}) {
@@ -43,8 +43,8 @@ export function Runs() {
 }
 /**
  * A project's runs on one runner. Placement labels a run with its runner's UID
- * when the run is created, and the claim rewrites the same label from the
- * worker's runner, so one selector covers queued and executed runs alike.
+ * when the run is created. Claims retain that placement snapshot, so one
+ * selector covers queued and executed runs alike.
  * Unschedulable runs carry no runner and do not appear. The cursor trail is
  * local: this list shares its page with the runner's grant.
  */
@@ -82,8 +82,10 @@ export function RunDetail() {
       <p>Started: {r.spec.start_time ? new Date(r.spec.start_time).toLocaleString() : 'Not started'}</p>
       <p>Ended: {r.spec.end_time ? new Date(r.spec.end_time).toLocaleString() : 'Not finished'}</p>
       <p>Runner: {admin && executor?.runnerId ? <Link to={`${accountPath(accountId)}/runners/${encodeURIComponent(executor.runnerId)}`}>{executor.runnerName || executor.runnerId}</Link> : executor?.runnerName || 'Not assigned'}</p>
+      <p>Selected Runner version: {executor?.runnerVersion ?? 'Not recorded'}</p>
+      <h3>Propagated labels at placement</h3><Labels value={executor?.propagatedLabels} />
       <p>Worker: {admin && executor?.workerName ? <Link to={`${accountPath(accountId)}/workers/${encodeURIComponent(executor.workerName)}`}>{executor.workerName}</Link> : executor?.workerName || 'Not claimed'}</p>
-      {r.metadata.labels?.['urth/result.unschedulable'] && <p>Placement: {r.metadata.labels['urth/result.unschedulable']}</p>}
+      {r.metadata.labels?.['urth/result.unschedulable'] && <p>Placement: {policyReason(r.metadata.labels['urth/result.unschedulable'])}</p>}
       <Labels value={r.metadata.labels} />
       <div className="actions">{scenarioLink && <Link to={scenarioLink}>Scenario definition</Link>}<Link to={artifacts}>Run artifacts</Link></div>
     </Card>

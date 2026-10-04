@@ -8,9 +8,11 @@ metadata:
 spec:
   active: true
   description: "A runner resource example"
-  requirements:
-    matchSelector:
-      - { "key": "urth/capability.prob.tcp", "operator":"Exists"}
-      - { "key": "urth/capability.prob.http", "operator":"Exists"}
-      - { "key": "urth/capability.prob.har", "operator":"Exists"}
-      - { "key": "urth/capability.prob.puppeteer", "operator":"Exists"}
+  jobRequirements:
+    probeKinds: [tcp, http]
+    maxDuration: 1m
+  workerRequirements:
+    minDuration: 1ns
+    maxDuration: 1m
+  propagatedLabels:
+    env: dev
