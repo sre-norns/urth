@@ -15,7 +15,7 @@
         "aarch64-darwin"
       ];
       names = [
-        "urth-api-server"
+        "urth-api-srv"
         "urth-worker"
         "urthctl"
       ];
@@ -91,10 +91,10 @@
             };
         in
         {
-          urth-api-server = module {
-            pname = "urth-api-server";
+          urth-api-srv = module {
+            pname = "urth-api-srv";
             subPackage = "cmd/api-server";
-            command = "urth-api-server";
+            command = "urth-api-srv";
             description = "Urth API server";
             platforms = lib.platforms.linux;
           };

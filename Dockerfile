@@ -44,15 +44,15 @@ USER 65532:65532
 FROM runtime AS api-server
 ENV GIN_MODE=release
 LABEL org.opencontainers.image.title="Urth API server"
-COPY --from=api-build /out/urth /usr/local/bin/api-server
+COPY --from=api-build /out/urth /usr/local/bin/urth-api-srv
 EXPOSE 8080
-ENTRYPOINT ["/usr/local/bin/api-server"]
+ENTRYPOINT ["/usr/local/bin/urth-api-srv"]
 
 FROM runtime AS worker
 LABEL org.opencontainers.image.title="Urth Worker" \
       org.sre-norns.urth.runtime-profile="native"
-COPY --from=worker-build /out/urth /usr/local/bin/nats-worker
-ENTRYPOINT ["/usr/local/bin/nats-worker"]
+COPY --from=worker-build /out/urth /usr/local/bin/urth-worker
+ENTRYPOINT ["/usr/local/bin/urth-worker"]
 
 FROM runtime AS cli
 LABEL org.opencontainers.image.title="Urth CLI"

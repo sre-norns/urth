@@ -37,7 +37,7 @@ func listenAddress() string {
 
 func main() {
 	kong.Parse(&appCli,
-		kong.Name("urthd"),
+		kong.Name("urth-api-srv"),
 		kong.Description("Urth API service"),
 	)
 

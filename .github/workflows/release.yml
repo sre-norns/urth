@@ -118,6 +118,9 @@ jobs:
         with:
           version: ${{ env.GORELEASER_VERSION }}
           install-only: true
+      # The Worker snap's hook and service wrapper run under /bin/sh in core24.
+      - name: Check snap scripts
+        run: shellcheck -s sh packaging/snap/*/*
       # GoReleaser packs snaps with snapcraft; packing needs no build provider.
       - name: Install snapcraft
         run: sudo snap install snapcraft --classic
@@ -157,10 +160,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {image: urth-api-server, context: '.', file: Dockerfile, target: api-server}
+          - {image: urth-api-srv, context: '.', file: Dockerfile, target: api-server}
           - {image: urth-worker, context: '.', file: Dockerfile, target: worker}
           - {image: urthctl, context: '.', file: Dockerfile, target: cli}
-          - {image: urth-website, context: website, file: website/Dockerfile, target: ''}
+          - {image: urth-web, context: website, file: website/Dockerfile, target: ''}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -189,10 +192,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {image: urth-api-server, context: '.', file: Dockerfile, target: api-server}
+          - {image: urth-api-srv, context: '.', file: Dockerfile, target: api-server}
           - {image: urth-worker, context: '.', file: Dockerfile, target: worker}
           - {image: urthctl, context: '.', file: Dockerfile, target: cli}
-          - {image: urth-website, context: website, file: website/Dockerfile, target: ''}
+          - {image: urth-web, context: website, file: website/Dockerfile, target: ''}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

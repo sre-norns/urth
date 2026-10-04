@@ -11,17 +11,21 @@ import subprocess
 import tarfile
 import tempfile
 
-# Debian package -> (installed executable, command on PATH); snap -> executable.
-DEBS = {
-    "urth-api-server": ("usr/libexec/urth/api-server", "usr/bin/urth-api-server"),
-    "urth-worker": ("usr/libexec/urth/nats-worker", "usr/bin/urth-worker"),
-    "urthctl": ("usr/bin/urthctl", "usr/bin/urthctl"),
+# Every package installs one command named after the package.
+DEBS = ("urth-api-srv", "urth-worker", "urthctl")
+# Snap -> required snap.yaml lines and executables besides the command. The
+# Worker snap is a disabled service started by its configure hook, and carries
+# the native probe registry because it cannot reach a host browser runtime.
+SNAPS = {
+    "urth-api-srv": ((), ()),
+    "urth-worker": (("daemon: simple", "install-mode: disable"), ("meta/hooks/configure", "bin/urth-worker-daemon")),
+    "urthctl": ((), ()),
 }
-SNAPS = {"urth-api-server": "api-server", "urthctl": "urthctl"}
+NATIVE = {"urth-worker"}
 ARCHES = ("amd64", "arm64")
 
 
-def verify_binary(data, manifest, system, arch):
+def verify_binary(data, manifest, system, arch, native=False):
     with tempfile.TemporaryDirectory(prefix="urth-release-check-") as temporary:
         binary = Path(temporary) / "binary"
         binary.write_bytes(data)
@@ -33,6 +37,8 @@ def verify_binary(data, manifest, system, arch):
     for setting, expected_value in (("GOOS", system), ("GOARCH", arch), ("CGO_ENABLED", "0")):
         if "\tbuild\t" + setting + "=" + expected_value + "\n" not in build_info:
             raise ValueError("binary platform/build setting differs: " + setting)
+    if ("\tbuild\t-tags=urth_native\n" in build_info) != native:
+        raise ValueError("binary probe registry differs from its package")
 
 
 def package(manifest, prefix, arch, suffix):
@@ -44,7 +50,8 @@ def package(manifest, prefix, arch, suffix):
 
 def check_packages(output, manifest):
     expected = set()
-    for name, (executable, command) in DEBS.items():
+    for name in DEBS:
+        executable = "usr/bin/" + name
         for arch in ARCHES:
             deb = package(manifest, name, arch, ".deb")
             expected.add(deb)
@@ -54,23 +61,23 @@ def check_packages(output, manifest):
             tree = subprocess.run(["dpkg-deb", "--fsys-tarfile", str(output / deb)], capture_output=True, check=True).stdout
             with tarfile.open(fileobj=io.BytesIO(tree)) as bundle:
                 members = {member.name.removeprefix("./"): member for member in bundle.getmembers()}
-                if command != executable and members[command].linkname != "/" + executable:
-                    raise ValueError("Debian command link differs: " + deb)
                 if members[executable].mode != 0o755:
                     raise ValueError("Debian executable permissions differ: " + deb)
                 verify_binary(bundle.extractfile(members[executable]).read(), manifest, "linux", arch)
     if manifest["snap"]:
-        for name, executable in SNAPS.items():
+        for name, (lines, executables) in SNAPS.items():
             for arch in ARCHES:
                 snap = package(manifest, name, arch, ".snap")
                 expected.add(snap)
                 with tempfile.TemporaryDirectory(prefix="urth-release-snap-") as temporary:
                     root = Path(temporary) / "snap"
-                    subprocess.run(["unsquashfs", "-q", "-n", "-d", str(root), str(output / snap), "meta/snap.yaml", executable], check=True, stdout=subprocess.DEVNULL)
+                    subprocess.run(["unsquashfs", "-q", "-n", "-d", str(root), str(output / snap), "meta/snap.yaml", name, *executables], check=True, stdout=subprocess.DEVNULL)
                     record = (root / "meta" / "snap.yaml").read_text()
-                    if f"name: {name}\n" not in record or f"- {arch}\n" not in record:
+                    if f"name: {name}\n" not in record or f"- {arch}\n" not in record or any(line not in record for line in lines):
                         raise ValueError("snap metadata differs: " + snap)
-                    verify_binary((root / executable).read_bytes(), manifest, "linux", arch)
+                    if any(not (root / path).stat().st_mode & 0o111 for path in (name, *executables)):
+                        raise ValueError("snap executable permissions differ: " + snap)
+                    verify_binary((root / name).read_bytes(), manifest, "linux", arch, name in NATIVE)
     if set(manifest["packages"]) != expected:
         raise ValueError("package list does not match the required packages")
     return len(expected)
@@ -80,10 +87,10 @@ def check(output, smoke):
     manifest = json.loads((output / "release-manifest.json").read_text())
     expected = {
         f"{component}_{manifest['version']}_{system}_{arch}.tar.gz"
-        for component, systems in {"api-server": ("linux",), "nats-worker": ("linux",), "urthctl": ("linux", "darwin")}.items()
+        for component, systems in {"urth-api-srv": ("linux",), "urth-worker": ("linux",), "urthctl": ("linux", "darwin")}.items()
         for system in systems for arch in ("amd64", "arm64")
     }
-    expected.add(f"urth-website_{manifest['version']}.tar.gz")
+    expected.add(f"urth-web_{manifest['version']}.tar.gz")
     if set(manifest["archives"]) != expected:
         raise ValueError("archive list does not cover the required platforms")
     checksums = {}
@@ -113,7 +120,7 @@ def check(output, smoke):
                     raise ValueError("archive source record differs: " + name)
             component = record["component"]
             common = {"LICENSE", "README.md", "release.json"}
-            if component == "urth-website":
+            if component == "urth-web":
                 if "website/index.html" not in names or any(member not in common and not member.startswith("website/") for member in names):
                     raise ValueError("website archive contains unexpected files")
             else:

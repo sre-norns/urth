@@ -78,6 +78,10 @@ The published image index digests are:
 | `ghcr.io/sre-norns/urth-worker` | `sha256:af60b9223a30b6230ec122e48fc2b76c4565f8d1dd80b186a762917d97109f69` |
 | `ghcr.io/sre-norns/urthctl` | `sha256:8947ed5c95c723e4f18d3b3a95e784f3abad6111ff999cd50c89819d37fdcdec` |
 
+Later releases publish the API and website images as `urth-api-srv` and
+`urth-web` ([artifact names](releases.md#artifact-names)). These rc.2 digests
+remain under the names above.
+
 All four images retain non-root users, and the Worker retains the native
 profile. Registry inspection uses authenticated access. Stable image aliases
 remain absent; the first candidate tag and assets remain unchanged. Evidence

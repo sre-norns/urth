@@ -1,15 +1,16 @@
 # Urth container images
 
 Urth has separate API, Worker, CLI and website images. The image repository
-names prevent a collision with the Exp-Bench API image. Publication uses the
+names follow the `<project>-<component>` scheme in [release packaging](releases.md#artifact-names),
+so they cannot collide with Exp-Bench images. Publication uses the
 release workflow; a local build does not publish an image.
 
 | Component | Image repository | Dockerfile | Context | Target | Runtime |
 | --- | --- | --- | --- | --- | --- |
-| API | `ghcr.io/sre-norns/urth-api-server` | `Dockerfile` | repository root | `api-server` | Static Go, UID/GID 65532, CA roots |
+| API | `ghcr.io/sre-norns/urth-api-srv` | `Dockerfile` | repository root | `api-server` | Static Go, UID/GID 65532, CA roots |
 | Worker | `ghcr.io/sre-norns/urth-worker` | `Dockerfile` | repository root | `worker` | Static native Go probes, UID/GID 65532, CA roots |
 | CLI | `ghcr.io/sre-norns/urthctl` | `Dockerfile` | repository root | `cli` | Static Go client, UID/GID 65532, CA roots |
-| Website | `ghcr.io/sre-norns/urth-website` | `website/Dockerfile` | `website` | final stage | Nginx as user `nginx`, port 8080 |
+| Website | `ghcr.io/sre-norns/urth-web` | `website/Dockerfile` | `website` | final stage | Nginx as user `nginx`, port 8080 |
 
 Use an explicit published version tag or digest in deployments. Do not assume
 these recipes select a release version. The build arguments `VERSION`,
@@ -33,7 +34,7 @@ For a local native amd64 build with Podman:
 podman build --platform linux/amd64 --target api-server \
   --build-arg BUILDPLATFORM=linux/amd64 \
   --build-arg TARGETARCH=amd64 \
-  -t localhost/urth-api-server:dev .
+  -t localhost/urth-api-srv:dev .
 podman build --platform linux/amd64 --target worker \
   --build-arg BUILDPLATFORM=linux/amd64 \
   --build-arg TARGETARCH=amd64 \
@@ -44,7 +45,7 @@ podman build --platform linux/amd64 --target cli \
   -t localhost/urthctl:dev .
 podman build --build-arg BUILDPLATFORM=linux/amd64 \
   --secret id=npmrc,src="$HOME/.npmrc" \
-  -t localhost/urth-website:dev website
+  -t localhost/urth-web:dev website
 ```
 
 The website needs a private npm configuration with GitHub Packages read access.
@@ -60,7 +61,7 @@ docker buildx build --platform linux/amd64,linux/arm64 --target worker \
   --output type=oci,dest=urth-worker.oci.tar .
 docker buildx build --platform linux/amd64,linux/arm64 \
   --secret id=npmrc,src="$HOME/.npmrc" \
-  --output type=oci,dest=urth-website.oci.tar website
+  --output type=oci,dest=urth-web.oci.tar website
 ```
 
 The website's target-platform Nginx setup needs a native builder for that

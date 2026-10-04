@@ -1,0 +1,26 @@
+#!/bin/sh
+# Starts the urth-worker snap service from its snap settings. The configure
+# hook validates them and enables this service only when they are complete.
+# The token stays in a file: an argument would be visible in the process table.
+set -eu
+
+api_url="$(snapctl get api-url)"
+nats_url="$(snapctl get nats-url)"
+args="$(snapctl get args)"
+
+# $SNAP_COMMON survives refreshes and reverts, so the worker keeps one identity.
+mkdir -p "$SNAP_COMMON/work"
+export URTH_WORKER_IDENTITY_KEY_FILE="$SNAP_COMMON/worker.key"
+
+set -- \
+	--client.api-server-address="$api_url" \
+	--token-file="$SNAP_COMMON/runner-token" \
+	--working-directory="$SNAP_COMMON/work"
+if [ -n "$nats_url" ]; then
+	set -- "$@" --nats.url="$nats_url"
+fi
+
+# args is a flag list: split it on whitespace, but never expand globs.
+set -f
+# shellcheck disable=SC2086
+exec "$SNAP/urth-worker" "$@" $args

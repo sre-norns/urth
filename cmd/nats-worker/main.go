@@ -20,7 +20,7 @@ var appConfig = worker.NewDefaultConfig()
 
 func main() {
 	kong.Parse(&appConfig,
-		kong.Name("nats-worker"),
+		kong.Name("urth-worker"),
 		kong.Description("Urth worker: claims scenarios from its runner's queue and executes them"),
 	)
 

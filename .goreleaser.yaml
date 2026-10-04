@@ -14,11 +14,13 @@ snapshot:
   version_template: "{{ incpatch .Version }}-snapshot.{{ .ShortCommit }}"
 
 # No version ldflags: the binaries report their source through Go build info.
+# Each released binary carries its artifact name, <project>-<component>, so it
+# cannot collide with another product's server on the same PATH.
 builds:
   - &binary
-    id: api-server
+    id: urth-api-srv
     main: ./cmd/api-server
-    binary: api-server
+    binary: urth-api-srv
     env: [CGO_ENABLED=0, GOWORK=off]
     goos: [linux]
     goarch: [amd64, arm64]
@@ -26,9 +28,16 @@ builds:
     ldflags: [-s -w]
     mod_timestamp: "{{ .CommitTimestamp }}"
   - <<: *binary
-    id: nats-worker
+    id: urth-worker
     main: ./cmd/nats-worker
-    binary: nats-worker
+    binary: urth-worker
+  # The snap cannot reach a host Node/npm/browser runtime, so it ships the
+  # native probe registry, as the Worker image does.
+  - <<: *binary
+    id: urth-worker-native
+    main: ./cmd/nats-worker
+    binary: urth-worker
+    tags: [urth_native]
   - <<: *binary
     id: urthctl
     main: ./cmd/urthctl
@@ -39,25 +48,25 @@ builds:
 # the executable, its command guide, the license and a source record.
 archives:
   - &archive
-    id: api-server
-    ids: [api-server]
+    id: urth-api-srv
+    ids: [urth-api-srv]
     formats: [tar.gz]
-    name_template: "api-server_{{ .Env.RELEASE_VERSION }}_{{ .Os }}_{{ .Arch }}"
+    name_template: "urth-api-srv_{{ .Env.RELEASE_VERSION }}_{{ .Os }}_{{ .Arch }}"
     # Fixed ownership, permissions and time keep snapshots repeatable.
     builds_info:
       {owner: root, group: root, mode: 0755, mtime: "{{ .CommitDate }}"}
     files:
       - &license {src: LICENSE, info: &info {owner: root, group: root, mode: 0644, mtime: "{{ .CommitDate }}"}}
       - {src: cmd/api-server/README.md, strip_parent: true, info: *info}
-      - {src: "{{ .Env.RELEASE_RECORDS }}/api-server/{{ .Os }}_{{ .Arch }}/release.json", strip_parent: true, info: *info}
+      - {src: "{{ .Env.RELEASE_RECORDS }}/urth-api-srv/{{ .Os }}_{{ .Arch }}/release.json", strip_parent: true, info: *info}
   - <<: *archive
-    id: nats-worker
-    ids: [nats-worker]
-    name_template: "nats-worker_{{ .Env.RELEASE_VERSION }}_{{ .Os }}_{{ .Arch }}"
+    id: urth-worker
+    ids: [urth-worker]
+    name_template: "urth-worker_{{ .Env.RELEASE_VERSION }}_{{ .Os }}_{{ .Arch }}"
     files:
       - *license
       - {src: cmd/nats-worker/README.md, strip_parent: true, info: *info}
-      - {src: "{{ .Env.RELEASE_RECORDS }}/nats-worker/{{ .Os }}_{{ .Arch }}/release.json", strip_parent: true, info: *info}
+      - {src: "{{ .Env.RELEASE_RECORDS }}/urth-worker/{{ .Os }}_{{ .Arch }}/release.json", strip_parent: true, info: *info}
   - <<: *archive
     id: urthctl
     ids: [urthctl]
@@ -67,14 +76,13 @@ archives:
       - {src: cmd/urthctl/README.md, strip_parent: true, info: *info}
       - {src: "{{ .Env.RELEASE_RECORDS }}/urthctl/{{ .Os }}_{{ .Arch }}/release.json", strip_parent: true, info: *info}
 
-# Server binaries install under /usr/libexec/urth with an urth- prefixed command,
-# so they cannot collide with another product's api-server. Units are installed
-# but never enabled: the service cannot start before its operator configures it.
+# Units are installed but never enabled: a service cannot start before its
+# operator configures it.
 nfpms:
   - &deb
-    id: urth-api-server
-    ids: [api-server]
-    package_name: urth-api-server
+    id: urth-api-srv
+    ids: [urth-api-srv]
+    package_name: urth-api-srv
     file_name_template: "{{ .PackageName }}_{{ .Version }}_{{ .Arch }}"
     vendor: sre-norns
     homepage: https://github.com/sre-norns/urth
@@ -83,20 +91,18 @@ nfpms:
     license: PolyForm Noncommercial License 1.0.0
     formats: [deb]
     section: net
-    bindir: /usr/libexec/urth
+    bindir: /usr/bin
     mtime: "{{ .CommitDate }}"
     contents:
-      - {src: /usr/libexec/urth/api-server, dst: /usr/bin/urth-api-server, type: symlink}
-      - {src: packaging/systemd/urth-api-server.service, dst: /usr/lib/systemd/system/urth-api-server.service, file_info: {mode: 0644}}
-      - {src: packaging/default/urth-api-server, dst: /etc/default/urth-api-server, type: config|noreplace, file_info: {mode: 0640}}
-      - {src: LICENSE, dst: /usr/share/doc/urth-api-server/LICENSE, file_info: {mode: 0644}}
+      - {src: packaging/systemd/urth-api-srv.service, dst: /usr/lib/systemd/system/urth-api-srv.service, file_info: {mode: 0644}}
+      - {src: packaging/default/urth-api-srv, dst: /etc/default/urth-api-srv, type: config|noreplace, file_info: {mode: 0640}}
+      - {src: LICENSE, dst: /usr/share/doc/urth-api-srv/LICENSE, file_info: {mode: 0644}}
   - <<: *deb
     id: urth-worker
-    ids: [nats-worker]
+    ids: [urth-worker]
     package_name: urth-worker
     description: Urth worker that executes probes inside the network segment it serves.
     contents:
-      - {src: /usr/libexec/urth/nats-worker, dst: /usr/bin/urth-worker, type: symlink}
       - {src: packaging/systemd/urth-worker.service, dst: /usr/lib/systemd/system/urth-worker.service, file_info: {mode: 0644}}
       - {src: packaging/default/urth-worker, dst: /etc/default/urth-worker, type: config|noreplace, file_info: {mode: 0640}}
       - {src: LICENSE, dst: /usr/share/doc/urth-worker/LICENSE, file_info: {mode: 0644}}
@@ -105,13 +111,13 @@ nfpms:
     ids: [urthctl]
     package_name: urthctl
     description: Urth command-line client.
-    bindir: /usr/bin
     contents:
       - {src: LICENSE, dst: /usr/share/doc/urthctl/LICENSE, file_info: {mode: 0644}}
 
 # Strict confinement. A snap reads its own $HOME, so urthctl profiles inside the
 # snap are separate from a host installation's. The API server is an app rather
 # than a daemon: it cannot run before PostgreSQL, NATS and identity are configured.
+# A snap named after its only app puts that app on PATH under the snap's name.
 snapcrafts:
   - &snap
     id: urthctl
@@ -130,16 +136,42 @@ snapcrafts:
         command: urthctl
         plugs: [network, home]
   - <<: *snap
-    id: urth-api-server
-    ids: [api-server]
-    name: urth-api-server
-    name_template: "urth-api-server_{{ .Version }}_{{ .Arch }}"
+    id: urth-api-srv
+    ids: [urth-api-srv]
+    name: urth-api-srv
+    name_template: "urth-api-srv_{{ .Version }}_{{ .Arch }}"
     summary: Urth API server
     description: The Urth control plane. Requires PostgreSQL and NATS JetStream.
     apps:
-      urth-api-server:
-        command: api-server
+      urth-api-srv:
+        command: urth-api-srv
         plugs: [network, network-bind]
+  # The Worker is a service, installed disabled. Its configure hook enables it
+  # once `snap set urth-worker api-url=...` names the API and the Runner token
+  # is in $SNAP_COMMON/runner-token; see docs/releases.md. Strict confinement
+  # keeps a probe to the network: network-observe (manual connection) adds the
+  # raw sockets ICMP falls back to when the host refuses ping sockets.
+  - <<: *snap
+    id: urth-worker
+    ids: [urth-worker-native]
+    name: urth-worker
+    name_template: "urth-worker_{{ .Version }}_{{ .Arch }}"
+    summary: Urth worker
+    description: >-
+      Executes Urth probes inside the network segment it serves. Native probes
+      only (HTTP, REST, gRPC, TCP, DNS, ICMP, HAR replay); browser probes need
+      the deb or archive with a host Node.js runtime.
+    extra_files:
+      - {source: packaging/snap/urth-worker/configure, destination: meta/hooks/configure, mode: 0755}
+      - {source: packaging/snap/urth-worker/urth-worker-daemon, destination: bin/urth-worker-daemon, mode: 0755}
+    apps:
+      urth-worker:
+        command: bin/urth-worker-daemon
+        daemon: simple
+        install_mode: disable
+        restart_condition: on-failure
+        # network-bind serves --metrics-address when an operator sets one.
+        plugs: [network, network-bind, network-observe]
 
 checksum:
   disable: true
