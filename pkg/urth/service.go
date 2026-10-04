@@ -1514,6 +1514,9 @@ func (m *runnersAPIImpl) create(ctx context.Context, newEntry Runner) (Runner, e
 		// Note, failed to parse Runner's requirements so wont be able auth any workers
 		return newEntry, fmt.Errorf("runner's requirements are invalid: %v", err)
 	}
+	if err := newEntry.Spec.ValidateProbeKinds(); err != nil {
+		return newEntry, fmt.Errorf("runner's requirements are invalid: %v", err)
+	}
 
 	if m.identity != nil {
 		return m.createIdentityRunner(ctx, newEntry)
@@ -1537,6 +1540,9 @@ func (m *runnersAPIImpl) update(ctx context.Context, id manifest.VersionedResour
 	// Validate runner's requirements
 	if err := newEntry.Spec.ValidatePolicy(); err != nil {
 		// Note, failed to parse Runner's requirements so wont be able auth any workers
+		return newEntry, fmt.Errorf("runner's requirements are invalid: %v", err)
+	}
+	if err := newEntry.Spec.ValidateProbeKinds(); err != nil {
 		return newEntry, fmt.Errorf("runner's requirements are invalid: %v", err)
 	}
 

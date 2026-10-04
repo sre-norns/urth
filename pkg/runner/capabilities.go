@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"os/exec"
 	"runtime"
-	"runtime/debug"
 	"strings"
 	"time"
 
@@ -31,10 +30,7 @@ func runCapabilityCommand(ctx context.Context, dir, name string, args ...string)
 }
 
 func (c *RunnerConfig) discoverCapabilities(ctx context.Context, command capabilityCommand, icmpSupport func() (bool, bool)) urth.WorkerCapabilities {
-	version := "unknown"
-	if info, ok := debug.ReadBuildInfo(); ok {
-		version = info.Main.Version
-	}
+	version := prob.BuildVersion()
 	timeout := c.Timeout
 	if timeout <= 0 {
 		timeout = time.Minute

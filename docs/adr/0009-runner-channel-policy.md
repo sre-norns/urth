@@ -11,12 +11,15 @@ retains the existing equality and set selector semantics. Runner
 `spec.requirements` is obsolete. The API rejects that field. Fresh installations
 use the fields below. There is no compatibility reader or migration window.
 
-`Runner.spec.jobRequirements` contains `probeKinds`, optional `labels`, and
-optional `minDuration` and `maxDuration`. Probe kinds form an explicit finite
-allowlist. An omitted or empty allowlist accepts no jobs. Duration defaults are
-`1ns` and `1m`. A probe with no timeout requires `1m`. Explicit timeouts must be
-positive. Duration bounds are inclusive Go duration strings. Zero is invalid.
-The job labels come from the Scenario at Result creation.
+`Runner.spec.jobRequirements` contains `probeKinds`, optional `labels`,
+`privileges`, and optional `minDuration` and `maxDuration`. Probe kinds form an
+explicit finite allowlist of probers linked into the API server; an unknown kind
+is a validation error rather than a channel no Worker can cover. An omitted or
+empty allowlist accepts no jobs. Duration defaults are `1ns` and `1m`. A probe
+with no timeout requires `1m`. Explicit timeouts must be positive. Duration
+bounds are inclusive Go duration strings. Zero is invalid. The job labels come
+from the Scenario at Result creation. `privileges` lists the Worker privileges
+accepted jobs may need; a job needing a privilege not listed is rejected.
 
 `Runner.spec.workerRequirements` contains an optional label selector, Worker
 `version` range, `probeVersions` and `runtimeVersions` maps of version ranges,
@@ -30,7 +33,10 @@ Version ranges contain whitespace-separated comparators (`=`, `>`, `>=`, `<`,
 means equality. A leading `v` is permitted. Wildcards and OR expressions are
 invalid. Semantic ordering includes prereleases. Raw build versions remain
 visible; development, unknown and invalid versions cannot satisfy a nonempty
-range. Labels never implement version comparisons.
+range. Labels never implement version comparisons. Worker and prober versions
+come from Go build info, which carries the tag for release archives and
+packages. Container images build without VCS metadata, so the image build
+stamps the release version instead; an unstamped local image reports `dev`.
 
 Worker registration supplies `spec.capabilities`: raw `version`, `os`,
 `architecture`, `probeVersions`, `runtimeVersions`, `privileges`, `minDuration`
@@ -40,11 +46,16 @@ bounds are required. The authenticated API validates this declaration and stores
 The Worker discovers capabilities independently of custom labels. Registered
 probers alone do not prove that external tools exist. The native profile does
 not advertise browser execution. Browser discovery requires installed runtime,
-packages and an executable browser. ICMP discovery checks local socket access. ICMP channels require `raw-sockets`
-because the accepted probe class includes `dontFragment` variants.
+packages and an executable browser. ICMP discovery checks local socket access and declares `raw-sockets` only when
+a raw socket opens. Each prober classifies its own specs: ICMP needs
+`raw-sockets` only for `dont_fragment`, because an IP header option cannot be
+set on an unprivileged ping socket; every other ICMP probe uses a ping socket.
+So an ICMP channel serves ping-socket Workers by default, and only a channel
+listing `raw-sockets` in `jobRequirements.privileges` accepts don't-fragment
+jobs and requires the privilege of every Worker.
 
-Admission requires every Worker to cover every job kind and the whole job
-interval. Worker duration requirements can strengthen coverage but cannot
+Admission requires every Worker to cover every job kind, every job privilege
+and the whole job interval. Worker duration requirements can strengthen coverage but cannot
 weaken it. For example, Worker minimum duration cannot exceed the job minimum.
 An empty Worker policy still enforces channel coverage. Operators use separate
 Runners for distinct capability pools. Policy edits do not rewrite declarations.

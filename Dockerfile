@@ -12,6 +12,12 @@ ARG TARGETARCH
 RUN test "$TARGETOS" = linux && \
     case "$TARGETARCH" in amd64|arm64) ;; *) exit 1 ;; esac
 ENV GOOS=$TARGETOS GOARCH=$TARGETARCH
+# The build context excludes .git, so Go build info reports "(devel)". Stamp the
+# release version instead: Workers declare it, and Runner channel policy compares
+# it against version ranges. Unstamped local builds report "dev", which no range
+# accepts.
+ARG VERSION=dev
+ENV URTH_LDFLAGS="-s -w -X github.com/sre-norns/urth/pkg/prob.buildVersion=${VERSION}"
 # Writable state is explicit; the final runtime has no shell or package manager.
 RUN mkdir -p /runtime/home/urth/.config/urth /runtime/home/urth/worker /runtime/tmp /runtime/etc && \
     printf 'urth:x:65532:65532:Urth:/home/urth:/sbin/nologin\n' > /runtime/etc/passwd && \
@@ -19,13 +25,13 @@ RUN mkdir -p /runtime/home/urth/.config/urth /runtime/home/urth/worker /runtime/
     chown -R 65532:65532 /runtime/home/urth && chmod 1777 /runtime/tmp
 
 FROM build AS api-build
-RUN go build -trimpath -buildvcs=false -ldflags='-s -w' -o /out/urth ./cmd/api-server
+RUN go build -trimpath -buildvcs=false -ldflags="$URTH_LDFLAGS" -o /out/urth ./cmd/api-server
 
 FROM build AS worker-build
-RUN go build -tags=urth_native -trimpath -buildvcs=false -ldflags='-s -w' -o /out/urth ./cmd/nats-worker
+RUN go build -tags=urth_native -trimpath -buildvcs=false -ldflags="$URTH_LDFLAGS" -o /out/urth ./cmd/nats-worker
 
 FROM build AS cli-build
-RUN go build -trimpath -buildvcs=false -ldflags='-s -w' -o /out/urth ./cmd/urthctl
+RUN go build -trimpath -buildvcs=false -ldflags="$URTH_LDFLAGS" -o /out/urth ./cmd/urthctl
 
 FROM scratch AS runtime
 ARG VERSION=dev

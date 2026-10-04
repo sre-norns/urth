@@ -5,15 +5,19 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sre-norns/urth/pkg/prob"
 	"github.com/sre-norns/wyrd/pkg/manifest"
 	"golang.org/x/mod/semver"
 )
 
 // JobRequirements defines the finite set of jobs accepted by a channel.
 // An empty ProbeKinds set accepts no jobs. Durations are inclusive Go durations.
+// Privileges lists the Worker privileges accepted jobs may need; a job needing
+// one not listed is rejected, and every admitted Worker must hold all of them.
 type JobRequirements struct {
 	Labels      manifest.LabelSelector `json:"labels,omitempty" yaml:"labels,omitempty"`
 	ProbeKinds  []string               `json:"probeKinds" yaml:"probeKinds"`
+	Privileges  []string               `json:"privileges,omitempty" yaml:"privileges,omitempty"`
 	MinDuration string                 `json:"minDuration,omitempty" yaml:"minDuration,omitempty"`
 	MaxDuration string                 `json:"maxDuration,omitempty" yaml:"maxDuration,omitempty"`
 }
@@ -198,6 +202,12 @@ func (policy RunnerSpec) ValidatePolicy() error {
 		}
 		seen[k] = true
 	}
+	if e := validatePrivileges("jobRequirements.privileges", policy.JobRequirements.Privileges); e != nil {
+		return e
+	}
+	if e := validatePrivileges("workerRequirements.privileges", w.Privileges); e != nil {
+		return e
+	}
 	if e := policy.PropagatedLabels.Validate(); e != nil {
 		return e
 	}
@@ -208,6 +218,44 @@ func (policy RunnerSpec) ValidatePolicy() error {
 	}
 	return nil
 }
+func validatePrivileges(field string, values []string) error {
+	seen := map[string]bool{}
+	for _, v := range values {
+		if seen[v] || !contains(prob.KnownPrivileges(), v) {
+			return fmt.Errorf("%s must contain distinct known privileges %v, got %q", field, prob.KnownPrivileges(), v)
+		}
+		seen[v] = true
+	}
+	return nil
+}
+
+// ValidateProbeKinds rejects channel probe kinds this server has no prober for.
+// A misspelled kind would otherwise be accepted and then, through the coverage
+// rule, refuse every Worker at enrollment. It needs the probers linked into the
+// binary, so it runs on the server's write path rather than in ValidatePolicy,
+// which clients also call when they decode a Runner.
+func (policy RunnerSpec) ValidateProbeKinds() error {
+	for _, k := range policy.JobRequirements.ProbeKinds {
+		if _, ok := prob.FindRegistration(prob.Kind(k)); !ok {
+			return fmt.Errorf("jobRequirements.probeKinds: unknown probe kind %q", k)
+		}
+	}
+	return nil
+}
+
+// jobPrivileges reports what a concrete job needs beyond its probe kind. A job
+// whose kind this binary cannot classify needs something no Worker can hold.
+func jobPrivileges(s ExecutionSnapshot) ([]string, error) {
+	registration, ok := prob.FindRegistration(s.Prob.Kind)
+	if !ok {
+		return nil, fmt.Errorf("probe kind %q is not known to this server", s.Prob.Kind)
+	}
+	if registration.Privileges == nil {
+		return nil, nil
+	}
+	return registration.Privileges(s.Prob.Spec)
+}
+
 func mapValues(maps ...map[string]string) []string {
 	var r []string
 	for _, m := range maps {
@@ -224,6 +272,15 @@ func (policy RunnerSpec) AcceptsJob(s ExecutionSnapshot, labels manifest.Labels)
 	}
 	if !contains(policy.JobRequirements.ProbeKinds, string(s.Prob.Kind)) {
 		return fmt.Errorf("probe kind rejected by channel")
+	}
+	required, e := jobPrivileges(s)
+	if e != nil {
+		return fmt.Errorf("job privileges cannot be determined: %w", e)
+	}
+	for _, p := range required {
+		if !contains(policy.JobRequirements.Privileges, p) {
+			return fmt.Errorf("job privilege %q rejected by channel", p)
+		}
 	}
 	selector, e := policy.JobRequirements.Labels.AsSelector()
 	if e != nil || !selector.Matches(labels) {
@@ -281,10 +338,12 @@ func (policy RunnerSpec) AdmitCapabilities(c WorkerCapabilities, labels manifest
 			}
 		}
 	}
-	for _, k := range policy.JobRequirements.ProbeKinds {
-		if k == "icmp" && !contains(c.Privileges, "raw-sockets") {
-			return fmt.Errorf("ICMP channel requires raw-sockets for all accepted probe variants")
+	for _, p := range policy.JobRequirements.Privileges {
+		if !contains(c.Privileges, p) {
+			return fmt.Errorf("worker lacks privilege %q accepted jobs may need", p)
 		}
+	}
+	for _, k := range policy.JobRequirements.ProbeKinds {
 		if _, ok := c.ProbeVersions[k]; !ok {
 			return fmt.Errorf("worker cannot cover channel probe %q", k)
 		}
@@ -308,6 +367,15 @@ func (c WorkerCapabilities) CanExecute(s ExecutionSnapshot) bool {
 	}
 	if _, ok := c.ProbeVersions[string(s.Prob.Kind)]; !ok {
 		return false
+	}
+	required, err := jobPrivileges(s)
+	if err != nil {
+		return false
+	}
+	for _, p := range required {
+		if !contains(c.Privileges, p) {
+			return false
+		}
 	}
 	lo, hi, _ := durationInterval(c.MinDuration, c.MaxDuration, false)
 	d := executionDuration(s)

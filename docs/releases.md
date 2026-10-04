@@ -106,7 +106,7 @@ the full host access that classic confinement gives. The plugs are `network`,
 | Probe | In the snap |
 | --- | --- |
 | HTTP, REST, gRPC, TCP, DNS, HAR replay | Supported |
-| ICMP | Supported. The Worker uses a ping socket first, which needs the host's `net.ipv4.ping_group_range` to include root (the systemd default). Otherwise it needs raw sockets: `sudo snap connect urth-worker:network-observe`. That interface is never connected automatically. |
+| ICMP | Supported. The Worker uses a ping socket, which needs the host's `net.ipv4.ping_group_range` to include root (the systemd default). Probes that set `dont_fragment` need raw sockets, and only Runners listing `raw-sockets` in `jobRequirements.privileges` accept them: `sudo snap connect urth-worker:network-observe`. That interface is never connected automatically. |
 | Puppeteer (browser) | Not supported. The snap carries the native probe registry, as the Worker image does, and does not advertise Puppeteer. A strict snap cannot use a host Node.js, npm or browser. Use the deb or archive on a host with that runtime. |
 
 The release also contains `release-manifest.json`, `images.json` and

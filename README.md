@@ -465,7 +465,7 @@ See [LICENSE](./LICENSE).
 ### Runner channel policy
 
 A Runner accepts only its explicit `spec.jobRequirements.probeKinds` list. An
-empty list accepts no jobs. Worker enrollment checks typed capabilities and full
+empty list accepts no jobs; an unknown probe kind is rejected. Worker enrollment checks typed capabilities and full
 channel coverage. Scenario selectors continue to match Runner metadata labels.
 Claims recheck current placement and channel policy against the queued execution
 snapshot. Results and Artifacts retain the scheduling-time Runner version and

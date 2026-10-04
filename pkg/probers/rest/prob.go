@@ -11,7 +11,6 @@ import (
 	"net/http/httptrace"
 	"net/textproto"
 	"reflect"
-	"runtime/debug"
 	"strings"
 	"time"
 
@@ -34,10 +33,7 @@ type Spec struct {
 }
 
 func init() {
-	moduleVersion := "devel"
-	if bi, ok := debug.ReadBuildInfo(); ok {
-		moduleVersion = strings.Trim(bi.Main.Version, "()")
-	}
+	moduleVersion := prob.BuildVersion()
 
 	// Ignore double registration error
 	_ = prob.RegisterProbKind(

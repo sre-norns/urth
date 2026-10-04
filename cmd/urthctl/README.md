@@ -116,7 +116,10 @@ Or it can convert HAR file into a .HTTP file, as supported by [VSCode](https://m
 ## Runner channel policy
 
 Scenario `requirements` selects Runner metadata labels. Runner `jobRequirements`
-selects concrete jobs. Set `probeKinds` explicitly; an empty list admits no jobs.
+selects concrete jobs. Set `probeKinds` explicitly; an empty list admits no jobs,
+and a kind the API server has no prober for is rejected. ICMP probes that set
+`dont_fragment` need raw sockets: list `raw-sockets` in `jobRequirements.privileges`
+to accept them, and every enrolled Worker must then hold that privilege.
 Duration limits use Go strings such as `30s` and `1m`. The default accepted
 interval is `1ns` to `1m`.
 

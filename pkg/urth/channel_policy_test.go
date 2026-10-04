@@ -2,7 +2,10 @@ package urth
 
 import (
 	"encoding/json"
+
+	bxconfig "github.com/prometheus/blackbox_exporter/config"
 	"github.com/sre-norns/urth/pkg/prob"
+	"github.com/sre-norns/urth/pkg/probers/icmp"
 	"github.com/sre-norns/wyrd/pkg/manifest"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
@@ -67,4 +70,42 @@ func TestObsoleteRunnerPolicyRejected(t *testing.T) {
 	require.ErrorContains(t, yaml.Unmarshal([]byte("requirements: {}\n"), &spec), "obsolete")
 	require.Error(t, json.Unmarshal([]byte(`{"jobRequirements":{"probeKinds":["http"],"maxDuraton":"1s"}}`), &spec))
 	require.ErrorContains(t, yaml.Unmarshal([]byte("jobRequirements:\n  probeKinds: [http]\n  maxDuraton: 1s\n"), &spec), "maxDuraton")
+}
+
+// Ordinary ICMP echo runs on an unprivileged ping socket; only don't-fragment
+// needs raw sockets. A channel that never accepts those jobs must not demand
+// raw sockets of every Worker, and one that does must demand them of all.
+func TestICMPRawSocketsAreAJobPrivilege(t *testing.T) {
+	ping := ExecutionSnapshot{Prob: prob.Manifest{Kind: icmp.Kind, Timeout: time.Second, Spec: &icmp.Spec{Target: "example.com"}}}
+	dontFragment := ExecutionSnapshot{Prob: prob.Manifest{Kind: icmp.Kind, Timeout: time.Second, Spec: &icmp.Spec{Target: "example.com", ICMP: bxconfig.ICMPProbe{DontFragment: true}}}}
+	pingSocket := WorkerCapabilities{OS: "linux", Architecture: "amd64", ProbeVersions: map[string]string{"icmp": "1.0.0"}, MinDuration: "1ns", MaxDuration: "1m"}
+	rawSocket := pingSocket
+	rawSocket.Privileges = []string{prob.PrivilegeRawSockets}
+
+	plain := RunnerSpec{JobRequirements: JobRequirements{ProbeKinds: []string{"icmp"}}}
+	require.NoError(t, plain.AdmitCapabilities(pingSocket, nil))
+	require.NoError(t, plain.AcceptsJob(ping, nil))
+	require.ErrorContains(t, plain.AcceptsJob(dontFragment, nil), "raw-sockets")
+	require.True(t, pingSocket.CanExecute(ping))
+	require.False(t, pingSocket.CanExecute(dontFragment))
+
+	privileged := RunnerSpec{JobRequirements: JobRequirements{ProbeKinds: []string{"icmp"}, Privileges: []string{prob.PrivilegeRawSockets}}}
+	require.NoError(t, privileged.AcceptsJob(dontFragment, nil))
+	require.ErrorContains(t, privileged.AdmitCapabilities(pingSocket, nil), "raw-sockets")
+	require.NoError(t, privileged.AdmitCapabilities(rawSocket, nil))
+	require.True(t, rawSocket.CanExecute(dontFragment))
+
+	// A snapshot read back from storage carries the spec in whatever form it
+	// was decoded; classification must not depend on the Go type.
+	decoded := dontFragment
+	decoded.Prob.Spec = map[string]any{"target": "example.com", "icmp": map[string]any{"DontFragment": true}}
+	require.ErrorContains(t, plain.AcceptsJob(decoded, nil), "raw-sockets")
+
+	require.ErrorContains(t, (RunnerSpec{JobRequirements: JobRequirements{ProbeKinds: []string{"icmp"}, Privileges: []string{"root"}}}).ValidatePolicy(), "known privileges")
+	require.Error(t, (RunnerSpec{WorkerRequirements: WorkerRequirements{Privileges: []string{"raw-sockets", "raw-sockets"}}}).ValidatePolicy())
+}
+
+func TestChannelProbeKindsMustBeKnownToTheServer(t *testing.T) {
+	require.NoError(t, (RunnerSpec{JobRequirements: JobRequirements{ProbeKinds: []string{"http", "icmp"}}}).ValidateProbeKinds())
+	require.ErrorContains(t, (RunnerSpec{JobRequirements: JobRequirements{ProbeKinds: []string{"http", "htpp"}}}).ValidateProbeKinds(), `"htpp"`)
 }

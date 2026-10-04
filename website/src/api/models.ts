@@ -20,7 +20,7 @@ export const selector = z.object({
   matchExpressions: z.array(z.object({key: z.string(), operator: z.string(), values: z.array(z.string()).optional()})).optional(),
 }).loose()
 export const jobRequirements = z.object({
-  probeKinds: z.array(z.string()).nullable().optional(), labels: selector.optional(),
+  probeKinds: z.array(z.string()).nullable().optional(), labels: selector.optional(), privileges: z.array(z.string()).optional(),
   minDuration: z.string().optional(), maxDuration: z.string().optional(),
 }).strict()
 export const workerRequirements = z.object({

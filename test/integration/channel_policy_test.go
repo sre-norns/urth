@@ -422,3 +422,17 @@ func TestChannelPolicyRunnerAdmissionHistoryIsServerOwned(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, latest.Status.LastAdmissionRejection)
 }
+
+// A misspelled probe kind used to be stored, and the coverage rule then refused
+// every Worker at enrollment because none could declare the made-up prober.
+func TestChannelPolicyUnknownProbeKindRefusedByHTTP(t *testing.T) {
+	h := newHarness(t)
+	body, err := json.Marshal(map[string]any{"apiVersion": urth.APIVersion, "kind": urth.KindRunner, "metadata": map[string]any{"name": "misspelled-runner"}, "spec": map[string]any{"active": true, "jobRequirements": map[string]any{"probeKinds": []string{"htpp"}}}})
+	require.NoError(t, err)
+	code, response := h.httpRequest("POST", fmt.Sprintf("/v1/accounts/%s/runners", h.scope.Account), h.token, body)
+	require.Equal(t, 400, code)
+	require.Contains(t, string(response), "unknown probe kind")
+	var count int64
+	require.NoError(t, h.DB.Model(&urth.Runner{}).Where("name = ?", "misspelled-runner").Count(&count).Error)
+	require.Zero(t, count)
+}

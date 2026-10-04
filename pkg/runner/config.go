@@ -2,11 +2,9 @@ package runner
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"runtime"
-	"runtime/debug"
 	"strings"
 	"time"
 
@@ -77,16 +75,11 @@ func GetPythonRuntimeLabels() manifest.Labels {
 }
 
 func GetRuntimeLabels() manifest.Labels {
-	bi, ok := debug.ReadBuildInfo()
-	if !ok {
-		log.Print("[ERROR] failed to get Build info")
-	}
-
 	labels := manifest.Labels{
 		urth.LabelWorkerArch: runtime.GOARCH,
 		urth.LabelWorkerOS:   runtime.GOOS,
 		// See ProberAsLabels: the build version is not label-safe as it stands.
-		urth.LabelWorkerBuildVersion: urth.LabelSafeValue(strings.Trim(bi.Main.Version, "() ")),
+		urth.LabelWorkerBuildVersion: urth.LabelSafeValue(prob.BuildVersion()),
 	}
 
 	// A worker name normally contains the host, but operators may configure a
