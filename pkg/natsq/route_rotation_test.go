@@ -61,14 +61,10 @@ func TestBrokerClusterRouteCertificateRotation(t *testing.T) {
 		serial                          int64
 	}
 	nodes := make([]node, 3)
+	routes := clusterRoutes(t, len(nodes))
 	for i := range nodes {
-		listener, err := net.Listen("tcp", "127.0.0.1:0")
-		require.NoError(t, err)
-		address, err := url.Parse("nats-route://" + listener.Addr().String())
-		require.NoError(t, err)
-		require.NoError(t, listener.Close())
 		dir := t.TempDir()
-		nodes[i] = node{config: filepath.Join(dir, "nats.conf"), trust: filepath.Join(dir, "route-ca.pem"), cert: filepath.Join(dir, "route.pem"), key: filepath.Join(dir, "route.key"), store: filepath.Join(dir, "store"), address: address, resolver: a.resolver(t), compression: "off", serial: int64(100 + i)}
+		nodes[i] = node{config: filepath.Join(dir, "nats.conf"), trust: filepath.Join(dir, "route-ca.pem"), cert: filepath.Join(dir, "route.pem"), key: filepath.Join(dir, "route.key"), store: filepath.Join(dir, "store"), address: routes[i], resolver: a.resolver(t), compression: "off", serial: int64(100 + i)}
 		cert, key := oldCA.leaf(t, nodes[i].serial)
 		for path, data := range map[string][]byte{nodes[i].trust: oldCA.pem, nodes[i].cert: cert, nodes[i].key: key} {
 			replaceOperationFile(t, path, data)
@@ -190,6 +186,9 @@ cluster {
 		return false
 	}
 	require.Eventually(t, func() bool { return clusterReady(time.Time{}, "off") }, 10*time.Second, 25*time.Millisecond)
+	for i := range nodes {
+		loadAccountEverywhere(t, a.accountPublic, nodes[i].server)
+	}
 	client := natsq.ClientConfig{URL: brokerURL(nodes[0].server), TLSCAFile: clientCA, TLSCertFile: clientCert, TLSKeyFile: clientKey}
 	transport, cfg := a.scheduler(t, ctx, client, a.account, 3)
 	client.URL = brokerURL(nodes[2].server)

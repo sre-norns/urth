@@ -10,6 +10,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"math/big"
+	mathrand "math/rand/v2"
 	"net"
 	"net/url"
 	"os"
@@ -99,9 +100,93 @@ func startOperationsBroker(t *testing.T, opts *ns.Options) *ns.Server {
 	s, err := ns.NewServer(opts)
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Shutdown(); s.WaitForShutdown() })
+	// ReadyForConnections says only "no". The server's own errors say why --
+	// a listener that failed to bind, for one -- and are otherwise discarded.
+	errs := &brokerErrors{}
+	s.SetLoggerV2(errs, false, false, false)
 	go s.Start()
-	require.True(t, s.ReadyForConnections(5*time.Second))
+	require.True(t, s.ReadyForConnections(5*time.Second), "broker %s is not ready: %s", opts.ServerName, errs)
 	return s
+}
+
+// brokerErrors keeps the first errors an embedded broker reports.
+type brokerErrors struct {
+	mu    sync.Mutex
+	lines []string
+}
+
+func (e *brokerErrors) add(format string, v ...any) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if len(e.lines) < 32 {
+		e.lines = append(e.lines, fmt.Sprintf(format, v...))
+	}
+}
+
+func (e *brokerErrors) String() string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return strings.Join(e.lines, "; ")
+}
+
+func (e *brokerErrors) Fatalf(format string, v ...any) { e.add(format, v...) }
+func (e *brokerErrors) Errorf(format string, v ...any) { e.add(format, v...) }
+func (e *brokerErrors) Noticef(string, ...any)         {}
+func (e *brokerErrors) Warnf(string, ...any)           {}
+func (e *brokerErrors) Debugf(string, ...any)          {}
+func (e *brokerErrors) Tracef(string, ...any)          {}
+
+// loadAccountEverywhere has every broker load the account, with its JetStream,
+// before any client of it connects.
+//
+// nats-server (2.15.0) loads an account lazily, on the first thing to name it.
+// On a node the client did not dial, that is two things at once: the client's
+// subscription interest crossing a route, and a JetStream request or stream
+// assignment for the account. The concurrent loads can expose the account
+// half-built, and measured outcomes include 503 "JetStream not enabled for
+// account", 503 "account not found" from a replica, and a stream create that is
+// never answered. These tests are about failover and route rotation, not first
+// contact, so they start from a cluster that already knows the account. Loaded
+// from here, with nothing else asking, the load is not concurrent.
+func loadAccountEverywhere(t *testing.T, account string, servers ...*ns.Server) {
+	t.Helper()
+	for _, s := range servers {
+		acc, err := s.LookupAccount(account)
+		require.NoError(t, err)
+		require.True(t, acc.JetStreamEnabled(), "%s did not enable JetStream for the account", s.Name())
+	}
+}
+
+// clusterRoutes chooses route addresses for brokers that must name each other
+// before any of them starts; a JetStream cluster node refuses to start with no
+// configured route, so a node cannot simply bind port 0 and be told about later.
+//
+// The ports come from below Linux's ephemeral range (32768-60999). Taking one
+// from the kernel with port 0 and releasing it, as these tests used to, leaves
+// it free for the kernel to hand straight to another listener -- this test's
+// own client ports, or another package's under `go test ./...` -- before the
+// broker binds it. The route listener then fails, and the broker never becomes
+// ready. nats-server's own cluster tests avoid that range for the same reason.
+func clusterRoutes(t *testing.T, n int) []*url.URL {
+	t.Helper()
+	var routes []*url.URL
+	seen := map[int]bool{}
+	for attempt := 0; len(routes) < n; attempt++ {
+		require.Less(t, attempt, 1000, "no free route port below the ephemeral range")
+		port := 20000 + mathrand.IntN(12000)
+		if seen[port] {
+			continue
+		}
+		// Skip a port something long-lived already holds.
+		listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+		if err != nil {
+			continue
+		}
+		require.NoError(t, listener.Close())
+		seen[port] = true
+		routes = append(routes, &url.URL{Scheme: "nats-route", Host: listener.Addr().String()})
+	}
+	return routes
 }
 
 func brokerURL(s *ns.Server) string { return strings.Replace(s.ClientURL(), "nats://", "tls://", 1) }
@@ -392,17 +477,7 @@ func TestBrokerSecuredJetStreamFailover(t *testing.T) {
 	routeTLS.RootCAs = routeTLS.ClientCAs
 	routeTLS.ServerName = "localhost"
 	var servers []*ns.Server
-	var routes []*url.URL
-	// Resolve route addresses before starting the first node. JetStream refuses
-	// to start a cluster with no configured peer route.
-	for range 3 {
-		listener, err := net.Listen("tcp", "127.0.0.1:0")
-		require.NoError(t, err)
-		route, err := url.Parse("nats-route://" + listener.Addr().String())
-		require.NoError(t, err)
-		routes = append(routes, route)
-		require.NoError(t, listener.Close())
-	}
+	routes := clusterRoutes(t, 3)
 	for i := range 3 {
 		address, err := net.ResolveTCPAddr("tcp", routes[i].Host)
 		require.NoError(t, err)
@@ -424,6 +499,7 @@ func TestBrokerSecuredJetStreamFailover(t *testing.T) {
 		}
 		return false
 	}, 10*time.Second, 25*time.Millisecond)
+	loadAccountEverywhere(t, a.accountPublic, servers...)
 	client := natsq.ClientConfig{URL: brokerURL(servers[0]), TLSCAFile: ca, TLSCertFile: cert, TLSKeyFile: key}
 	transport, cfg := a.scheduler(t, ctx, client, a.account, 3)
 	worker, info := issuedBrokerClient(t, ctx, transport, client)
@@ -477,6 +553,14 @@ func TestBrokerSecuredJetStreamFailover(t *testing.T) {
 		defer cancel()
 		_, err := pubJS.Publish(attempt, info.Subject, []byte("after-failure"), jetstream.WithMsgID("m9-after-failure"))
 		return err == nil
+	}, 15*time.Second, 100*time.Millisecond)
+	// The consumer elects separately from the stream, and usually lost its
+	// leader too: a pull before that election finishes has no responder.
+	require.Eventually(t, func() bool {
+		attempt, cancel := context.WithTimeout(ctx, time.Second)
+		defer cancel()
+		state, err := consumer.Info(attempt)
+		return err == nil && state.Cluster != nil && state.Cluster.Leader != "" && state.Cluster.Leader != leader.Name()
 	}, 15*time.Second, 100*time.Millisecond)
 	batch, err := consumer.Fetch(2, jetstream.FetchMaxWait(5*time.Second))
 	require.NoError(t, err)

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/sre-norns/wyrd/pkg/manifest"
@@ -154,7 +155,7 @@ func jobStreamConfig(cfg Config) jetstream.StreamConfig {
 func EnsureJobStream(ctx context.Context, js jetstream.JetStream, cfg Config) (jetstream.Stream, error) {
 	desired := jobStreamConfig(cfg)
 
-	switch existing, err := js.Stream(ctx, JobsStreamName); {
+	switch existing, err := inspectJobStream(ctx, js); {
 	case errors.Is(err, jetstream.ErrStreamNotFound):
 		// Nothing to reconcile: the first start of a deployment.
 	case err != nil:
@@ -185,6 +186,40 @@ func EnsureJobStream(ctx context.Context, js jetstream.JetStream, cfg Config) (j
 	}
 
 	return stream, nil
+}
+
+// accountJetStreamSettle bounds how long provisioning keeps asking a broker that
+// reports JetStream as not enabled for the account. See inspectJobStream.
+const accountJetStreamSettle = 5 * time.Second
+
+// inspectJobStream looks up the jobs stream, riding out the broker briefly
+// denying that the account has JetStream at all.
+//
+// While a stream does not exist, the JetStream meta leader answers for it. On a
+// freshly formed cluster the leader may not have loaded the account when the
+// first request arrives: nats-server (2.15.0) loads accounts lazily, and a
+// concurrent load -- the same client's subscription interest crossing the
+// route -- can briefly expose the account before its JetStream is enabled. The
+// answer is then 503 "JetStream not enabled for account", and an api-server
+// starting against that cluster exited reporting a misconfiguration it did not
+// have. Measured: the denial lasts milliseconds and only happens when the
+// leader is not the node the client dialled. A genuinely disabled account is
+// refused the same way, so the retry is bounded and the last refusal returned.
+func inspectJobStream(ctx context.Context, js jetstream.JetStream) (jetstream.Stream, error) {
+	deadline := time.Now().Add(accountJetStreamSettle)
+	delay := 25 * time.Millisecond
+	for {
+		stream, err := js.Stream(ctx, JobsStreamName)
+		if !errors.Is(err, jetstream.ErrJetStreamNotEnabledForAccount) || time.Now().Add(delay).After(deadline) {
+			return stream, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, err
+		case <-time.After(delay):
+		}
+		delay = min(2*delay, 500*time.Millisecond)
+	}
 }
 
 // EnsureRunnerConsumer creates or updates the durable pull consumer for one

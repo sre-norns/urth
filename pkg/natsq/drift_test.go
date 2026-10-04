@@ -203,3 +203,49 @@ func TestEnsureJobStreamReportsNoDriftWhenUnchanged(t *testing.T) {
 		t.Errorf("a freshly provisioned stream should show no drift, got: %v", drift)
 	}
 }
+
+// flakyAccountJetStream answers stream lookups the way a JetStream meta leader
+// does while it has not finished loading the account: 503 "JetStream not
+// enabled for account", as the client really returns it. Everything else is
+// left nil, so any call this test does not expect panics.
+type flakyAccountJetStream struct {
+	jetstream.JetStream
+	refusals int
+	lookups  int
+}
+
+func (f *flakyAccountJetStream) Stream(context.Context, string) (jetstream.Stream, error) {
+	f.lookups++
+	if f.refusals < 0 || f.lookups <= f.refusals {
+		return nil, &jetstream.APIError{Code: 503, ErrorCode: jetstream.JSErrCodeJetStreamNotEnabledForAccount, Description: "JetStream not enabled for account"}
+	}
+	return nil, jetstream.ErrStreamNotFound
+}
+
+func (f *flakyAccountJetStream) CreateOrUpdateStream(context.Context, jetstream.StreamConfig) (jetstream.Stream, error) {
+	return nil, nil
+}
+
+// A cluster that has not yet loaded the account on its meta leader is not a
+// misconfiguration. Found as an intermittent CI failure of the clustered broker
+// tests; the same refusal stopped an api-server starting against a fresh
+// cluster.
+func TestEnsureJobStreamRidesOutTransientAccountRefusal(t *testing.T) {
+	js := &flakyAccountJetStream{refusals: 2}
+	if _, err := natsq.EnsureJobStream(context.Background(), js, testConfig()); err != nil {
+		t.Fatalf("a transient refusal must not fail provisioning: %v", err)
+	}
+	if js.lookups != 3 {
+		t.Errorf("stream was looked up %d times, want 3", js.lookups)
+	}
+}
+
+// An account that really has no JetStream is still reported, and as itself.
+func TestEnsureJobStreamReportsAccountWithoutJetStream(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	_, err := natsq.EnsureJobStream(ctx, &flakyAccountJetStream{refusals: -1}, testConfig())
+	if !errors.Is(err, jetstream.ErrJetStreamNotEnabledForAccount) {
+		t.Fatalf("want the broker's refusal, got %v", err)
+	}
+}
