@@ -197,7 +197,12 @@ $(website-dist): build-site
 
 build: api-server build-site nats-worker urthctl
 
-## release/snapshot: build release archives locally without publication
+goreleaser-version = v2.18.2
+# Snaps need snapcraft; without it the snapshot records that it has none.
+release-flags ?= $(if $(shell command -v snapcraft),,--no-snap)
+
+## release/snapshot: build release archives and packages locally without publication
 .PHONY: release/snapshot
 release/snapshot: build-site
-	python3 scripts/build-release.py --snapshot
+	GORELEASER="go run github.com/goreleaser/goreleaser/v2@$(goreleaser-version)" \
+		python3 scripts/build-release.py --snapshot $(release-flags)

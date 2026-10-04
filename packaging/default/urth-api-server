@@ -1,0 +1,6 @@
+# Settings for urth-api-server.service. See `urth-api-server --help` and
+# /usr/share/doc or cmd/api-server/README.md for every flag and variable.
+# Use a fresh PostgreSQL database; SQLite is not supported.
+URTH_API_SERVER_ARGS="--store.url=postgres://urth:CHANGE-ME@127.0.0.1:5432/urth"
+# PORT=8080
+# URTH_ISSUER=https://urth.example

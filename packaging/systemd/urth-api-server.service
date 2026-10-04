@@ -1,0 +1,23 @@
+[Unit]
+Description=Urth API server
+Documentation=https://github.com/sre-norns/urth/blob/main/cmd/api-server/README.md
+Wants=network-online.target
+After=network-online.target postgresql.service
+
+[Service]
+# The package installs this unit disabled. Configure /etc/default/urth-api-server,
+# then: systemctl enable --now urth-api-server
+EnvironmentFile=/etc/default/urth-api-server
+ExecStart=/usr/bin/urth-api-server $URTH_API_SERVER_ARGS
+DynamicUser=yes
+StateDirectory=urth-api-server
+WorkingDirectory=%S/urth-api-server
+Environment=HOME=%S/urth-api-server GIN_MODE=release
+Restart=on-failure
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

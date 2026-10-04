@@ -72,6 +72,29 @@ class ReleaseProtocolTest(unittest.TestCase):
                 self.assertEqual(archive.getmember("tool").mode, 0o755)
 
 
+class GoReleaserTest(unittest.TestCase):
+    def command(self, snapshot, snap=True):
+        calls = []
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            built = root / "dist" / "goreleaser"
+            built.mkdir(parents=True)
+            for name in ("tool_v1_linux_amd64.tar.gz", "tool_1_amd64.deb", "tool_1_amd64.snap", "config.yaml", "metadata.json"):
+                (built / name).write_text(name)
+            with patch.object(builder, "ROOT", root), patch.object(builder.subprocess, "run", lambda command, **options: calls.append((command, options["env"]))):
+                found = builder.goreleaser(dict(snapshot=snapshot, version="v1"), root / "records", snap)
+        self.assertEqual([path.name for path in found], ["tool_1_amd64.deb", "tool_1_amd64.snap", "tool_v1_linux_amd64.tar.gz"])
+        (command, env), = calls
+        self.assertEqual((env["RELEASE_VERSION"], env["GOWORK"]), ("v1", "off"))
+        return command[1:]
+
+    def test_snapshot_and_version_builds_never_publish(self):
+        self.assertEqual(self.command(snapshot=True), ["release", "--clean", "--snapshot"])
+        self.assertEqual(self.command(snapshot=False), ["release", "--clean", "--skip=publish,announce"])
+        self.assertEqual(self.command(snapshot=True, snap=False), ["release", "--clean", "--snapshot", "--skip=snapcraft"])
+        self.assertEqual(self.command(snapshot=False, snap=False), ["release", "--clean", "--skip=publish,announce,snapcraft"])
+
+
 class ImageRecordTest(unittest.TestCase):
     def entries(self):
         return [dict(image=image, version="v0.1.0", revision="a" * 40, digest="sha256:" + "b" * 64) for image in sorted(images.IMAGES)]
