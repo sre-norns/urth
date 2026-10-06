@@ -83,7 +83,7 @@ func TestAProfileSuppliesWhereAndAsWhom(t *testing.T) {
 	if err := prepareCommand(parsed, appCli, cfg); err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Token != "explicit" || cfg.APIServerAddress != "http://localhost:8080" || cfg.Project != "p" {
+	if cfg.Token != "explicit" || cfg.APIServerAddress != "https://urth.sre-norns.com" || cfg.Project != "p" {
 		t.Fatalf("explicit token: %+v", *cfg.APIClientConfig)
 	}
 }

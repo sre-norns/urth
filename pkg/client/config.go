@@ -16,7 +16,7 @@ type APIClientConfig struct {
 	HTTPClient *http.Client        `kong:"-"`
 
 	Token            urth.APIToken `help:"API token to authenticate to the API server"`
-	APIServerAddress string        `help:"URL of the API server" default:"http://localhost:8080"`
+	APIServerAddress string        `help:"URL of the API server" env:"URTH_API_SRV" default:"https://urth.sre-norns.com"`
 	Timeout          time.Duration `help:"Communication timeout for API server" default:"1m"`
 }
 
