@@ -22,7 +22,7 @@ after its only app puts that app on `PATH` without an alias.
 | Exp-Bench Web UI | `expbench-web_…` | — | — | `expbench-web` | — | — | — |
 | Exp-Bench CLI | `expbctl_…` | `expbctl` | `expbctl` | `expbctl` | `expbctl` | `expbctl` | — |
 
-The Homebrew cask is `urthctl`. The source directories (`cmd/api-server`,
+The Homebrew formula is `urthctl`. The source directories (`cmd/api-server`,
 `cmd/nats-worker`) keep their names; only released artifacts carry the
 product prefix. Releases up to `v0.1.0-rc.2` used `api-server`, `nats-worker`,
 `urth-api-server` and `urth-website`; those published images remain under their
@@ -128,29 +128,35 @@ for runtime requirements, mounts and supported profiles.
 
 ## Other installation channels
 
-**Homebrew.** The `urthctl_<version>_darwin_<arch>.tar.gz` archives are the
-macOS deliverable. The release workflow does not write to a tap. A cask in the
-maintainer's tap references them, with the digests from `checksums.txt`:
+**Homebrew.** `brew install sre-norns/norns/urthctl` on macOS and Linux, amd64
+and arm64. The formula in the
+[sre-norns/homebrew-norns](https://github.com/sre-norns/homebrew-norns) tap
+installs the release's `urthctl_<version>_<os>_<arch>.tar.gz` archives; it does
+not build from source. It is a formula rather than a cask because Homebrew does
+not quarantine formula downloads, so the unsigned, unnotarized binary runs
+without `--no-quarantine`, and one file serves Linux too.
 
-```ruby
-cask "urthctl" do
-  arch arm: "arm64", intel: "amd64"
+`scripts/homebrew-formula.py` renders the formula; the tap copy is generated,
+so change the template here. The `Homebrew tap` workflow
+(`.github/workflows/homebrew-tap.yml`) renders it for one release and opens a
+pull request against the tap, then waits for the tap's install-and-test
+checks. It never merges. It refuses a draft, a prerelease, an archive whose
+digest differs from `checksums.txt`, and a release older than the tap's
+current formula; a release the tap already installs changes nothing. A stable
+tag's release run calls it after the GitHub release exists. To run it for an
+existing release, or after fixing a failed run:
 
-  version "0.1.0"
-  sha256 arm:   "<sha256 of urthctl_v0.1.0_darwin_arm64.tar.gz>",
-         intel: "<sha256 of urthctl_v0.1.0_darwin_amd64.tar.gz>"
-
-  url "https://github.com/sre-norns/urth/releases/download/v#{version}/urthctl_v#{version}_darwin_#{arch}.tar.gz"
-  name "urthctl"
-  desc "Command-line client for Urth"
-  homepage "https://github.com/sre-norns/urth"
-
-  binary "urthctl"
-end
+```sh
+gh workflow run homebrew-tap.yml -f tag=v0.1.0
 ```
 
-The binaries are not signed or notarized. Gatekeeper quarantines a downloaded
-binary; the cask user can install with `--no-quarantine`.
+Writing to the tap needs a GitHub App installed on the `sre-norns`
+organization with Contents and Pull requests write access to `homebrew-norns`;
+the workflow's own token cannot write to another repository. Store the App ID
+as variable `HOMEBREW_TAP_APP_ID` and its private key as secret
+`HOMEBREW_TAP_APP_PRIVATE_KEY`, on the organization (shared by Urth and
+Exp-Bench) or this repository. Without the variable the release run skips the job,
+as it skips the Snap Store without its credential.
 
 **Nix.** `flake.nix` provides `urthctl` (Linux and Apple silicon) and
 `urth-api-srv` and `urth-worker` (Linux) as packages, apps and

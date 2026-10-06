@@ -1,0 +1,170 @@
+# Proposes the urthctl formula for a published stable release to the Homebrew
+# tap. It never merges: the tap's own checks install and test the formula on
+# macOS and Linux, and the maintainer merges the pull request.
+#
+# Writing to the tap needs a GitHub App installed on its owner with contents and
+# pull-request write access to the tap: variable HOMEBREW_TAP_APP_ID and secret
+# HOMEBREW_TAP_APP_PRIVATE_KEY. See docs/releases.md.
+name: Homebrew tap
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+    outputs:
+      pull-request-url:
+        description: Created or reused tap pull request; empty when the tap is current
+        value: ${{ jobs.formula.outputs.pull-request-url }}
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published stable release tag to install (for example v0.1.0)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  TAP_OWNER: sre-norns
+  TAP_NAME: homebrew-norns
+  FORMULA: urthctl
+
+jobs:
+  formula:
+    name: Propose urthctl ${{ inputs.tag }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    # One tap branch per release; two runs for different tags must not race to
+    # rewrite the same formula on main.
+    concurrency:
+      group: homebrew-tap-urthctl
+      cancel-in-progress: false
+    outputs:
+      pull-request-url: ${{ steps.pr.outputs.url }}
+    env:
+      TAG: ${{ inputs.tag }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # A draft can still change and a prerelease must not reach tap users, so
+      # only a published stable release is installable. The renderer enforces
+      # the stable tag form again. Homebrew downloads anonymously, so a private
+      # repository's assets would fail every install and the tap's own checks.
+      - name: Require a published stable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          case "$TAG" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "::error::$TAG is not a vMAJOR.MINOR.PATCH release tag"; exit 1 ;;
+          esac
+          test "$(gh api "repos/$GH_REPO" --jq .private)" = false || {
+            echo "::error::$GH_REPO is private; Homebrew cannot download its release assets"
+            exit 1
+          }
+          gh api "repos/$GH_REPO/releases/tags/$TAG" > "$RUNNER_TEMP/release.json"
+          jq -e '.draft == false and .prerelease == false' "$RUNNER_TEMP/release.json" > /dev/null || {
+            echo "::error::$TAG is a draft or prerelease; Homebrew installs stable releases only"
+            exit 1
+          }
+
+      # Hash the bytes users will download, and require them to match the
+      # release's own checksums.txt, so a replaced asset cannot pass unnoticed.
+      - name: Download and verify the CLI archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir archives
+          gh release download "$TAG" --dir archives \
+            --pattern "${FORMULA}_${TAG}_*.tar.gz" --pattern checksums.txt
+          cd archives
+          for platform in darwin_arm64 darwin_amd64 linux_arm64 linux_amd64; do
+            name="${FORMULA}_${TAG}_${platform}.tar.gz"
+            awk -v name="$name" '$2 == name' checksums.txt
+          done > cli.sha256
+          test "$(wc -l < cli.sha256)" -eq 4 || {
+            echo "::error::checksums.txt does not list all four $FORMULA archives"
+            exit 1
+          }
+          sha256sum --check --strict cli.sha256
+
+      - name: Mint a tap token
+        id: token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ vars.HOMEBREW_TAP_APP_ID }}
+          private-key: ${{ secrets.HOMEBREW_TAP_APP_PRIVATE_KEY }}
+          owner: ${{ env.TAP_OWNER }}
+          repositories: ${{ env.TAP_NAME }}
+
+      - name: Render the formula on a tap branch
+        id: formula
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          branch="${FORMULA}/${TAG}"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          git clone --quiet "https://github.com/${TAP_OWNER}/${TAP_NAME}.git" tap
+          git -C tap checkout --quiet -B "$branch" origin/main
+          # Refuses an older release than the tap already has.
+          python3 -B scripts/homebrew-formula.py --tag "$TAG" --archives archives \
+            --output "tap/Formula/${FORMULA}.rb"
+          cd tap
+          git add "Formula/${FORMULA}.rb"
+          if git diff --cached --quiet; then
+            echo "::notice::The tap already installs $FORMULA $TAG."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git config user.name "github-actions-release[bot]"
+          git config user.email "github-actions-release[bot]@users.noreply.github.com"
+          git commit --quiet -m "${FORMULA} ${TAG#v}" \
+            -m "Install $FORMULA from https://github.com/$GH_REPO/releases/tag/$TAG"
+          # A rerun reuses its own branch, but never overwrites different content.
+          if git ls-remote --exit-code --heads origin "$branch" > /dev/null; then
+            git fetch --quiet origin "$branch"
+            git diff --quiet FETCH_HEAD HEAD -- "Formula/${FORMULA}.rb" || {
+              echo "::error::tap branch $branch already exists with a different formula"
+              exit 1
+            }
+          else
+            gh auth setup-git
+            git push --quiet origin "HEAD:refs/heads/$branch"
+          fi
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Open or reuse the tap pull request and wait for its checks
+        if: steps.formula.outputs.changed == 'true'
+        id: pr
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          BRANCH: ${{ steps.formula.outputs.branch }}
+        run: |
+          tap="${TAP_OWNER}/${TAP_NAME}"
+          state="$(gh pr view "$BRANCH" --repo "$tap" --json state --jq .state 2>/dev/null || echo absent)"
+          case "$state" in
+            OPEN) ;;
+            absent)
+              gh pr create --repo "$tap" --base main --head "$BRANCH" \
+                --title "${FORMULA} ${TAG#v}" \
+                --body "Install \`${FORMULA}\` from the [${TAG} release](https://github.com/${GH_REPO}/releases/tag/${TAG}). Opened by ${GITHUB_SERVER_URL}/${GH_REPO}/actions/runs/${GITHUB_RUN_ID}."
+              ;;
+            *) echo "::error::tap pull request for $BRANCH is $state"; exit 1 ;;
+          esac
+          url="$(gh pr view "$BRANCH" --repo "$tap" --json url --jq .url)"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "::notice::Tap pull request: $url"
+          # Checks register some time after the pull request opens, and
+          # `gh pr checks --watch` fails while there are none.
+          for _ in $(seq 1 30); do
+            count="$(gh pr checks "$BRANCH" --repo "$tap" --json name --jq length 2>/dev/null || echo 0)"
+            [ "${count:-0}" -gt 0 ] && break
+            sleep 10
+          done
+          gh pr checks "$BRANCH" --repo "$tap" --watch --fail-fast --interval 15
