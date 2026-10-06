@@ -281,6 +281,22 @@ jobs:
             gh release create "$VERSION" dist/release/* --verify-tag --title "Urth $VERSION" --generate-notes --prerelease --latest=false
           fi
 
+  # Optional, like the Snap Store: without the tap App variable, or while the
+  # repository is private, the job is skipped, and Homebrew users stay on the
+  # previous formula until a manual Homebrew tap run. Prereleases never reach
+  # the tap.
+  homebrew-tap:
+    name: Propose the Homebrew formula
+    if: >-
+      github.event_name == 'push' && needs.metadata.outputs.stable == 'true' &&
+      vars.HOMEBREW_TAP_APP_ID != '' && !github.event.repository.private
+    needs: [metadata, release]
+    uses: ./.github/workflows/homebrew-tap.yml
+    # A called workflow sees no secrets unless the caller passes them.
+    secrets: inherit
+    with:
+      tag: ${{ needs.metadata.outputs.version }}
+
   # Optional: the Snap Store needs an account credential that this repository
   # does not have by default. Without SNAPCRAFT_STORE_CREDENTIALS the snaps stay
   # GitHub release assets only, and this job reports that and succeeds.
