@@ -36,7 +36,9 @@ class HomebrewFormulaTest(unittest.TestCase):
         digests = self.publish("v1.2.3")
         self.assertEqual(self.run_main("v1.2.3"), 0)
         text = self.output.read_text()
-        self.assertIn('version "1.2.3"', text)
+        # Homebrew scans the version from the URL; its audit rejects a
+        # redundant `version` line.
+        self.assertNotRegex(text, r'(?m)^\s*version ')
         for name, digest in digests.items():
             url = f"https://github.com/{formula.REPOSITORY}/releases/download/v1.2.3/{name}"
             # Each URL is followed by its own digest, so no platform can install
@@ -79,6 +81,14 @@ class HomebrewFormulaTest(unittest.TestCase):
         # Numeric, not lexical: 1.9.0 sorts after 1.10.0 as text.
         self.assertEqual(self.run_main("v1.9.0"), 1)
         self.assertEqual(self.output.read_text(), rendered)
+
+    def test_a_formula_mixing_releases_is_not_overwritten(self):
+        self.publish("v1.2.3")
+        self.run_main("v1.2.3")
+        mixed = self.output.read_text().replace("download/v1.2.3/", "download/v9.0.0/", 1)
+        self.output.write_text(mixed)
+        self.assertEqual(self.run_main("v1.2.3"), 1)
+        self.assertEqual(self.output.read_text(), mixed)
 
     def test_rerendering_the_same_release_is_identical(self):
         self.publish("v1.2.3")

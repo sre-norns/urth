@@ -27,7 +27,9 @@ HELP_BANNER = "Urth Command line tool"
 
 # Homebrew tracks stable releases only: a prerelease must never reach a tap user.
 STABLE_TAG = re.compile(r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
-FORMULA_VERSION = re.compile(r'^\s*version "([^"]+)"$', re.MULTILINE)
+# The formula has no `version` line: Homebrew reads the version from the URL,
+# and its audit rejects a redundant one. Read it back the same way.
+FORMULA_TAGS = re.compile(r'url "[^"]*/releases/download/(v[^/"]+)/')
 # Homebrew's platform blocks, each naming the archive GoReleaser built for it.
 PLATFORMS = (
     ("on_macos", "on_arm", "darwin", "arm64"),
@@ -88,7 +90,6 @@ def render(tag, archives):
 class {CLASS} < Formula
   desc "{DESC}"
   homepage "https://github.com/{REPOSITORY}"
-  version "{tag[1:]}"
   license "{LICENSE}"
 
 {platforms}
@@ -107,11 +108,11 @@ def check_upgrade(tag, previous):
     """Refuse to replace a formula with an older release; the same one is a no-op."""
     if not previous.is_file():
         return
-    match = FORMULA_VERSION.search(previous.read_text())
-    if not match:
-        raise FormulaError(f"cannot read the current version from {previous}")
-    current = match.group(1)
-    if parse_version(tag) < parse_version("v" + current):
+    tags = set(FORMULA_TAGS.findall(previous.read_text()))
+    if len(tags) != 1:
+        raise FormulaError(f"cannot read one current release from {previous}: {sorted(tags)}")
+    current = tags.pop()
+    if parse_version(tag) < parse_version(current):
         raise FormulaError(f"{previous} already has {current}, newer than {tag}")
 
 
