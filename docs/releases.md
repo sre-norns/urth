@@ -207,7 +207,10 @@ configuration and the working source tree are not archived.
 
 Pull requests that change packaging run the archive and package inspector and
 native `--help` smoke checks. The inspector checks each package's control
-record, installed command, permissions, and the embedded binary's commit and platform. They also build all four images for both Linux platforms
+record, installed command, permissions, and the embedded binary's commit and platform.
+The macOS `urthctl` archives are cross-compiled, so a `macos-26` (arm64) and a
+`macos-26-intel` (amd64) runner each verify their archive's checksum, run it,
+and run a local HTTP probe with `urthctl run`. Those pull requests also build all four images for both Linux platforms
 with registry push disabled. They do not create releases or update `latest`.
 The ordinary backend and website workflows remain the PR quality gates.
 
@@ -229,7 +232,7 @@ same version is used as an image tag. Do not move or reuse release tags.
 5. After all images succeed, it verifies their version and commit against the
    archive manifest. Stable versions then update image `latest` aliases. A
    prerelease updates neither image `latest` nor GitHub's latest stable release.
-6. It creates the GitHub release and uploads all archives, packages, metadata and checksums.
+6. Once both macOS runners have run their `urthctl` archives, it creates the GitHub release and uploads all archives, packages, metadata and checksums.
 7. With the optional Snap Store credential, it uploads the snaps.
 
 The workflow uses `GITHUB_TOKEN`: `contents: read` and `packages: read` for
