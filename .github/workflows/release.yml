@@ -148,6 +148,65 @@ jobs:
           path: dist/release/*
           if-no-files-found: error
 
+  # GoReleaser cross-compiles urthctl for macOS on Linux, where nothing can
+  # execute it. Run each darwin archive on its own architecture before a tag
+  # can become a release. `urthctl run` exits 0 when a probe fails, so success
+  # is read from its report, and the probe targets a local server so the check
+  # does not depend on outside networking.
+  macos:
+    name: Run urthctl on macOS ${{ matrix.arch }}
+    needs: [archives]
+    if: always() && !cancelled() && needs.archives.result == 'success'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: macos-26, arch: arm64, machine: arm64}
+          - {os: macos-26-intel, arch: amd64, machine: x86_64}
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: urth-archives
+          path: dist/release
+      - name: Verify, unpack and run the archive
+        env:
+          ARCH: ${{ matrix.arch }}
+          MACHINE: ${{ matrix.machine }}
+        run: |
+          # A runner image that changed architecture would make this check vacuous.
+          test "$(uname -m)" = "$MACHINE"
+          version="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["version"])' dist/release/release-manifest.json)"
+          archive="urthctl_${version}_darwin_${ARCH}.tar.gz"
+          (cd dist/release && grep -F "  $archive" checksums.txt | shasum -a 256 -c -)
+          mkdir smoke
+          tar -xzf "dist/release/$archive" -C smoke
+          file smoke/urthctl | grep -F "Mach-O 64-bit executable $MACHINE"
+          smoke/urthctl --help | grep -F 'Usage:'
+
+          python3 -m http.server 18765 --bind 127.0.0.1 --directory smoke > /dev/null 2>&1 &
+          server=$!
+          trap 'kill "$server"' EXIT
+          cat > smoke/scenario.yaml <<'EOF'
+          apiVersion: urth.sre-norns.com/v1
+          kind: scenarios
+          metadata:
+            name: release-smoke
+          spec:
+            prob:
+              kind: http
+              timeout: 5s
+              spec:
+                target: http://127.0.0.1:18765/
+                http:
+                  method: GET
+                  preferred_ip_protocol: ip4
+          EOF
+          for _ in 1 2 3 4 5; do curl -fsS -o /dev/null http://127.0.0.1:18765/ && break; sleep 1; done
+          smoke/urthctl run -f smoke/scenario.yaml --runner.working-directory smoke 2>&1 | tee run.log
+          grep -F 'script finished: "success"' run.log
+
   image-snapshots:
     name: Validate ${{ matrix.image }} without publication
     if: >-
@@ -233,7 +292,7 @@ jobs:
   release:
     name: Record complete release and stable aliases
     if: github.event_name == 'push'
-    needs: [metadata, backend, website, archives, image-publication]
+    needs: [metadata, backend, website, archives, macos, image-publication]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
