@@ -5,7 +5,7 @@ go 1.27.1
 require (
 	github.com/adhocore/gronx v1.20.5
 	github.com/alecthomas/kong v1.16.1
-	github.com/chromedp/cdproto v0.0.0-20260922220944-a19bff23514f
+	github.com/chromedp/cdproto v0.157.9
 	github.com/gin-gonic/gin v1.12.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/martian v2.1.0+incompatible
@@ -16,15 +16,15 @@ require (
 	github.com/nats-io/nats-server/v2 v2.15.0
 	github.com/nats-io/nats.go v1.54.0
 	github.com/nats-io/nkeys v0.4.16
-	github.com/prometheus/blackbox_exporter v0.28.0
-	github.com/prometheus/client_golang v1.24.1
+	github.com/prometheus/blackbox_exporter v0.29.0
+	github.com/prometheus/client_golang v1.25.0
 	github.com/prometheus/client_model v0.6.3
 	github.com/prometheus/common v0.72.0
 	github.com/sre-norns/wyrd v0.7.0
 	github.com/sre-norns/wyrd/identity v0.7.2
 	github.com/stretchr/testify v1.12.1
 	golang.org/x/mod v0.41.0
-	golang.org/x/net v0.59.0
+	golang.org/x/net v0.60.0
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/driver/postgres v1.6.3
 	gorm.io/driver/sqlite v1.6.0
@@ -49,6 +49,7 @@ require (
 	github.com/gabriel-vasile/mimetype v1.4.15 // indirect
 	github.com/gin-contrib/sse v1.1.2 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.5 // indirect
+	github.com/go-json-experiment/json v0.0.0-20260213210345-44df1a37e875 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-playground/locales v0.14.2 // indirect
@@ -59,6 +60,7 @@ require (
 	github.com/goccy/go-yaml v1.19.2 // indirect
 	github.com/google/cel-go v0.31.0 // indirect
 	github.com/google/go-tpm v0.9.8 // indirect
+	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/ijt/go-anytime v1.9.2 // indirect
 	github.com/ijt/goparsify v0.0.0-20221203142333-3a5276334b8d // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
