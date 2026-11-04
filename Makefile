@@ -115,7 +115,7 @@ verify:
 # Tool versions are pinned rather than tracked at @latest, so that a CI run
 # cannot start failing on a check that no commit in this repository introduced.
 # Bump these deliberately.
-staticcheck-version = 2026.2.1
+staticcheck-version = 2026.2.2
 govulncheck-version = v1.8.0
 
 ## staticcheck: Run go static-check tool on the code-base
