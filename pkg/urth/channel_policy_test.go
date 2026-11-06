@@ -96,9 +96,16 @@ func TestICMPRawSocketsAreAJobPrivilege(t *testing.T) {
 	require.True(t, rawSocket.CanExecute(dontFragment))
 
 	// A snapshot read back from storage carries the spec in whatever form it
-	// was decoded; classification must not depend on the Go type.
+	// was decoded; classification must not depend on the Go type. The map is
+	// produced by the real JSON encoding rather than written by hand, so the
+	// test follows the stored key spelling (blackbox_exporter v0.29 changed it
+	// from DontFragment to dont_fragment).
+	stored, err := json.Marshal(dontFragment.Prob.Spec)
+	require.NoError(t, err)
+	var generic map[string]any
+	require.NoError(t, json.Unmarshal(stored, &generic))
 	decoded := dontFragment
-	decoded.Prob.Spec = map[string]any{"target": "example.com", "icmp": map[string]any{"DontFragment": true}}
+	decoded.Prob.Spec = generic
 	require.ErrorContains(t, plain.AcceptsJob(decoded, nil), "raw-sockets")
 
 	require.ErrorContains(t, (RunnerSpec{JobRequirements: JobRequirements{ProbeKinds: []string{"icmp"}, Privileges: []string{"root"}}}).ValidatePolicy(), "known privileges")

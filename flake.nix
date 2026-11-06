@@ -68,7 +68,7 @@
                   ./pkg
                 ];
               };
-              vendorHash = "sha256-fLWj4i6Gq6Hb9NJtmVg7HR6GZ/zaQN1grPfUp0T459A=";
+              vendorHash = "sha256-cE4B5U2K3yhq+03rQMdxI3VvDZo5BbiR27FpKMNVdcg=";
               subPackages = [ subPackage ];
               env.CGO_ENABLED = 0;
               ldflags = [
