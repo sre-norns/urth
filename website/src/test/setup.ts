@@ -7,7 +7,7 @@ configure({asyncUtilTimeout: 3000})
 import {server} from './server'
 
 beforeAll(() => {
-  server.listen({onUnhandledRequest: 'error'})
+  server.listen({onUnhandledFrame: 'error'})
   const interceptedFetch = globalThis.fetch
   globalThis.fetch = (input, init) => {
     if (typeof input === 'string' && input.startsWith('/')) {
