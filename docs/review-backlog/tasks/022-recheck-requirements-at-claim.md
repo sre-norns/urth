@@ -4,12 +4,12 @@ Shared context: [`CONTEXT.md`](../CONTEXT.md).
 
 | Field | Value |
 |---|---|
-| Status | `in-progress` |
+| Status | `done` |
 | Priority | `P1` |
 | Workstream | Claim lifecycle / Runner contract |
 | Depends on | — |
 | Likely conflicts | 008, 014, 018 (done), 021 |
-| Owner | Codex; `feat/runner-channel-policy` |
+| Owner | Codex; `feat/runner-channel-policy` (merged in PR #129) |
 
 ## Why This Matters
 
@@ -140,9 +140,9 @@ the new.
 
 ## Completion Record
 
-Implementation review is in progress on `feat/runner-channel-policy`. The source
-baseline is `50aa0d5bea8aa828637bae1e5a6819e3a4538187`. The maintainer reviews
-and merges the implementation. No release or deployment is included.
+The source baseline is `50aa0d5bea8aa828637bae1e5a6819e3a4538187`.
+Merged in PR #129 at `7a3c9cd827125e7057f3351391038a5d492be1c8` on 2026-10-04.
+No release or deployment is included.
 
 - **Implemented:** Claims use the stored Scenario placement selector and current
   Runner labels. Invalid or changed placement records a terminal reason before
@@ -154,7 +154,16 @@ and merges the implementation. No release or deployment is included.
 - **Validation evidence:** See the [acceptance record](../../runner-channel-policy-validation.md).
   The baseline claim regression fails before enforcement. Real boundary, native
   profile, concurrency, client and race checks pass. The full PostgreSQL audit passes.
-  Exact PR CI remains a review gate.
-- **Follow-ups:** Record the implementation PR and exact CI. The maintainer
-  reviews and merges the change. Record merged-main CI after merge. Release
-  publication requires separate authorization.
+  PR #129 head `a6210e8` passed Build And Verify, Website, CodeQL, Nix flake,
+  vulnerability scan and release packaging. On the merge commit, Build And Verify,
+  Website and CodeQL were cancelled when the next push to `main` started. The next
+  `main` commit, `d894a97` (PR #130), contains this change and passes Build And
+  Verify (37178497493), Website (37178497481) and CodeQL (37178497528).
+- **Follow-ups:** Post-merge review follow-ups are tasks
+  [026](026-stale-worker-capability-capacity.md),
+  [027](027-report-after-full-budget-run.md),
+  [028](028-absorb-placement-version-conflicts.md),
+  [029](029-typed-runner-policy-authoring.md),
+  [030](030-reject-unexecutable-probe-kinds.md) and
+  [031](031-channel-policy-cleanup.md). The `pkg/natsq` test flakes seen during
+  review are fixed in PR #130. Release publication requires separate authorization.

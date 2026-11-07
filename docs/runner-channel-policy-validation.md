@@ -2,8 +2,8 @@
 
 Date: 2026-10-04, Australia/Sydney. Baseline:
 `50aa0d5bea8aa828637bae1e5a6819e3a4538187`. Candidate branch:
-`feat/runner-channel-policy`. Implementation review remains in progress for
-backlog tasks 008 and 022. The maintainer reviews and merges the change.
+`feat/runner-channel-policy`, merged in PR #129 at
+`7a3c9cd827125e7057f3351391038a5d492be1c8`. Backlog tasks 008 and 022 are done.
 
 This work adds an explicit Runner policy for fresh installations. Obsolete Runner
 `requirements` receives a clear error. Scenario `requirements` remains the
@@ -95,9 +95,14 @@ PIDs are verified. Temporary private files from interrupted tests are removed
 only from paths recorded by those test processes. Sandboxed broker tests fail
 when local listeners are unavailable; approved local-network reruns pass.
 
-## Remaining review actions
+## Review and merge record
 
-Record the implementation commit and PR, verify exact PR CI, and obtain
-maintainer review. Keep tasks 008 and 022 in progress until those review actions
-are complete. Record merged-main CI after merge. Publication requires separate
-authorization. Task 020 selector semantics remain separate and unchanged.
+The maintainer reviewed and merged PR #129 on 2026-10-04. PR head `a6210e8`
+passed Build And Verify, Website, CodeQL, Nix flake, vulnerability scan and
+release packaging. On the merge commit, Build And Verify, Website and CodeQL were
+cancelled when the next push to `main` started. The next `main` commit,
+`d894a97` (PR #130), contains this change and passes Build And Verify
+(37178497493), Website (37178497481) and CodeQL (37178497528).
+
+Post-merge review follow-ups are backlog tasks 026 to 031. Publication requires
+separate authorization. Task 020 selector semantics remain separate and unchanged.
