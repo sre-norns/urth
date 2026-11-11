@@ -5,7 +5,7 @@ go 1.27.1
 require (
 	github.com/adhocore/gronx v1.20.6
 	github.com/alecthomas/kong v1.17.0
-	github.com/chromedp/cdproto v0.159.1
+	github.com/chromedp/cdproto v0.159.2
 	github.com/gin-gonic/gin v1.12.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/martian v2.1.0+incompatible
@@ -15,7 +15,7 @@ require (
 	github.com/nats-io/jwt/v2 v2.8.2
 	github.com/nats-io/nats-server/v2 v2.15.2
 	github.com/nats-io/nats.go v1.55.0
-	github.com/nats-io/nkeys v0.4.16
+	github.com/nats-io/nkeys v0.4.17
 	github.com/prometheus/blackbox_exporter v0.29.1
 	github.com/prometheus/client_golang v1.25.0
 	github.com/prometheus/client_model v0.6.3
