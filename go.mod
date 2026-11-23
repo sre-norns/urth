@@ -3,28 +3,28 @@ module github.com/sre-norns/urth
 go 1.27.1
 
 require (
-	github.com/adhocore/gronx v1.20.6
+	github.com/adhocore/gronx v1.20.8
 	github.com/alecthomas/kong v1.17.0
-	github.com/chromedp/cdproto v0.159.2
+	github.com/chromedp/cdproto v0.160.6
 	github.com/gin-gonic/gin v1.12.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/martian v2.1.0+incompatible
 	github.com/google/uuid v1.6.0
 	github.com/joho/godotenv v1.5.1
-	github.com/klauspost/compress v1.20.3
-	github.com/nats-io/jwt/v2 v2.8.2
-	github.com/nats-io/nats-server/v2 v2.15.2
-	github.com/nats-io/nats.go v1.55.0
+	github.com/klauspost/compress v1.20.5
+	github.com/nats-io/jwt/v2 v2.8.3
+	github.com/nats-io/nats-server/v2 v2.15.3
+	github.com/nats-io/nats.go v1.56.0
 	github.com/nats-io/nkeys v0.4.17
 	github.com/prometheus/blackbox_exporter v0.29.1
 	github.com/prometheus/client_golang v1.25.0
 	github.com/prometheus/client_model v0.6.3
-	github.com/prometheus/common v0.73.1
+	github.com/prometheus/common v0.74.0
 	github.com/sre-norns/wyrd v0.7.1
 	github.com/sre-norns/wyrd/identity v0.7.2
 	github.com/stretchr/testify v1.12.1
-	golang.org/x/mod v0.42.0
-	golang.org/x/net v0.62.0
+	golang.org/x/mod v0.43.0
+	golang.org/x/net v0.63.0
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/driver/postgres v1.6.3
 	gorm.io/driver/sqlite v1.6.0
@@ -37,7 +37,7 @@ require (
 	filippo.io/edwards25519 v1.2.0 // indirect
 	github.com/alecthomas/units v0.0.0-20240927000941-0f3dac36c52b // indirect
 	github.com/andybalholm/brotli v1.2.7 // indirect
-	github.com/antithesishq/antithesis-sdk-go v0.8.0 // indirect
+	github.com/antithesishq/antithesis-sdk-go v0.9.0-default-no-op // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bytedance/gopkg v0.1.4 // indirect
@@ -102,12 +102,12 @@ require (
 	go.yaml.in/yaml/v2 v2.4.5 // indirect
 	go.yaml.in/yaml/v3 v3.0.6 // indirect
 	golang.org/x/arch v0.32.0 // indirect
-	golang.org/x/crypto v0.58.0 // indirect
+	golang.org/x/crypto v0.59.0 // indirect
 	golang.org/x/exp v0.0.0-20261014143641-f0251eb4aa3e // indirect
-	golang.org/x/oauth2 v0.37.0 // indirect
-	golang.org/x/sync v0.24.0 // indirect
-	golang.org/x/sys v0.49.0 // indirect
-	golang.org/x/text v0.43.0 // indirect
+	golang.org/x/oauth2 v0.38.0 // indirect
+	golang.org/x/sync v0.25.0 // indirect
+	golang.org/x/sys v0.50.0 // indirect
+	golang.org/x/text v0.44.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20261026165753-2ffab32bce7e // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20261026165753-2ffab32bce7e // indirect
